@@ -1,0 +1,146 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://halo.dev/spec/v0.1/halo-record.schema.json",
+  "title": "Halo Runtime Record",
+  "description": "An append-only, tamper-evident record of a single AI-agent action. Schema v0.1.",
+  "type": "object",
+  "required": ["schema_version", "record_id", "session_id", "ts", "action", "integrity"],
+  "properties": {
+    "schema_version": { "type": "string", "const": "0.1" },
+    "record_id": { "type": "string", "description": "Unique identifier for this record (UUID recommended)." },
+    "session_id": { "type": "string", "description": "Links the record to the triggering session/conversation." },
+    "parent_id": { "type": "string", "description": "The record this one was caused by, for provenance/chaining." },
+    "ts": { "type": "string", "description": "RFC 3339 UTC timestamp." },
+    "subject": {
+      "type": "object",
+      "description": "The tenant/customer context this action belongs to — the segmentation key. Distinct from principal (who operated): subject is whose engagement the action serves. Used to keep each customer's records in their own chain and report, so one is never exposed to another.",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" }
+      }
+    },
+    "principal": {
+      "type": "object",
+      "description": "Identities on whose behalf the action ran (up to four layers).",
+      "properties": {
+        "human_id": { "type": "string" },
+        "creator_id": { "type": "string" },
+        "service_account": { "type": "string" },
+        "role_scope": { "type": "string" }
+      }
+    },
+    "agent": {
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "version": { "type": "string" },
+        "model": { "type": "string" },
+        "model_version": { "type": "string" }
+      }
+    },
+    "mcp": {
+      "type": "object",
+      "properties": {
+        "host": { "type": "string" },
+        "client": { "type": "string" },
+        "server": { "type": "string" },
+        "server_version": { "type": "string" }
+      }
+    },
+    "action": {
+      "type": "object",
+      "required": ["type", "category"],
+      "properties": {
+        "type": { "type": "string", "enum": ["tool_call", "agent_message", "read", "write", "network"] },
+        "category": { "type": "string", "enum": ["security", "safety", "reliability", "privacy"] },
+        "tool": { "type": "string" },
+        "authorization": {
+          "type": "object",
+          "properties": {
+            "decision": { "type": "string", "enum": ["allowed", "denied", "human_approved"] },
+            "scope": { "type": "string" },
+            "approver": { "type": "string" }
+          }
+        },
+        "input": {
+          "type": "object",
+          "description": "Redacted summary plus a hash of the full canonical arguments. Raw arguments MUST NOT appear.",
+          "properties": {
+            "summary": { "type": "string" },
+            "hash": { "type": "string" }
+          }
+        }
+      }
+    },
+    "outcome": {
+      "type": "object",
+      "properties": {
+        "status": { "type": "string", "enum": ["ok", "error", "denied"] },
+        "summary": { "type": "string" },
+        "hash": { "type": "string" }
+      }
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["type", "severity"],
+        "properties": {
+          "type": { "type": "string", "description": "e.g. api_key, private_key, db_conn, credit_card, ssn, email, ip_internal, bearer_token" },
+          "severity": { "type": "string", "enum": ["CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"] },
+          "sample": { "type": "string", "description": "Redacted excerpt. Unredacted value MUST NOT appear." }
+        }
+      }
+    },
+    "severity": { "type": "string", "enum": ["CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"] },
+    "threats": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["type"],
+        "properties": {
+          "type": { "type": "string", "description": "e.g. prompt_injection_direct, prompt_injection_indirect, policy_violation, tool_misuse" },
+          "ref": { "type": "string" }
+        }
+      }
+    },
+    "data": {
+      "type": "object",
+      "properties": {
+        "region": { "type": "string" },
+        "cross_region": { "type": "number" },
+        "purpose": { "type": "string" },
+        "pii_types": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "retention": {
+      "type": "object",
+      "properties": {
+        "policy": { "type": "string" },
+        "expires": { "type": "string" }
+      }
+    },
+    "jurisdiction": { "type": "string" },
+    "framework_tags": { "type": "array", "items": { "type": "string" } },
+    "integrity": {
+      "type": "object",
+      "required": ["alg", "canon", "prev_hash", "hash"],
+      "properties": {
+        "alg": { "type": "string", "enum": ["sha-256"] },
+        "canon": { "type": "string", "enum": ["rfc8785"] },
+        "prev_hash": { "type": "string", "description": "Hex SHA-256 of the previous record; 64 zeros for the first record." },
+        "hash": { "type": "string", "description": "Hex SHA-256 of this record (excluding integrity.hash), canonicalized per RFC 8785." }
+      }
+    },
+    "signature": {
+      "type": "object",
+      "required": ["alg", "sig"],
+      "properties": {
+        "alg": { "type": "string", "enum": ["ecdsa-p256", "ed25519"] },
+        "sig": { "type": "string" },
+        "key_id": { "type": "string" }
+      }
+    }
+  }
+}
