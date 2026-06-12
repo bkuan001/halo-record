@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "halo-record"
-version = "0.1.0"
+version = "0.1.1"
 description = "Open, tamper-evident runtime records for AI agents: the Halo Runtime Record format, with a dependency-free conformance verifier."
 readme = "README.md"
 requires-python = ">=3.8"
@@ -24,8 +24,9 @@ dependencies = []
 halo = "halo_record.cli:main"
 
 [project.urls]
-Homepage = "https://halo.dev"
-Specification = "https://halo.dev/spec/v0.1/"
+Homepage = "https://github.com/bkuan001/halo-record"
+Repository = "https://github.com/bkuan001/halo-record"
+Issues = "https://github.com/bkuan001/halo-record/issues"
 
 [tool.setuptools]
 # Ship the top-level ``halo`` shim alongside the package so the hero snippet
