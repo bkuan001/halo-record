@@ -1,8 +1,8 @@
 # halo-record
 
-Tamper-evident **runtime records for AI agents** — the audit trail the vendor runs but cannot edit.
+Tamper-evident **runtime records for AI agents**: the audit trail the vendor runs but cannot edit.
 
-Every action your agent takes (tool calls, model calls, data access, approvals) becomes one record in an append-only, hash-chained log. Any party can verify the log was never altered, without trusting whoever produced it. When a customer's security team asks "what did your agent do with our data?", you hand them a link instead of a paragraph.
+Every action your agent takes (tool calls, model calls, data access, approvals) becomes one record in an append-only, hash-chained log. Any party can verify the log was never altered, without trusting whoever produced it. When a customer's security team asks "what did your agent do with our data?", you hand them a link instead of a paragraph. Security reviews already ask AI questions next to the SOC 2 checklist, and today a written assurance still passes. The bet behind this project is that it won't for long.
 
 The record format is open and free to implement. This package is the reference implementation: recorder, verifier, witness client, and report server.
 
@@ -11,21 +11,27 @@ The record format is open and free to implement. This package is the reference i
 You are being asked to put a recorder inside your agent. You should not take that on faith:
 
 - **Zero runtime dependencies.** Standard library only. `pip install halo-record` installs exactly one package.
-- **No network calls** — except the witness, which is opt-in and receives only a record count and a chain fingerprint. Record contents never leave your infrastructure.
+- **No network calls**, except the witness, which is opt-in and receives only a record count and a chain fingerprint. Record contents never leave your infrastructure.
 - **Raw inputs never enter a record.** Arguments are hashed and summarized through a redaction pass before writing. Secrets and personal data stay out by construction.
 - **Small enough to audit.** ~3,800 lines of Python. Read all of it in an afternoon.
 - **Apache-2.0.**
 
 ## 60-second demo
 
-No agent required:
+No agent required. With [uv](https://docs.astral.sh/uv/), nothing to install:
+
+```
+uvx --from halo-record halo demo --serve
+```
+
+or the classic way:
 
 ```
 pip install halo-record
 halo demo --serve
 ```
 
-This scaffolds a fictional support-agent vendor with two customers, witnesses the chains, and serves their gated Runtime Reports. Open the printed links. Then try the tamper test: delete a line from one of the `.jsonl` files and reload — the report catches it.
+Either one scaffolds a fictional support-agent vendor with two customers, witnesses the chains, serves their gated Runtime Reports, and opens the operator console in your browser. Then try the tamper test: delete a line from one of the `.jsonl` files and reload. The report catches it.
 
 ## Record your own agent
 
@@ -44,7 +50,7 @@ halo report audit.jsonl -o report.html    # one chain -> self-verifying HTML
 halo serve ./records --port 8721          # all tenants, gated per customer
 ```
 
-The quickstart ends when you are looking at your own agent's Runtime Report in a browser. If you got a JSONL file and no report, something is wrong — open an issue.
+The quickstart ends when you are looking at your own agent's Runtime Report in a browser. If you got a JSONL file and no report, something is wrong: open an issue.
 
 ## Connect to what you already run
 
@@ -58,11 +64,13 @@ The quickstart ends when you are looking at your own agent's Runtime Report in a
 
 Every record carries a `source` tag, so the report discloses how each piece of evidence was collected. Captured and ingested records live in the same chain.
 
-## Integrity vs. completeness — read this part
+Anything that emits OpenTelemetry GenAI spans (CrewAI, LlamaIndex, and most agent frameworks with OTel instrumentation) lands in the chain through the OTel adapter, and the [TypeScript package](https://github.com/bkuan001/halo-record-ts) ships native adapters for the Vercel AI SDK and the JS agent ecosystem. Missing an adapter for your stack? Open an issue. Most adapters are about a hundred lines.
+
+## Integrity vs. completeness (read this part)
 
 A self-held chain proves **integrity**: nothing was edited or reordered after the fact. It cannot prove **completeness**: the operator of a recorder can delete the bad day and re-seal the chain, or never write a record at all, and the chain stays internally consistent.
 
-Completeness requires a party outside the operator's control holding periodic fingerprints of the chain (a count and a head hash — nothing else). That is the witness:
+Completeness requires a party outside the operator's control holding periodic fingerprints of the chain (a count and a head hash, nothing else). That is the witness:
 
 ```
 halo anchor audit.jsonl --witness witness.jsonl     # local witness file
@@ -70,6 +78,17 @@ halo anchor audit.jsonl --check                     # completeness verdict
 ```
 
 Anyone can run a witness. A witness you run yourself proves integrity to *you*; proving completeness to *your customer* requires a witness they have reason to trust. The protocol is open either way.
+
+## Where this sits in a compliance stack
+
+halo-record is an evidence layer, not a certification. It produces the artifact that assessment frameworks keep asking for in different words:
+
+- **Security questionnaires and SOC 2 reviews:** answer the AI sections with a verifiable Runtime Report instead of screenshots and prose.
+- **AIUC-1:** continuous runtime evidence for agent-behavior requirements, instead of evidence reconstructed at audit time.
+- **EU AI Act:** logging and record-keeping obligations for high-risk AI systems.
+- **ISO 42001 / NIST AI RMF:** the operational evidence behind management-system controls.
+
+None of this certifies anything by itself. It gives your assessor something verifiable to look at.
 
 ## CLI
 
@@ -87,13 +106,13 @@ halo hook     Claude Code PostToolUse hook
 
 ## Integrity model
 
-To compute a record's hash: take the record excluding `integrity.hash`, with `integrity.prev_hash` set to the previous record's hash; canonicalize with RFC 8785 (JSON Canonicalization Scheme); SHA-256 the bytes. The first record's `prev_hash` is 64 zeros. Verification recomputes every hash and checks every link. No secret required — that is the point.
+To compute a record's hash: take the record excluding `integrity.hash`, with `integrity.prev_hash` set to the previous record's hash; canonicalize with RFC 8785 (JSON Canonicalization Scheme); SHA-256 the bytes. The first record's `prev_hash` is 64 zeros. Verification recomputes every hash and checks every link. No secret required; that is the point.
 
 Full field reference: [`halo-record.schema.json`](src/halo_record/halo-record.schema.json).
 
 ## TypeScript
 
-The same recorder ships for Node: [`halo-record-ts`](https://github.com/bkuan001/halo-record-ts). Same chain format, same witness protocol — records written in either language verify with either verifier.
+The same recorder ships for Node: [`halo-record-ts`](https://github.com/bkuan001/halo-record-ts). Same chain format, same witness protocol. Records written in either language verify with either verifier.
 
 ## License
 

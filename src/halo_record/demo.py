@@ -106,7 +106,8 @@ def scaffold(directory):
     return witness, grants, counts
 
 
-def main(directory=None, *, serve=False, host="127.0.0.1", port=8721, verify=False):
+def main(directory=None, *, serve=False, host="127.0.0.1", port=8721, verify=False,
+         open_browser=True):
     created = directory is None
     directory = os.path.expanduser(directory) if directory else tempfile.mkdtemp(prefix="halo-demo-")
     if not os.path.isdir(directory):
@@ -141,6 +142,13 @@ def main(directory=None, *, serve=False, host="127.0.0.1", port=8721, verify=Fal
 
     if serve:
         print()
+        if open_browser:
+            import threading
+            import webbrowser
+            console = "%s/?key=%s" % (base, admin_key(secret))
+            opener = threading.Timer(1.0, webbrowser.open, [console])
+            opener.daemon = True
+            opener.start()
         from .serve import serve as serve_fn
         return serve_fn(directory, host=host, port=port, witness=witness,
                         gated=True, verify=verify)

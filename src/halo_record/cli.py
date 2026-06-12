@@ -132,7 +132,7 @@ def _cmd_leads(args):
 def _cmd_demo(args):
     from .demo import main as demo_main
     return demo_main(args.dir, serve=args.serve, host=args.host, port=args.port,
-                     verify=args.verify_email)
+                     verify=args.verify_email, open_browser=not args.no_open)
 
 
 def _cmd_witness_serve(args):
@@ -234,6 +234,8 @@ def main(argv=None):
     p_demo.add_argument("--port", type=int, default=8721, help="bind port (default: 8721)")
     p_demo.add_argument("--verify-email", action="store_true",
                         help="require a one-time code (proves recipient owns the email)")
+    p_demo.add_argument("--no-open", action="store_true",
+                        help="do not auto-open the operator console in a browser")
     p_demo.set_defaults(func=_cmd_demo)
 
     p_wserve = sub.add_parser(
