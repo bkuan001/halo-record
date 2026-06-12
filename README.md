@@ -79,6 +79,8 @@ halo anchor audit.jsonl --check                     # completeness verdict
 
 Anyone can run a witness. A witness you run yourself proves integrity to *you*; proving completeness to *your customer* requires a witness they have reason to trust. The protocol is open either way.
 
+A hosted, recognized witness is how this project will sustain itself. Early access: bkuan001@gmail.com.
+
 ## Where this sits in a compliance stack
 
 halo-record is an evidence layer, not a certification. It produces the artifact that assessment frameworks keep asking for in different words:
