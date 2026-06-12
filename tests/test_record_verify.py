@@ -61,11 +61,11 @@ class BuildTest(unittest.TestCase):
 
     def test_authorization_recorded(self):
         rec = build("write", "safety", tool="Write", scope="fs.write",
-                    decision="human_approved", approver="brian")
+                    decision="human_approved", approver="alice")
         auth = rec["action"]["authorization"]
         self.assertEqual(auth["decision"], "human_approved")
         self.assertEqual(auth["scope"], "fs.write")
-        self.assertEqual(auth["approver"], "brian")
+        self.assertEqual(auth["approver"], "alice")
 
 
 class ChainTest(unittest.TestCase):
