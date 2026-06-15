@@ -12,8 +12,8 @@ You are being asked to put a recorder inside your agent. You should not take tha
 
 - **Zero runtime dependencies.** Standard library only. `pip install halo-record` installs exactly one package.
 - **No network calls**, except the witness, which is opt-in and receives only a record count and a chain fingerprint. Record contents never leave your infrastructure.
-- **Raw inputs never enter a record.** Arguments are hashed and summarized through a redaction pass before writing. Secrets and personal data stay out by construction.
-- **Small enough to audit.** ~3,800 lines of Python. Read all of it in an afternoon.
+- **Raw inputs never enter a record.** Arguments are hashed and stored only as a redacted summary — never the raw value. Redaction is best-effort (regex over common secret and PII formats): treat it as defense-in-depth, not a guarantee.
+- **Small enough to audit.** ~4,200 lines of Python. Read all of it in an afternoon.
 - **Apache-2.0.**
 
 ## 60-second demo
