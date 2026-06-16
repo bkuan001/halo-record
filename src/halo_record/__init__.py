@@ -11,7 +11,7 @@ Public API:
     verify_log("audit.jsonl")   # -> True if schema + hash chain are intact
 """
 
-__version__ = "0.1.0"
+__version__ = "0.1.3"
 
 from .canon import canon, compute_hash, input_hash, GENESIS_PREV
 from .capture import record, record_call, derive_outcome
