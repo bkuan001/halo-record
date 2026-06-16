@@ -40,7 +40,7 @@ One line at the boundary:
 ```python
 from halo import trace
 
-agent = trace(run_my_agent)   # wraps your entrypoint; records every tool call
+agent = trace(run_my_agent, profile="my-agent")   # wraps your entrypoint; records every tool call
 ```
 
 or use the adapter for what you already run (see the matrix below). Then render the report:
