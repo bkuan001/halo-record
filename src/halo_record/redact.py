@@ -1,24 +1,73 @@
 """Sensitive-data detection and redaction.
 
 A conforming record MUST NOT contain raw secrets or personal data. ``scan``
-finds them; ``redact_sample`` / ``redact_text`` mask them. Detection is regex —
-deterministic and explainable, never a model judgement.
+finds them; ``redact_sample`` / ``redact_text`` mask them. Detection is two
+layers, both deterministic and explainable (never a model judgement):
+
+1. a list of known secret/PII patterns, and
+2. a high-entropy catch-all that flags long random-looking tokens the patterns
+   miss (the provider key formats nobody has hardcoded yet).
+
+Over-redaction is the safe failure: this artifact is meant to be handed to a
+third party. Pattern-for-pattern port of the TypeScript ``redact.ts``.
 """
 
+import math
 import re
+from collections import Counter
 
 PATTERNS = [
-    ("api_key",      "CRITICAL", re.compile(r'(?:sk-[a-zA-Z0-9]{20,}|AKIA[0-9A-Z]{16}|ghp_[a-zA-Z0-9]{36}|xox[baprs]-[a-zA-Z0-9\-]{10,})')),
+    ("api_key",      "CRITICAL", re.compile(r'(?:sk-[a-zA-Z0-9]{20,}|AKIA[0-9A-Z]{16}|xox[baprs]-[a-zA-Z0-9\-]{10,})')),
+    ("gcp_api_key",  "CRITICAL", re.compile(r'AIza[0-9A-Za-z_\-]{35}')),
+    ("stripe_key",   "CRITICAL", re.compile(r'(?:sk|rk|pk)_(?:live|test)_[0-9a-zA-Z]{16,}')),
+    ("github_token", "CRITICAL", re.compile(r'(?:gh[opsu]_[A-Za-z0-9]{36}|github_pat_[A-Za-z0-9_]{22,})')),
     ("private_key",  "CRITICAL", re.compile(r'-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----')),
     ("db_conn",      "CRITICAL", re.compile(r'(?:postgres|mysql|mongodb(?:\+srv)?|redis)://[^\s"\'<>]+')),
+    ("jwt",          "HIGH",     re.compile(r'eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}')),
     ("credit_card",  "HIGH",     re.compile(r'\b(?:4[0-9]{12}(?:[0-9]{3})?|5[1-5][0-9]{14}|3[47][0-9]{13}|6(?:011|5[0-9]{2})[0-9]{12})\b')),
     ("ssn",          "HIGH",     re.compile(r'\b\d{3}-\d{2}-\d{4}\b')),
+    ("bearer_token", "HIGH",     re.compile(r'Bearer\s+[a-zA-Z0-9\-_\.]{20,}')),
     ("email",        "MEDIUM",   re.compile(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b')),
     ("ip_internal",  "MEDIUM",   re.compile(r'\b(10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3})\b')),
-    ("bearer_token", "HIGH",     re.compile(r'Bearer\s+[a-zA-Z0-9\-_\.]{20,}')),
 ]
 
 SEVERITY_RANK = {"CRITICAL": 4, "HIGH": 3, "MEDIUM": 2, "LOW": 1, "INFO": 0}
+
+# High-entropy catch-all: long, mixed enough to be machine-generated rather
+# than prose, and not a recognizable hash/UUID/id.
+HIGH_ENTROPY_TYPE = "high_entropy_secret"
+HIGH_ENTROPY_MIN_LEN = 24
+HIGH_ENTROPY_BITS = 3.5
+TOKEN_RE = re.compile(r'[A-Za-z0-9+/=_-]{24,}')
+MAX_PER_TYPE = 25
+
+_HEX_RE = re.compile(r'[0-9a-fA-F]+$')
+_UUID_RE = re.compile(r'[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-')
+_DIGITS_RE = re.compile(r'\d+$')
+
+
+def _shannon_bits(s):
+    if not s:
+        return 0.0
+    n = len(s)
+    return -sum((c / n) * math.log2(c / n) for c in Counter(s).values())
+
+
+def _looks_like_secret(tok):
+    if len(tok) < HIGH_ENTROPY_MIN_LEN:
+        return False
+    if _HEX_RE.fullmatch(tok):           # hex digest
+        return False
+    if _UUID_RE.match(tok):              # UUID
+        return False
+    if _DIGITS_RE.fullmatch(tok):        # long number / id
+        return False
+    has_digit = any(c.isdigit() for c in tok)
+    has_upper = any(c.isupper() for c in tok)
+    has_lower = any(c.islower() for c in tok)
+    if not (has_digit or (has_upper and has_lower)):  # prose / slugs
+        return False
+    return _shannon_bits(tok) >= HIGH_ENTROPY_BITS
 
 
 def redact_sample(ftype, value):
@@ -32,8 +81,12 @@ def redact_sample(ftype, value):
         return "Bearer ****"
     if ftype == "private_key":
         return "-----BEGIN PRIVATE KEY----- ****"
-    if ftype == "api_key":
+    if ftype == "jwt":
+        return "eyJ****"
+    if ftype in ("api_key", "gcp_api_key", "stripe_key", "github_token"):
         return (v[:4] + "****") if len(v) > 4 else "****"
+    if ftype == HIGH_ENTROPY_TYPE:
+        return (v[:3] + "****") if len(v) > 3 else "****"
     if ftype == "credit_card":
         digits = re.sub(r'\D', '', v)
         return ("****" + digits[-4:]) if len(digits) >= 4 else "****"
@@ -45,24 +98,66 @@ def redact_sample(ftype, value):
     return "****"
 
 
-def redact_text(text):
-    out = str(text)
+def _apply_patterns(text):
+    out = text
     for name, _sev, pattern in PATTERNS:
-        out = pattern.sub(lambda m: redact_sample(name, m.group(0)), out)
+        out = pattern.sub(lambda m, n=name: redact_sample(n, m.group(0)), out)
     return out
 
 
+def redact_text(text):
+    # Patterns first, then sweep the residual for high-entropy tokens the
+    # patterns did not cover (running on the residual avoids re-masking "****").
+    after = _apply_patterns(str(text))
+    return TOKEN_RE.sub(
+        lambda m: redact_sample(HIGH_ENTROPY_TYPE, m.group(0))
+        if _looks_like_secret(m.group(0)) else m.group(0),
+        after,
+    )
+
+
 def scan(text):
-    """Return a list of redacted findings for any sensitive patterns in ``text``."""
+    """Return redacted findings for every sensitive pattern in ``text``.
+
+    Emits one finding per distinct match (deduped on the redacted sample,
+    capped per type) so counts reflect reality instead of collapsing to
+    one-per-kind.
+    """
+    s = str(text)
     findings = []
+    seen = set()
+
     for name, severity, pattern in PATTERNS:
-        matches = pattern.findall(text)
-        if matches:
-            findings.append({
-                "type": name,
-                "severity": severity,
-                "sample": redact_sample(name, str(matches[0])[:120]),
-            })
+        n = 0
+        for m in pattern.findall(s):
+            raw = m if isinstance(m, str) else next((x for x in m if x), "")
+            sample = redact_sample(name, str(raw)[:120])
+            key = name + ":" + sample
+            if key in seen:
+                continue
+            seen.add(key)
+            findings.append({"type": name, "severity": severity, "sample": sample})
+            n += 1
+            if n >= MAX_PER_TYPE:
+                break
+
+    # High-entropy catch-all over the pattern-redacted residual, so tokens
+    # already flagged above are not double-counted.
+    residual = _apply_patterns(s)
+    e = 0
+    for tok in TOKEN_RE.findall(residual):
+        if not _looks_like_secret(tok):
+            continue
+        sample = redact_sample(HIGH_ENTROPY_TYPE, tok)
+        key = HIGH_ENTROPY_TYPE + ":" + sample
+        if key in seen:
+            continue
+        seen.add(key)
+        findings.append({"type": HIGH_ENTROPY_TYPE, "severity": "HIGH", "sample": sample})
+        e += 1
+        if e >= MAX_PER_TYPE:
+            break
+
     return findings
 
 
