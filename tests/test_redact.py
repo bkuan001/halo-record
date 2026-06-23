@@ -17,8 +17,7 @@ class RedactTest(unittest.TestCase):
         self.assertEqual(top_severity(f), "HIGH")
 
     def test_expanded_provider_patterns(self):
-        # Assembled at runtime so no secret-shaped literal ever sits in source
-        # (synthetic fixtures would otherwise trip secret scanners).
+        # Keys assembled at runtime so no secret-shaped literal sits in source.
         secrets = {
             "gcp_api_key": "AIza" + "x" * 35,
             "stripe_key": "sk_" + "live_" + "x" * 20,
