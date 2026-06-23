@@ -119,13 +119,13 @@ def _cmd_grant(args):
     return 0
 
 
-def _cmd_leads(args):
+def _cmd_report_views(args):
     from . import access
-    leads = access.read_leads(args.dir)
-    for lead in leads:
-        print("%s  %-28s  %s" % (lead.get("ts", ""), lead.get("email", ""),
-                                 lead.get("chain", "")))
-    print("%d lead(s)." % len(leads))
+    views = access.read_leads(args.dir)
+    for view in views:
+        print("%s  %-28s  %s" % (view.get("ts", ""), view.get("email", ""),
+                                 view.get("chain", "")))
+    print("%d report view(s)." % len(views))
     return 0
 
 
@@ -217,10 +217,10 @@ def main(argv=None):
     p_grant.add_argument("recipient", help="an email (alice@acme-corp.com) or domain (acme-corp.com)")
     p_grant.set_defaults(func=_cmd_grant)
 
-    p_leads = sub.add_parser(
-        "leads", help="list demand-gen leads captured from gated report views")
-    p_leads.add_argument("dir", help="the served directory of chains")
-    p_leads.set_defaults(func=_cmd_leads)
+    p_views = sub.add_parser(
+        "viewers", help="list who has unlocked a gated report (time, email, report)")
+    p_views.add_argument("dir", help="the served directory of chains")
+    p_views.set_defaults(func=_cmd_report_views)
 
     p_demo = sub.add_parser(
         "demo",
