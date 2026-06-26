@@ -5,3 +5,15 @@ dist/
 build/
 .venv/
 .DS_Store
+
+# Secrets / credentials — never commit
+.env
+.env.*
+*.pem
+*.key
+id_rsa*
+*.p12
+
+# Recorded agent data — the recorder emits .jsonl at runtime; keep real records out of git
+# (test fixtures are built inline as dicts; the only tracked .json is the schema)
+*.jsonl
