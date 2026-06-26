@@ -73,8 +73,8 @@ A self-held chain proves **integrity**: nothing was edited or reordered after th
 Completeness requires a party outside the operator's control holding periodic fingerprints of the chain (a count and a head hash, nothing else). That is the witness:
 
 ```
-halo anchor audit.jsonl --witness witness.jsonl     # local witness file
-halo anchor audit.jsonl --check                     # completeness verdict
+halo anchor audit.jsonl witness.jsonl           # anchor a checkpoint to a local witness
+halo anchor audit.jsonl witness.jsonl --check   # completeness verdict against it
 ```
 
 Anyone can run a witness. A witness you run yourself proves integrity to *you*; proving completeness to *your customer* requires a witness they have reason to trust. The protocol is open either way.
