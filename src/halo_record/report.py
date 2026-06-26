@@ -357,7 +357,23 @@ footer a{color:var(--gold);text-decoration:none}
 """
 
 
-def render(records, checkpoints=None, *, witness_url=None):
+def _policy_block(records, policy, subject):
+    """Render the deterministic policy-corroboration verdict for the report.
+
+    ``policy`` is a list of rule dicts. The verdict panel is computed by
+    ``policy.evaluate`` from explicit rules (never a model), so it is safe to sit
+    beside the integrity/completeness verdicts. Integrity + completeness are
+    proven by the page's own live checks, so the panel's reassurance pills are
+    suppressed here to avoid a static claim competing with the live one."""
+    if not policy:
+        return ""
+    from .policy import evaluate, verdict_panel
+    result = evaluate(records, policy)
+    return ('<h2>Policy corroboration</h2>\n<div style="margin:0 0 30px">%s</div>'
+            % verdict_panel(result, subject=subject, show_pills=False))
+
+
+def render(records, checkpoints=None, *, witness_url=None, policy=None):
     """Return the full HTML for a runtime-record report over ``records``.
 
     If ``checkpoints`` (a list of notary witnesses for this chain) is given, the
@@ -365,7 +381,11 @@ def render(records, checkpoints=None, *, witness_url=None):
     ``witness_url`` (a hosted Halo witness) is given, the page instead fetches
     the checkpoints live from that witness — so completeness is verified against
     a party the vendor doesn't control, not the snapshot embedded in the page.
-    The embedded checkpoints remain as an offline fallback."""
+    The embedded checkpoints remain as an offline fallback.
+
+    If ``policy`` (a list of rule dicts) is given, a deterministic
+    policy-corroboration verdict is rendered beside the integrity/completeness
+    verdicts."""
     checkpoints = checkpoints or []
     subject = _subject_label(records)
     agent = _agent_label(records)
@@ -400,6 +420,7 @@ def render(records, checkpoints=None, *, witness_url=None):
             % (prov_panel, prov_note))
     else:
         provenance_block = ""
+    policy_block = _policy_block(records, policy, subject)
     scope_pills = "".join('<span class="pill">%s</span>' % _esc(s) for s in stats["scopes"]) \
         or '<span class="dim">none</span>'
     # Escape "<" so a record value containing "</script>" can't break out of
@@ -425,6 +446,7 @@ def render(records, checkpoints=None, *, witness_url=None):
 <div id="verdict" class="verdict neutral">Verifying hash chain&hellip;</div>
 <div id="completeness" class="verdict neutral">Checking completeness against the independent witness&hellip;</div>
 <div class="note">This report re-computes its own SHA-256 / RFC 8785 hash chain in your browser (integrity) and checks it against Halo's independent witness (completeness) — neither is something you take on trust.</div>
+%(policy_block)s
 <div class="cards">
   <div class="card"><div class="n">%(total)s</div><div class="l">Actions</div></div>
   <div class="card"><div class="n">%(ntools)s</div><div class="l">Tools</div></div>
@@ -458,6 +480,7 @@ def render(records, checkpoints=None, *, witness_url=None):
         "nflagged": sum(1 for r in records if r.get("findings")),
         "scope_pills": scope_pills,
         "provenance_block": provenance_block,
+        "policy_block": policy_block,
         "rows": rows,
         "records_json": records_json,
         "checkpoints_json": checkpoints_json,
@@ -466,12 +489,14 @@ def render(records, checkpoints=None, *, witness_url=None):
     }
 
 
-def write_report(log_path, out_path=None, witness_log=None, witness_url=None):
+def write_report(log_path, out_path=None, witness_log=None, witness_url=None,
+                 policy_path=None):
     """Render ``log_path`` to HTML. ``witness_log`` embeds a local notary's
     checkpoints (offline fallback / static report). ``witness_url`` points the
     page at a hosted Halo witness it fetches live, so completeness is checked
     against a party the vendor doesn't control. If both are given, the embedded
-    checkpoints seed the offline fallback while the live witness is authoritative."""
+    checkpoints seed the offline fallback while the live witness is authoritative.
+    ``policy_path`` adds a deterministic policy-corroboration verdict to the report."""
     records = _load(log_path)
     checkpoints = None
     if witness_log:
@@ -483,7 +508,11 @@ def write_report(log_path, out_path=None, witness_log=None, witness_url=None):
             checkpoints = fetch_checkpoints(witness_url, subject=_subject_id(records))
         except Exception:
             checkpoints = None  # live fetch happens in-browser regardless
-    html_doc = render(records, checkpoints, witness_url=witness_url)
+    policy = None
+    if policy_path:
+        from .policy import load_policy
+        policy = load_policy(policy_path)
+    html_doc = render(records, checkpoints, witness_url=witness_url, policy=policy)
     if out_path:
         with open(out_path, "w", encoding="utf-8") as fh:
             fh.write(html_doc)

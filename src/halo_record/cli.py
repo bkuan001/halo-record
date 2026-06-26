@@ -62,9 +62,24 @@ def _cmd_report(args):
     from .report import write_report
     out = args.out or (args.log.rsplit(".", 1)[0] + ".html")
     _, count = write_report(args.log, out, witness_log=args.witness,
-                            witness_url=args.witness_url)
+                            witness_url=args.witness_url, policy_path=args.policy)
     print("wrote %s (%d records)" % (out, count))
     return 0
+
+
+def _cmd_policy(args):
+    from .policy import evaluate_log, render_text, render_html
+    result = evaluate_log(args.log, args.policy)
+    if args.json:
+        print(json.dumps(result, indent=2))
+    elif args.html:
+        with open(args.html, "w", encoding="utf-8") as fh:
+            fh.write(render_html(result, subject=args.subject))
+        print("wrote %s" % args.html)
+    else:
+        print(render_text(result))
+    # CI-friendly: non-zero exit when the activity violates policy
+    return 0 if result["compliant"] else 1
 
 
 def _cmd_anchor(args):
@@ -176,7 +191,22 @@ def main(argv=None):
     p_report.add_argument("--witness-url",
                           help="hosted Halo witness URL the report fetches live (completeness "
                                "checked against a party the vendor doesn't control)")
+    p_report.add_argument("--policy",
+                          help="policy JSON file to corroborate the chain against; adds a "
+                               "deterministic verdict (vendor / buyer / framework rules) to the report")
     p_report.set_defaults(func=_cmd_report)
+
+    p_policy = sub.add_parser(
+        "policy",
+        help="corroborate a chain against a declarative policy (vendor / buyer / "
+             "framework rules): per-rule pass / violation / evidence-gap verdict. "
+             "Evaluative only, never enforcement. Non-zero exit on violation.")
+    p_policy.add_argument("log", help="path to the .jsonl chain")
+    p_policy.add_argument("policy", help="path to a policy JSON file (list of rules, or {\"rules\":[...]})")
+    p_policy.add_argument("--html", help="write the verdict panel as standalone HTML to this path")
+    p_policy.add_argument("--json", action="store_true", help="emit the raw result as JSON")
+    p_policy.add_argument("--subject", help="subject/tenant label for the report footer")
+    p_policy.set_defaults(func=_cmd_policy)
 
     p_anchor = sub.add_parser(
         "anchor",

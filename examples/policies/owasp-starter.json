@@ -1,0 +1,83 @@
+{
+  "name": "OWASP starter policy",
+  "version": "0.1",
+  "note": "A STARTING POINT, not an official mapping. These rules approximate control areas from the OWASP Top 10 for LLM Applications (2025) and the OWASP Agentic Security Initiative (Agentic AI: Threats & Mitigations, T1-T15), expressed over Halo Runtime Record v0.1 fields. The most directly relevant threat is T8 Repudiation & Untraceability: a tamper-evident record of what the agent did IS the mitigation. Rename tools/fields to match your agent and your buyer's contract. Run: halo policy <chain.jsonl> owasp-starter.json  (or: halo report <chain.jsonl> --policy owasp-starter.json).",
+  "rules": [
+    {
+      "id": "actions-traceable",
+      "source": "OWASP Agentic T8 / Repudiation & Untraceability",
+      "severity": "MEDIUM",
+      "description": "Every recorded action carries a timestamp, so it is attributable and non-repudiable. The tamper-evident chain is the control; this rule asserts the evidence exists.",
+      "require": {"ts": {"exists": true}}
+    },
+    {
+      "id": "excessive-agency-authorized",
+      "source": "OWASP LLM06 / Excessive Agency",
+      "severity": "HIGH",
+      "description": "Consequential real-world actions (writes, network egress) must carry an explicit authorization decision, never run unattributed.",
+      "when": {"action.type": "write"},
+      "require": {"action.authorization.decision": {"exists": true}}
+    },
+    {
+      "id": "privileged-writes-human-approved",
+      "source": "OWASP Agentic T3 / Privilege Compromise",
+      "severity": "HIGH",
+      "description": "Security-category write actions must be human-approved, not auto-allowed by the agent.",
+      "when": {"action.category": "security", "action.type": "write"},
+      "forbid": {"action.authorization.decision": {"ne": "human_approved"}}
+    },
+    {
+      "id": "money-movement-human-approved",
+      "source": "OWASP Agentic T15 / Human-in-the-loop bypass (TEMPLATE)",
+      "severity": "HIGH",
+      "description": "TEMPLATE — money movement must be human-approved. Rename action.tool to your real high-impact tools (transfer_funds, issue_refund, ...) or delete if not applicable.",
+      "when": {"action.tool": "issue_refund"},
+      "forbid": {"action.authorization.decision": {"ne": "human_approved"}}
+    },
+    {
+      "id": "tool-misuse-critical-reviewed",
+      "source": "OWASP Agentic T2 / Tool Misuse",
+      "severity": "HIGH",
+      "description": "Any action the recorder marked CRITICAL is treated as out of policy until a human reviews it.",
+      "forbid": {"severity": {"eq": "CRITICAL"}}
+    },
+    {
+      "id": "prompt-injection-mitigated",
+      "source": "OWASP LLM01 / Prompt Injection (+ Agentic T6 Intent Breaking)",
+      "severity": "HIGH",
+      "description": "No prompt-injection threat may appear unmitigated in the record.",
+      "forbid": {"threats[].type": {"in": ["prompt_injection_direct", "prompt_injection_indirect"]}}
+    },
+    {
+      "id": "no-secret-disclosure",
+      "source": "OWASP LLM02 / Sensitive Information Disclosure",
+      "severity": "CRITICAL",
+      "description": "No credential or sensitive identifier may ever land in a record.",
+      "forbid": {"findings[].type": {"in": ["api_key", "private_key", "bearer_token", "db_conn", "credit_card", "ssn"]}}
+    },
+    {
+      "id": "pii-egress-controlled",
+      "source": "OWASP LLM02 / Sensitive Information Disclosure",
+      "severity": "HIGH",
+      "description": "Network actions must not carry SSNs off the boundary.",
+      "when": {"action.type": "network"},
+      "forbid": {"data.pii_types": {"contains": "ssn"}}
+    },
+    {
+      "id": "source-integrity-checked",
+      "source": "OWASP Agentic T1 / Memory Poisoning (+ LLM04 Data Poisoning) (TEMPLATE)",
+      "severity": "MEDIUM",
+      "description": "TEMPLATE — expects evidence that a source-integrity / provenance check ran before the agent acted on external content. Rename action.tool to your real integrity-check step, or delete if not applicable.",
+      "when": {"action.tool": "verify_source_integrity"},
+      "expect_evidence": true
+    },
+    {
+      "id": "purpose-declared",
+      "source": "OWASP Agentic / accountability",
+      "severity": "MEDIUM",
+      "description": "Every action that touches personal data declares why (purpose limitation).",
+      "when": {"action.category": "privacy"},
+      "require": {"data.purpose": {"exists": true}}
+    }
+  ]
+}

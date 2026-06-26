@@ -1,0 +1,60 @@
+{
+  "name": "AIUC-1 starter policy",
+  "version": "0.1",
+  "note": "A STARTING POINT, not an official certified mapping. These rules approximate AIUC-1 control *areas* (data protection, human oversight, safety, accountability) expressed over Halo Runtime Record v0.1 fields. Rename and tune them to your agent's tools and your buyer's contract. Run: halo policy <chain.jsonl> aiuc-1-starter.json  (or: halo report <chain.jsonl> --policy aiuc-1-starter.json).",
+  "rules": [
+    {
+      "id": "no-secret-leakage",
+      "source": "AIUC-1 / data protection",
+      "severity": "CRITICAL",
+      "description": "No credential or sensitive identifier may ever land in a record.",
+      "forbid": {"findings[].type": {"in": ["api_key", "private_key", "bearer_token", "db_conn", "credit_card", "ssn"]}}
+    },
+    {
+      "id": "pii-egress-controlled",
+      "source": "AIUC-1 / data protection",
+      "severity": "HIGH",
+      "description": "Records of network actions must not carry SSNs off the boundary.",
+      "when": {"action.type": "network"},
+      "forbid": {"data.pii_types": {"contains": "ssn"}}
+    },
+    {
+      "id": "privacy-purpose-declared",
+      "source": "AIUC-1 / accountability",
+      "severity": "MEDIUM",
+      "description": "Every action that touches personal data declares why (purpose limitation).",
+      "when": {"action.category": "privacy"},
+      "require": {"data.purpose": {"exists": true}}
+    },
+    {
+      "id": "prompt-injection-mitigated",
+      "source": "AIUC-1 / safety",
+      "severity": "HIGH",
+      "description": "No prompt-injection threat may appear unmitigated in the record.",
+      "forbid": {"threats[].type": {"in": ["prompt_injection_direct", "prompt_injection_indirect"]}}
+    },
+    {
+      "id": "critical-actions-flagged",
+      "source": "AIUC-1 / accountability",
+      "severity": "HIGH",
+      "description": "Any action the recorder marked CRITICAL is treated as out of policy until reviewed.",
+      "forbid": {"severity": {"eq": "CRITICAL"}}
+    },
+    {
+      "id": "high-risk-writes-authorized",
+      "source": "AIUC-1 / human oversight",
+      "severity": "HIGH",
+      "description": "Security-category write/network actions must carry an explicit authorization decision, never run unattributed.",
+      "when": {"action.category": "security", "action.type": "write"},
+      "require": {"action.authorization.decision": {"exists": true}}
+    },
+    {
+      "id": "human-escalation-exercised",
+      "source": "AIUC-1 / human oversight",
+      "severity": "MEDIUM",
+      "description": "TEMPLATE — expects evidence a human-escalation tool ran. Rename action.tool to your real escalation tool, or delete if not applicable.",
+      "when": {"action.tool": "escalate_to_human"},
+      "expect_evidence": true
+    }
+  ]
+}

@@ -11,7 +11,7 @@ Public API:
     verify_log("audit.jsonl")   # -> True if schema + hash chain are intact
 """
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 from .canon import canon, compute_hash, input_hash, GENESIS_PREV
 from .capture import record, record_call, derive_outcome
@@ -21,6 +21,8 @@ from .verify import verify_log, validate_record, load_schema
 from .anchor import Notary, checkpoint, verify_completeness
 from .witness import anchor_remote, fetch_checkpoints
 from .report import render, write_report
+from .policy import (evaluate, evaluate_log, load_policy, load_records,
+                     render_text, render_html, verdict_panel)
 from .session import current_recorder, bind_recorder, reset_recorder
 from .trace import trace
 
@@ -53,4 +55,11 @@ __all__ = [
     "fetch_checkpoints",
     "render",
     "write_report",
+    "evaluate",
+    "evaluate_log",
+    "load_policy",
+    "load_records",
+    "render_text",
+    "render_html",
+    "verdict_panel",
 ]

@@ -13,7 +13,7 @@ You are being asked to put a recorder inside your agent. You should not take tha
 - **Zero runtime dependencies.** Standard library only. `pip install halo-record` installs exactly one package.
 - **No network calls**, except the witness, which is opt-in and receives only a record count and a chain fingerprint. Record contents never leave your infrastructure.
 - **Raw inputs never enter a record.** Arguments are hashed and stored only as a redacted summary — never the raw value. Redaction is best-effort (regex over common secret and PII formats): treat it as defense-in-depth, not a guarantee.
-- **Small enough to audit.** ~4,200 lines of Python. Read all of it in an afternoon.
+- **Small enough to audit.** ~4,300 lines of Python. Read all of it in an afternoon.
 - **Apache-2.0.**
 
 ## 60-second demo
@@ -87,6 +87,8 @@ halo-record is an evidence layer, not a certification. It produces the artifact 
 
 - **Security questionnaires and SOC 2 reviews:** answer the AI sections with a verifiable Runtime Report instead of screenshots and prose.
 - **AIUC-1:** continuous runtime evidence for agent-behavior requirements, instead of evidence reconstructed at audit time.
+- **OWASP (GenAI Security Project):** the runtime evidence behind the agent-behavior risks in the OWASP Top 10 for LLM Applications and the Agentic Security Initiative — excessive agency, tool misuse, sensitive-information disclosure — recorded as what the agent actually did, with which tools and data.
+- **AARM (CSA):** produces the tamper-evident action receipt AARM specifies (R5/R6) — chained and independently witnessed. halo-record is the receipt layer; pair it with an enforcement gateway for a full AARM system. See [`AARM.md`](AARM.md).
 - **EU AI Act:** logging and record-keeping obligations for high-risk AI systems.
 - **ISO 42001 / NIST AI RMF:** the operational evidence behind management-system controls.
 
