@@ -40,10 +40,10 @@ One line at the boundary:
 ```python
 from halo import trace
 
-agent = trace(run_my_agent, profile="my-agent")   # wraps your entrypoint; records every tool call
+agent = trace(run_my_agent, profile="my-agent", log="audit.jsonl")   # wraps your entrypoint; records every tool call to ./audit.jsonl
 ```
 
-or use the adapter for what you already run (see the matrix below). Then render the report:
+Without `log=`, records go to `~/.halo/my-agent.jsonl` (one chain per agent). Or use the adapter for what you already run (see the matrix below). Then render the report:
 
 ```
 halo report audit.jsonl -o report.html    # one chain -> self-verifying HTML
