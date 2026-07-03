@@ -6,7 +6,7 @@ the notary, designates recipients, and prints the exact links to open. It is the
 whole Halo loop in one shot — meant to be run live and screen-shared.
 
 Story it tells: a customer-support AI vendor runs a *scoped pilot* of its
-support agent ("Ferb") for two customers, Acme Corp and Initech. The agent
+support agent ("Globex") for two customers, Acme Corp and Initech. The agent
 works on each tenant's customer data — looks up accounts, drafts replies with
 an LLM, issues refunds — so the buyer's question is sharp: what exactly did
 this agent do with my customers' data, which model saw it, and was anything
@@ -29,7 +29,7 @@ from .record import TenantRecorder, build
 from . import access as _access
 from .serve import admin_key, load_secret, token_for
 
-AGENT = {"id": "ferb-agent", "name": "Ferb Support Agent", "model": "claude-opus-4-8"}
+AGENT = {"id": "globex-agent", "name": "Globex Support Agent", "model": "claude-opus-4-8"}
 
 # (subject, [actions]) — each action: (action_type, category, tool, tool_input,
 #  scope, decision, approver, outcome, source). ``source`` is the on-ramp that
@@ -61,7 +61,7 @@ _RUNTIME = {
          {"status": "ok", "summary": "reply sent to customer"}, "otel"),
         ("tool_call", "reliability", "mcp__jira__create_ticket",
          {"tenant": "acme-corp", "issue": "recurring billing bug behind ZD-30412"}, "mcp:jira", "allowed", None,
-         {"status": "ok", "summary": "escalation FERB-218 created"}, "langfuse"),
+         {"status": "ok", "summary": "escalation GLX-218 created"}, "langfuse"),
     ],
     ("initech", "Initech"): [
         ("read", "privacy", "mcp__crm__get_customer",
