@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://halo.dev/spec/v0.1/halo-record.schema.json",
+  "$id": "https://raw.githubusercontent.com/bkuan001/halo-record/main/src/halo_record/halo-record.schema.json",
   "title": "Halo Runtime Record",
   "description": "An append-only, tamper-evident record of a single AI-agent action. Schema v0.1.",
   "type": "object",

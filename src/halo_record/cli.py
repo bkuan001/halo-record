@@ -217,7 +217,7 @@ def main(argv=None):
                           help="path to a local append-only witness log "
                                "(omit when using --remote)")
     p_anchor.add_argument("--remote",
-                          help="URL of a hosted Halo witness (e.g. https://witness.halo.dev) "
+                          help="URL of a hosted Halo witness (e.g. https://witness.example) "
                                "to anchor to / check against instead of a local file")
     p_anchor.add_argument("--key",
                           help="vendor bearer key for --remote anchoring")
