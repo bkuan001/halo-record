@@ -66,6 +66,29 @@ Every record carries a `source` tag, so the report discloses how each piece of e
 
 Anything that emits OpenTelemetry GenAI spans (CrewAI, LlamaIndex, and most agent frameworks with OTel instrumentation) lands in the chain through the OTel adapter, and the [TypeScript package](https://github.com/bkuan001/halo-record-ts) ships native adapters for the Vercel AI SDK and the JS agent ecosystem. Missing an adapter for your stack? Open an issue. Most adapters are about a hundred lines.
 
+## Record your coding agent
+
+Claude Code fires a `PostToolUse` hook after every tool call. Point it at `halo hook` and each action — file writes, shell commands, MCP connector calls — becomes a record in a local chain. No code changes; one settings entry:
+
+```json
+{
+  "hooks": {
+    "PostToolUse": [
+      {"matcher": "*", "hooks": [{"type": "command", "command": "halo hook"}]}
+    ]
+  }
+}
+```
+
+Add that to `~/.claude/settings.json` and records land in `~/.halo/audit.jsonl` (override with `$HALO_LOG`). Pure-orchestration tools that touch no data, network, or external state are skipped — the chain records trust-boundary actions, not thinking. Set `HALO_HASH_ONLY=1` to record content hashes without summaries. Then, the usual:
+
+```
+halo verify ~/.halo/audit.jsonl
+halo report ~/.halo/audit.jsonl -o report.html
+```
+
+Any agent runtime that exposes a post-action hook can feed the same command — the hook reads one event as JSON on stdin and appends one record.
+
 ## Integrity vs. completeness (read this part)
 
 A self-held chain proves **integrity**: nothing was edited or reordered after the fact. It cannot prove **completeness**: the operator of a recorder can delete the bad day and re-seal the chain, or never write a record at all, and the chain stays internally consistent.
