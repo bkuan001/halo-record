@@ -135,6 +135,8 @@ halo hook     Claude Code PostToolUse hook
 
 To compute a record's hash: take the record excluding `integrity.hash`, with `integrity.prev_hash` set to the previous record's hash; canonicalize with RFC 8785 (JSON Canonicalization Scheme); SHA-256 the bytes. The first record's `prev_hash` is 64 zeros. Verification recomputes every hash and checks every link. No secret required; that is the point.
 
+Think you can tamper with a chain without the verifier noticing? [Attempts and results live here](https://github.com/bkuan001/halo-record/discussions/2).
+
 Full field reference: [`halo-record.schema.json`](src/halo_record/halo-record.schema.json).
 
 ## TypeScript
