@@ -67,6 +67,53 @@ class AuthorityTest(unittest.TestCase):
                 fh.write(json.dumps(row, separators=(",", ":")) + "\n")
         self.assertFalse(verify_log(path, out=_silent))
 
+    def test_repeated_authority_snapshot_is_compacted(self):
+        d = tempfile.mkdtemp()
+        path = os.path.join(d, "audit.jsonl")
+        rec = Recorder(path)
+        rec.append(build("tool_call", "security", tool="Read", authority=AUTHORITY))
+        rec.append(build("tool_call", "security", tool="Write", authority=AUTHORITY))
+
+        with open(path, "r", encoding="utf-8") as fh:
+            rows = [json.loads(line) for line in fh if line.strip()]
+
+        self.assertEqual(rows[0]["authority"]["refs"][0]["hash"], "sha256:claude-md")
+        self.assertEqual(
+            rows[1]["authority"],
+            {"snapshot_id": AUTHORITY["snapshot_id"], "same_as_previous": True},
+        )
+        self.assertEqual(validate_record(rows[1]), [])
+        self.assertTrue(verify_log(path, out=_silent))
+
+    def test_authority_compaction_uses_last_record_when_reopened(self):
+        d = tempfile.mkdtemp()
+        path = os.path.join(d, "audit.jsonl")
+        Recorder(path).append(build("tool_call", "security", tool="Read", authority=AUTHORITY))
+
+        reopened = Recorder(path)
+        reopened.append(build("tool_call", "security", tool="Write", authority=AUTHORITY))
+
+        with open(path, "r", encoding="utf-8") as fh:
+            rows = [json.loads(line) for line in fh if line.strip()]
+        self.assertTrue(rows[1]["authority"]["same_as_previous"])
+        self.assertTrue(verify_log(path, out=_silent))
+
+    def test_changed_authority_snapshot_is_not_compacted(self):
+        d = tempfile.mkdtemp()
+        path = os.path.join(d, "audit.jsonl")
+        rec = Recorder(path)
+        rec.append(build("tool_call", "security", tool="Read", authority=AUTHORITY))
+        changed = dict(AUTHORITY)
+        changed["snapshot_id"] = "auth_2026_07_08T1115Z"
+        rec.append(build("tool_call", "security", tool="Write", authority=changed))
+
+        with open(path, "r", encoding="utf-8") as fh:
+            rows = [json.loads(line) for line in fh if line.strip()]
+        self.assertEqual(rows[1]["authority"]["snapshot_id"], changed["snapshot_id"])
+        self.assertIn("refs", rows[1]["authority"])
+        self.assertNotIn("same_as_previous", rows[1]["authority"])
+        self.assertTrue(verify_log(path, out=_silent))
+
     def test_hook_loads_authority_file_without_blocking(self):
         d = tempfile.mkdtemp()
         auth_path = os.path.join(d, "authority.json")
