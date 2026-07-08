@@ -39,6 +39,55 @@
         "model_version": { "type": "string" }
       }
     },
+    "authority": {
+      "type": "object",
+      "description": "Privacy-safe snapshot of the effective rules, skills, tool registry, and context state that governed this run/action. Store hashes, refs, capabilities, and stale-if invalidators; do not store raw prompts, private policy text, secrets, or full tool schemas.",
+      "properties": {
+        "snapshot_id": { "type": "string", "description": "Stable id for this authority snapshot, e.g. auth_2026_07_08T1100Z." },
+        "captured_at": { "type": "string", "description": "RFC 3339 UTC timestamp when the authority snapshot was captured." },
+        "scope": { "type": "string", "description": "Scope of the snapshot, e.g. session, workspace, tool_call." },
+        "workspace": {
+          "type": "object",
+          "properties": {
+            "path_hash": { "type": "string" },
+            "git_remote_hash": { "type": "string" },
+            "git_commit": { "type": "string" },
+            "worktree_hash": { "type": "string" }
+          }
+        },
+        "refs": {
+          "type": "array",
+          "description": "Hash-only references to governing authority inputs such as CLAUDE.md, AGENTS.md, Skills, hooks, MCP server/tool registries, policies, or compaction settings.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "kind": { "type": "string" },
+              "id": { "type": "string" },
+              "uri": { "type": "string" },
+              "hash": { "type": "string" },
+              "version": { "type": "string" },
+              "loaded": { "type": "boolean" },
+              "truncated": { "type": "boolean" },
+              "shadowed_by": { "type": "string" }
+            }
+          }
+        },
+        "omissions": {
+          "type": "array",
+          "description": "Private authority inputs intentionally omitted from the record, described by type/ref only.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "kind": { "type": "string" },
+              "reason": { "type": "string" },
+              "hash": { "type": "string" }
+            }
+          }
+        },
+        "capture_limits": { "type": "array", "items": { "type": "string" } },
+        "stale_if": { "type": "array", "items": { "type": "string" } }
+      }
+    },
     "mcp": {
       "type": "object",
       "properties": {

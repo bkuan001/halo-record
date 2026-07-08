@@ -80,7 +80,30 @@ Claude Code fires a `PostToolUse` hook after every tool call. Point it at `halo 
 }
 ```
 
-Add that to `~/.claude/settings.json` and records land in `~/.halo/audit.jsonl` (override with `$HALO_LOG`). Pure-orchestration tools that touch no data, network, or external state are skipped — the chain records trust-boundary actions, not thinking. Set `HALO_HASH_ONLY=1` to record content hashes without summaries. Then, the usual:
+Add that to `~/.claude/settings.json` and records land in `~/.halo/audit.jsonl` (override with `$HALO_LOG`). Pure-orchestration tools that touch no data, network, or external state are skipped — the chain records trust-boundary actions, not thinking. Set `HALO_HASH_ONLY=1` to record content hashes without summaries.
+
+If you need the report to answer "under what rules did this run happen?", set `HALO_AUTHORITY_FILE` to a JSON snapshot of the effective authority for the session. Keep it privacy-safe: hashes and refs, not raw prompts, private policy text, secrets, or full tool schemas.
+
+```json
+{
+  "snapshot_id": "auth_2026_07_08T1100Z",
+  "captured_at": "2026-07-08T11:00:00Z",
+  "scope": "session",
+  "workspace": {"path_hash": "sha256:...", "git_commit": "abc1234"},
+  "refs": [
+    {"kind": "project_rules", "id": "CLAUDE.md", "hash": "sha256:...", "loaded": true, "truncated": false},
+    {"kind": "mcp_tool_registry", "id": "filesystem", "hash": "sha256:..."}
+  ],
+  "omissions": [{"kind": "private_policy", "reason": "customer_secret", "hash": "sha256:..."}],
+  "stale_if": ["project_rules_hash_changed", "mcp_tool_registry_hash_changed"]
+}
+```
+
+```sh
+HALO_AUTHORITY_FILE=./authority.json halo hook
+```
+
+The snapshot is sealed into the same hash chain as the action records. A good default is one session-level snapshot at start, plus a new snapshot when rules, Skills, hooks, MCP tool registries, or compaction policy change. Then, the usual:
 
 ```
 halo verify ~/.halo/audit.jsonl

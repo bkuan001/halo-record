@@ -74,7 +74,7 @@ def _norm_subject(subject):
 def build(action_type, category, tool=None, tool_input=None, *,
           session_id="local", agent=None, scope=None, decision="allowed",
           approver=None, findings=None, outcome=None, ts=None,
-          subject=None, source=None, summaries=True):
+          subject=None, source=None, authority=None, summaries=True):
     """Construct a v0.1 record (without integrity.hash filled in).
 
     ``tool_input`` is hashed (canonical) and, by default, a redacted summary is
@@ -82,7 +82,9 @@ def build(action_type, category, tool=None, tool_input=None, *,
     ``tool_input`` is given, the input is scanned automatically.
 
     ``subject`` (a str id or ``{"id", "name"}`` dict) tags the record with the
-    tenant/customer it belongs to — the segmentation key. ``summaries=False``
+    tenant/customer it belongs to — the segmentation key. ``authority`` may carry
+    a privacy-safe snapshot of the rules/tooling context that governed the run
+    (hashes and refs, not raw prompts or private policy text). ``summaries=False``
     drops every human-readable summary, leaving only hashes: a hash-only record
     safe to share across a trust boundary, since no payload text is stored.
     """
@@ -149,6 +151,8 @@ def build(action_type, category, tool=None, tool_input=None, *,
     source = normalize_source(source)
     if source is not None:
         record["source"] = source
+    if authority is not None:
+        record["authority"] = dict(authority)
     if outcome is not None:
         record["outcome"] = outcome
     return record
