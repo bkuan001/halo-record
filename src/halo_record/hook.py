@@ -16,6 +16,9 @@ Wire it up in ``~/.claude/settings.json``:
     }
 
 The log path is ``$HALO_LOG`` if set, else ``~/.halo/audit.jsonl``.
+Set ``HALO_AUTHORITY_FILE`` to a JSON file containing a privacy-safe authority
+snapshot (hashes/refs only) to stamp each captured Claude Code action with the
+rules and tool registry that governed the run.
 """
 
 import json
@@ -80,7 +83,25 @@ def log_path():
     return os.environ.get("HALO_LOG", os.path.expanduser("~/.halo/audit.jsonl"))
 
 
-def record_event(event, recorder, *, subject=None, summaries=True):
+def load_authority(path):
+    """Load an optional privacy-safe authority snapshot from JSON.
+
+    The file should contain hashes/refs/capability flags, not raw prompts,
+    customer policy text, secrets, or private tool arguments. Hook capture is
+    best-effort: malformed snapshots are ignored so the recorder never blocks
+    the agent.
+    """
+    if not path:
+        return None
+    try:
+        with open(os.path.expanduser(path), "r", encoding="utf-8") as fh:
+            data = json.load(fh)
+    except Exception:
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def record_event(event, recorder, *, subject=None, authority=None, summaries=True):
     """Build and append a record for one PostToolUse event. Returns the record,
     or None if the tool is skipped. An event-level ``subject`` overrides the
     caller-supplied default."""
@@ -99,6 +120,7 @@ def record_event(event, recorder, *, subject=None, summaries=True):
         scope=derive_scope(cls, tool_name),
         outcome=derive_outcome(event.get("tool_response")),
         subject=event.get("subject") or subject,
+        authority=event.get("authority") or authority,
         summaries=summaries,
     )
     recorder.append(record)
@@ -117,6 +139,7 @@ def main(argv=None):
     summaries = os.environ.get("HALO_HASH_ONLY", "") not in ("1", "true", "yes")
     subject = os.environ.get("HALO_SUBJECT")
     directory = os.environ.get("HALO_DIR")
+    authority = load_authority(os.environ.get("HALO_AUTHORITY_FILE"))
     if directory:
         # Per-tenant routing: each customer to their own chain.
         recorder = TenantRecorder(directory)
@@ -126,7 +149,7 @@ def main(argv=None):
         if parent and not os.path.isdir(parent):
             os.makedirs(parent, exist_ok=True)
         recorder = Recorder(path)
-    record_event(event, recorder, subject=subject, summaries=summaries)
+    record_event(event, recorder, subject=subject, authority=authority, summaries=summaries)
     return 0
 
 
