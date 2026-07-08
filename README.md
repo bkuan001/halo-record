@@ -103,7 +103,7 @@ If you need the report to answer "under what rules did this run happen?", set `H
 HALO_AUTHORITY_FILE=./authority.json halo hook
 ```
 
-The snapshot is sealed into the same hash chain as the action records. A good default is one session-level snapshot at start, plus a new snapshot when rules, Skills, hooks, MCP tool registries, or compaction policy change. Then, the usual:
+The snapshot is sealed into the same hash chain as the action records. A good default is one session-level snapshot at start, plus a new snapshot when rules, Skills, hooks, MCP tool registries, or compaction policy change. To keep long sessions lean, consecutive records with the same `authority.snapshot_id` are compacted after the first full snapshot: later records keep only `{"snapshot_id": "...", "same_as_previous": true}`. The pointer stays hash-chained, but the bulky refs/omissions/stale-if block is not repeated on every action. Then, the usual:
 
 ```
 halo verify ~/.halo/audit.jsonl

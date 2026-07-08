@@ -171,6 +171,7 @@ class Recorder:
         self.path = os.path.expanduser(path)
         self._lock = threading.Lock()
         self._last_hash = None
+        self._last_authority_snapshot_id = None
 
     def last_hash(self):
         if self._last_hash is not None:
@@ -190,15 +191,53 @@ class Recorder:
         except Exception:
             return GENESIS_PREV
 
+    def last_authority_snapshot_id(self):
+        if self._last_authority_snapshot_id is not None:
+            return self._last_authority_snapshot_id
+        if not os.path.exists(self.path):
+            return None
+        last = None
+        with open(self.path, "rb") as fh:
+            for line in fh:
+                if line.strip():
+                    last = line
+        if last is None:
+            return None
+        try:
+            rec = json.loads(last)
+        except Exception:
+            return None
+        authority = rec.get("authority")
+        if isinstance(authority, dict):
+            return authority.get("snapshot_id")
+        return None
+
+    @staticmethod
+    def _dedupe_authority(record, previous_snapshot_id):
+        authority = record.get("authority")
+        if not isinstance(authority, dict):
+            return None
+        snapshot_id = authority.get("snapshot_id")
+        if snapshot_id and snapshot_id == previous_snapshot_id:
+            record["authority"] = {
+                "snapshot_id": snapshot_id,
+                "same_as_previous": True,
+            }
+        return snapshot_id
+
     def append(self, record):
         with self._lock:
             prev = self.last_hash()
+            authority_snapshot_id = self._dedupe_authority(
+                record, self.last_authority_snapshot_id()
+            )
             record.setdefault("integrity", {})
             record["integrity"]["prev_hash"] = prev
             record["integrity"]["hash"] = compute_hash(record, prev)
             with open(self.path, "a", encoding="utf-8") as fh:
                 fh.write(json.dumps(record, separators=(",", ":")) + "\n")
             self._last_hash = record["integrity"]["hash"]
+            self._last_authority_snapshot_id = authority_snapshot_id
         return record
 
 
