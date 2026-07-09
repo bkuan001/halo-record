@@ -19,6 +19,9 @@ The log path is ``$HALO_LOG`` if set, else ``~/.halo/audit.jsonl``.
 Set ``HALO_AUTHORITY_FILE`` to a JSON file containing a privacy-safe authority
 snapshot (hashes/refs only) to stamp each captured Claude Code action with the
 rules and tool registry that governed the run.
+Set ``HALO_AGENT_VERSION`` and ``HALO_AGENT_MODEL`` to bind each record to the
+agent build and model that produced it, so exports can answer "which version
+was running?" for any audit window.
 """
 
 import json
@@ -83,6 +86,26 @@ def log_path():
     return os.environ.get("HALO_LOG", os.path.expanduser("~/.halo/audit.jsonl"))
 
 
+def hook_agent(event=None):
+    """Agent identity for captured records, with best-effort version binding.
+
+    Version/model come from the event when present, else from
+    ``HALO_AGENT_VERSION`` / ``HALO_AGENT_MODEL``. Optional by design: a
+    record without them still verifies, but only a versioned record can say
+    which agent build it describes."""
+    agent = {"id": "claude-code", "name": "claude-code"}
+    event_agent = (event or {}).get("agent")
+    if isinstance(event_agent, dict):
+        agent.update({k: v for k, v in event_agent.items() if isinstance(v, str)})
+    version = os.environ.get("HALO_AGENT_VERSION")
+    model = os.environ.get("HALO_AGENT_MODEL")
+    if version and "version" not in agent:
+        agent["version"] = version
+    if model and "model" not in agent:
+        agent["model"] = model
+    return agent
+
+
 def load_authority(path):
     """Load an optional privacy-safe authority snapshot from JSON.
 
@@ -116,7 +139,7 @@ def record_event(event, recorder, *, subject=None, authority=None, summaries=Tru
         tool=tool_name,
         tool_input=tool_input,
         session_id=event.get("session_id") or "local",
-        agent={"id": "claude-code", "name": "claude-code"},
+        agent=hook_agent(event),
         scope=derive_scope(cls, tool_name),
         outcome=derive_outcome(event.get("tool_response")),
         subject=event.get("subject") or subject,

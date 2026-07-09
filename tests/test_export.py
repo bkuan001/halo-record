@@ -12,7 +12,7 @@ def _silent(*args, **kwargs):
     pass
 
 
-def _chain(path, days):
+def _chain(path, days, agent=None):
     rec = Recorder(path)
     for i, day in enumerate(days):
         rec.append(
@@ -22,6 +22,7 @@ def _chain(path, days):
                 tool="Bash",
                 tool_input={"n": i},
                 subject="acme-corp",
+                agent=agent,
                 ts=f"2026-06-{day:02d}T12:00:00+00:00",
                 outcome={"status": "ok"},
             )
@@ -95,6 +96,35 @@ class ExportTest(unittest.TestCase):
             manifest = json.load(fh)
         self.assertEqual(manifest["window_records"], 0)
         self.assertEqual(manifest["chain"]["total_records"], 2)
+
+    def test_version_binding_surfaces_in_csv(self):
+        log, out = self._paths()
+        _chain(
+            log,
+            [1, 2],
+            agent={
+                "id": "support-bot",
+                "name": "support-bot",
+                "version": "1.4.2",
+                "model": "claude-sonnet-4-6",
+                "model_version": "20251001",
+            },
+        )
+        export(log, out, out=_silent)
+        with open(out, newline="") as fh:
+            rows = list(csv.DictReader(fh))
+        self.assertEqual(rows[0]["agent_version"], "1.4.2")
+        self.assertEqual(rows[0]["model"], "claude-sonnet-4-6")
+        self.assertEqual(rows[0]["model_version"], "20251001")
+
+    def test_unversioned_records_export_empty_binding(self):
+        log, out = self._paths()
+        _chain(log, [1])
+        export(log, out, out=_silent)
+        with open(out, newline="") as fh:
+            rows = list(csv.DictReader(fh))
+        self.assertIn("agent_version", rows[0])
+        self.assertEqual(rows[0]["agent_version"], "")
 
     def test_no_bounds_exports_everything(self):
         log, out = self._paths()

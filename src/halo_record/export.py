@@ -13,6 +13,11 @@ should never outlive the integrity of its source.
 
 Dates are inclusive: ``--from 2026-06-01 --to 2026-06-30`` covers the whole
 of June 30. Timestamps are compared in UTC.
+
+Rows carry the agent build and model that produced them (``agent_version``,
+``model``, ``model_version``) whenever the chain recorded those fields — an
+audit answer is only as strong as its binding to the version that was
+actually running during the window.
 """
 
 import csv
@@ -28,6 +33,9 @@ CSV_COLUMNS = [
     "session_id",
     "subject",
     "agent",
+    "agent_version",
+    "model",
+    "model_version",
     "action_type",
     "category",
     "tool",
@@ -102,6 +110,9 @@ def _row(record):
         "session_id": record.get("session_id", ""),
         "subject": subject.get("id", ""),
         "agent": agent.get("name") or agent.get("id", ""),
+        "agent_version": agent.get("version", ""),
+        "model": agent.get("model", ""),
+        "model_version": agent.get("model_version", ""),
         "action_type": action.get("type", ""),
         "category": action.get("category", ""),
         "tool": action.get("tool", ""),

@@ -80,7 +80,7 @@ Claude Code fires a `PostToolUse` hook after every tool call. Point it at `halo 
 }
 ```
 
-Add that to `~/.claude/settings.json` and records land in `~/.halo/audit.jsonl` (override with `$HALO_LOG`). Pure-orchestration tools that touch no data, network, or external state are skipped — the chain records trust-boundary actions, not thinking. Set `HALO_HASH_ONLY=1` to record content hashes without summaries.
+Add that to `~/.claude/settings.json` and records land in `~/.halo/audit.jsonl` (override with `$HALO_LOG`). Pure-orchestration tools that touch no data, network, or external state are skipped — the chain records trust-boundary actions, not thinking. Set `HALO_HASH_ONLY=1` to record content hashes without summaries. Set `HALO_AGENT_VERSION` (and optionally `HALO_AGENT_MODEL`) to bind every record to the agent build that produced it — when an auditor asks about the version that was running in a given window, the export answers by column instead of by recollection.
 
 If you need the report to answer "under what rules did this run happen?", set `HALO_AUTHORITY_FILE` to a JSON snapshot of the effective authority for the session. Keep it privacy-safe: hashes and refs, not raw prompts, private policy text, secrets, or full tool schemas.
 
