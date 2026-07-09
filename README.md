@@ -135,6 +135,7 @@ halo-record is an evidence layer, not a certification. It produces the artifact 
 - **AIUC-1:** continuous runtime evidence for agent-behavior requirements, instead of evidence reconstructed at audit time.
 - **OWASP (GenAI Security Project):** the runtime evidence behind the agent-behavior risks in the OWASP Top 10 for LLM Applications and the Agentic Security Initiative — excessive agency, tool misuse, sensitive-information disclosure — recorded as what the agent actually did, with which tools and data.
 - **AARM (CSA):** produces the tamper-evident action receipt AARM specifies (R5/R6) — chained and independently witnessed. halo-record is the receipt layer; pair it with an enforcement gateway for a full AARM system. See [`AARM.md`](AARM.md).
+- **Agentic Trust Controls:** the runtime records behind the ATC's evidence controls — tamper-evident action logging (RBM-03) and authority attestation (AID-05) in one chained record, with the witness layer beyond both. See [`ATC.md`](ATC.md).
 - **EU AI Act:** logging and record-keeping obligations for high-risk AI systems.
 - **ISO 42001 / NIST AI RMF:** the operational evidence behind management-system controls.
 
