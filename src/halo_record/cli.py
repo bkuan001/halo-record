@@ -53,6 +53,18 @@ def _cmd_hash(args):
     return 0
 
 
+def _cmd_export(args):
+    from .export import export, parse_bound
+    try:
+        start = parse_bound(getattr(args, "from"), end=False)
+        end = parse_bound(args.to, end=True)
+    except ValueError as e:
+        print(e)
+        return 2
+    return export(args.log, args.out, start=start, end=end,
+                  manifest_path=args.manifest)
+
+
 def _cmd_hook(args):
     from .hook import main as hook_main
     return hook_main()
@@ -174,6 +186,22 @@ def main(argv=None):
     p_hash = sub.add_parser("hash", help="print the canonical sha256: hash of a JSON value")
     p_hash.add_argument("json", help="a JSON document, e.g. '{\"query\":\"x\"}'")
     p_hash.set_defaults(func=_cmd_hash)
+
+    p_export = sub.add_parser(
+        "export",
+        help="date-bounded, workpaper-ready evidence export: CSV (one row per "
+             "record) + a manifest tying it to the chain head; refuses to run "
+             "on a chain that fails verification")
+    p_export.add_argument("log", help="path to a JSONL chain")
+    p_export.add_argument("--from", dest="from", default=None,
+                          help="inclusive start (YYYY-MM-DD or RFC 3339)")
+    p_export.add_argument("--to", default=None,
+                          help="inclusive end (YYYY-MM-DD covers the whole day)")
+    p_export.add_argument("-o", "--out", default="evidence.csv",
+                          help="CSV output path (default: evidence.csv)")
+    p_export.add_argument("--manifest", default=None,
+                          help="manifest path (default: <out>.manifest.json)")
+    p_export.set_defaults(func=_cmd_export)
 
     p_hook = sub.add_parser(
         "hook",

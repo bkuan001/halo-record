@@ -149,6 +149,7 @@ halo serve    serve per-tenant reports over HTTP, access-scoped per customer
 halo grant    designate a report recipient (email or domain)
 halo anchor   witness a chain head, or --check completeness
 halo demo     scaffold the full vendor demo (record -> witness -> gated report)
+halo export   date-bounded evidence export: CSV + manifest tied to the chain head
 halo sample   emit a valid example log
 halo hash     canonical sha256 of a JSON value
 halo hook     Claude Code PostToolUse hook
