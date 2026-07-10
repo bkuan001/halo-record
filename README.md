@@ -2,7 +2,7 @@
 
 Tamper-evident **runtime records for AI agents**: the audit trail the vendor runs but cannot edit.
 
-Every action your agent takes (tool calls, model calls, data access, approvals) becomes one record in an append-only, hash-chained log. Any party can verify the log was never altered, without trusting whoever produced it. When a customer's security team asks "what did your agent do with our data?", you hand them a link instead of a paragraph. Security reviews already ask AI questions next to the SOC 2 checklist, and today a written assurance still passes. The bet behind this project is that it won't for long.
+Every action your agent takes (tool calls, model calls, data access, approvals) becomes one record in an append-structured, hash-chained log. Any party holding a checkpoint of the chain can verify the records behind it were never altered, without trusting whoever produced them. When a customer's security team asks "what did your agent do with our data?", you hand them a link instead of a paragraph. Security reviews already ask AI questions next to the SOC 2 checklist, and today a written assurance still passes. The bet behind this project is that it won't for long.
 
 The record format is open and free to implement. This package is the reference implementation: recorder, verifier, witness client, and report server.
 
@@ -114,16 +114,27 @@ Any agent runtime that exposes a post-action hook can feed the same command — 
 
 ## Integrity vs. completeness (read this part)
 
-A self-held chain proves **integrity**: nothing was edited or reordered after the fact. It cannot prove **completeness**: the operator of a recorder can delete the bad day and re-seal the chain, or never write a record at all, and the chain stays internally consistent.
+Be precise about what each layer proves — because they are different claims, and the differences are the point:
 
-Completeness requires a party outside the operator's control holding periodic fingerprints of the chain (a count and a head hash, nothing else). That is the witness:
+A self-held chain proves **integrity relative to an established head**: given a chain head someone already holds, any edit, reordering, or deletion in the records behind it becomes detectable. By itself — before anyone outside the operator has seen a head — a chain proves internal consistency, not history: an operator could drop a record and re-seal, and the new file would verify. The chain becomes **historically committed** the moment its head leaves the operator's control.
+
+That is the witness: a party outside the operator holding periodic fingerprints of the chain (a count and a head hash, nothing else). Checkpoints make rewriting committed history detectable, and a missed checkpoint is itself a visible event:
 
 ```
 halo anchor audit.jsonl witness.jsonl           # anchor a checkpoint to a local witness
 halo anchor audit.jsonl witness.jsonl --check   # completeness verdict against it
 ```
 
-Anyone can run a witness. A witness you run yourself proves integrity to *you*; proving completeness to *your customer* requires a witness they have reason to trust. The protocol is open either way.
+One more boundary, stated plainly: neither the chain nor the witness proves that every real-world action passed through the recorder. That is **capture completeness** — a property of where the recorder sits in the stack (native instrumentation, hooks, gateway ingestion), not of any hash. Records carry a `source` tag for exactly this reason.
+
+| Claim | Self-held chain | + External checkpoints | + Trusted capture |
+|---|---|---|---|
+| Detect edits to an established artifact | ✔ | ✔ | ✔ |
+| Detect rewriting of committed history | — | ✔ | ✔ |
+| Detect missing/late checkpoints | — | ✔ (agreed cadence) | ✔ |
+| Prove every action was recorded | — | — | depends on capture boundary |
+
+Anyone can run a witness. A witness you run yourself commits history to *you*; committing it to *your customer* requires a witness they have reason to trust. The protocol is open either way.
 
 A hosted, recognized witness is how this project will sustain itself. Early access: bkuan001@gmail.com.
 
