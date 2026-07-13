@@ -386,6 +386,7 @@ border:1px solid var(--line);border-radius:12px;overflow:hidden}
 th{text-align:left;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--dim);
 font-weight:600;padding:11px 12px;border-bottom:1px solid var(--line);background:#fdfbf7}
 td{padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+td:first-child{white-space:nowrap}
 tr:last-child td{border-bottom:none}
 .mono{font-family:"SF Mono",ui-monospace,Menlo,monospace;font-size:12px}
 .dim{color:var(--dim)}
@@ -404,7 +405,7 @@ background:var(--neutral-bg);color:var(--ink)}
 border-radius:10px;padding:11px 14px}
 .prov .pill{flex:none}
 .prov-via{font-size:13px;font-weight:500;color:var(--ink);flex:1;min-width:0}
-.prov-n{font-size:12px;color:var(--dim);white-space:nowrap}
+.prov-n{font-size:12px;color:var(--dim);white-space:nowrap;margin-left:8px}
 .prov-note{margin:0 0 30px}
 footer{margin-top:42px;color:var(--dim);font-size:12px;text-align:center}
 footer a{color:var(--gold);text-decoration:none}
