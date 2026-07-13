@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "halo-record"
-version = "0.2.6"
+version = "0.2.7"
 description = "Open, tamper-evident runtime records for AI agents: the Halo Runtime Record format, with a dependency-free conformance verifier."
 readme = "README.md"
 requires-python = ">=3.8"
