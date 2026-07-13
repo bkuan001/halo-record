@@ -21,6 +21,7 @@ agent* in a pilot — not a cold prospect. That's the honest moment for this
 artifact: a buyer with real exposure deciding whether to expand.
 """
 
+import datetime
 import os
 import tempfile
 
@@ -31,43 +32,45 @@ from .serve import admin_key, load_secret, token_for
 
 AGENT = {"id": "globex-agent", "name": "Globex Support Agent", "model": "claude-opus-4-8"}
 
-# (subject, [actions]) — each action: (action_type, category, tool, tool_input,
-#  scope, decision, approver, outcome, source). ``source`` is the on-ramp that
-#  observed the call; the demo deliberately mixes captured (recorder, mcp) and
-#  ingested (otel, litellm, langfuse, gateway) sources so the Runtime Report
-#  shows honest, varied provenance. The action mix answers the buyer's
-#  universal questions: tenant isolation, model-provider disclosure (with
-#  zero-data-retention), human review before sensitive actions, and residency.
+# (subject, [actions]) — each action: (hours_ago, action_type, category, tool,
+#  tool_input, scope, decision, approver, outcome, source). ``hours_ago``
+#  backdates the record relative to scaffold time, so the pilot reads as a
+#  believable few days of activity rather than a single instant. ``source`` is
+#  the on-ramp that observed the call; the demo deliberately mixes captured
+#  (recorder, mcp) and ingested (otel, litellm, langfuse, gateway) sources so
+#  the Runtime Report shows honest, varied provenance. The action mix answers
+#  the buyer's universal questions: tenant isolation, model-provider disclosure
+#  (with zero-data-retention), human review before sensitive actions, and residency.
 _RUNTIME = {
     ("acme-corp", "Acme Corp"): [
-        ("read", "privacy", "mcp__crm__get_customer",
+        (50.4, "read", "privacy", "mcp__crm__get_customer",
          {"tenant": "acme-corp", "customer": "cust_8841", "region": "us-east-1"}, "mcp:crm", "allowed", None,
          {"status": "ok", "summary": "looked up account + order history, tenant-scoped"}, "mcp"),
-        ("read", "privacy", "mcp__zendesk__get_ticket",
+        (50.3, "read", "privacy", "mcp__zendesk__get_ticket",
          {"tenant": "acme-corp", "ticket": "ZD-30412"}, "mcp:zendesk", "allowed", None,
          {"status": "ok", "summary": "read ticket thread (4 messages)"}, "recorder"),
-        ("tool_call", "privacy", "model.generate",
+        (28.7, "tool_call", "privacy", "model.generate",
          {"provider": "anthropic", "model": "claude-opus-4-8", "zdr": True,
           "purpose": "draft reply to ticket ZD-30412", "messages": 6},
          "model:anthropic", "allowed", None,
          {"status": "ok", "summary": "reply drafted (zero-data-retention)"}, "litellm"),
-        ("write", "safety", "refund.issue",
+        (22.9, "write", "safety", "refund.issue",
          {"tenant": "acme-corp", "order": "ord_2291", "amount_usd": 48}, "billing.write",
          "human_approved", "casey.lead@support.example",
          {"status": "ok", "summary": "$48 refund issued after human approval"}, "recorder"),
-        ("network", "security", "email.send",
+        (4.2, "network", "security", "email.send",
          {"tenant": "acme-corp", "to_domain": "acme-corp.com", "ticket": "ZD-30412"}, "network",
          "allowed", None,
          {"status": "ok", "summary": "reply sent to customer"}, "otel"),
-        ("tool_call", "reliability", "mcp__jira__create_ticket",
+        (1.6, "tool_call", "reliability", "mcp__jira__create_ticket",
          {"tenant": "acme-corp", "issue": "recurring billing bug behind ZD-30412"}, "mcp:jira", "allowed", None,
          {"status": "ok", "summary": "escalation GLX-218 created"}, "langfuse"),
     ],
     ("initech", "Initech"): [
-        ("read", "privacy", "mcp__crm__get_customer",
+        (31.5, "read", "privacy", "mcp__crm__get_customer",
          {"tenant": "initech", "customer": "cust_1102", "region": "us-west-2"}, "mcp:crm", "allowed", None,
          {"status": "ok", "summary": "looked up account, tenant-scoped"}, "gateway"),
-        ("tool_call", "privacy", "model.generate",
+        (6.8, "tool_call", "privacy", "model.generate",
          {"provider": "anthropic", "model": "claude-opus-4-8", "zdr": True,
           "purpose": "summarize ticket backlog", "messages": 3},
          "model:anthropic", "allowed", None,
@@ -78,13 +81,16 @@ _RUNTIME = {
 
 def emit_runtime(directory):
     """Write the demo runtime through the real per-tenant recorder."""
+    now = datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0)
     rec = TenantRecorder(directory)
     counts = {}
     for (sid, sname), actions in _RUNTIME.items():
-        for (atype, cat, tool, tinput, scope, decision, approver, outcome, source) in actions:
+        for (hours_ago, atype, cat, tool, tinput, scope, decision, approver,
+             outcome, source) in actions:
+            ts = (now - datetime.timedelta(hours=hours_ago)).isoformat()
             record = build(
                 atype, cat, tool=tool, tool_input=tinput,
-                session_id="demo-" + sid,
+                session_id="demo-" + sid, ts=ts,
                 agent=AGENT, scope=scope, decision=decision, approver=approver,
                 outcome=outcome, subject={"id": sid, "name": sname}, source=source)
             rec.append(record)
