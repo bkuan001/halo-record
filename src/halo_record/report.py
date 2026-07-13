@@ -41,12 +41,28 @@ def _subject_id(records):
     return None
 
 
-def _agent_label(records):
+def _agents(records):
+    """Ordered distinct agent labels across the chain (a vendor often runs
+    more than one agent against the same tenant)."""
+    seen = []
     for r in records:
         a = r.get("agent") or {}
-        if a.get("name") or a.get("id"):
-            return a.get("name") or a.get("id")
-    return "unknown"
+        label = a.get("name") or a.get("id")
+        if label and label not in seen:
+            seen.append(label)
+    return seen
+
+
+def _agent_meta(agents):
+    """The header fragment: one agent keeps the classic label; a fleet is
+    counted and named."""
+    if not agents:
+        return "Agent <b>unknown</b>"
+    if len(agents) == 1:
+        return "Agent <b>%s</b>" % _esc(agents[0])
+    shown = ", ".join("<b>%s</b>" % _esc(a) for a in agents[:4])
+    more = " (+%d more)" % (len(agents) - 4) if len(agents) > 4 else ""
+    return "%d agents: %s%s" % (len(agents), shown, more)
 
 
 def _fmt_ts(ts):
@@ -127,7 +143,7 @@ def _provenance(records):
     return panel, True, n_cap, n_ing
 
 
-def _row(r):
+def _row(r, show_agent=False):
     action = r.get("action", {})
     auth = action.get("authorization") or {}
     outcome = r.get("outcome") or {}
@@ -148,9 +164,13 @@ def _row(r):
             tier, _esc(_CAP_TITLE.get(cap, "")), _esc(src.get("adapter") or cap))
     else:
         source_cell = '<span class="dim">—</span>'
+    a = r.get("agent") or {}
+    agent_cell = ('<td class="mono">%s</td>' % _esc(a.get("name") or a.get("id") or "—")
+                  if show_agent else "")
     return (
         "<tr>"
         '<td class="mono dim">%s</td>'
+        "%s"
         '<td class="mono">%s</td>'
         '<td>%s</td>'
         '<td>%s</td>'
@@ -163,6 +183,7 @@ def _row(r):
         "</tr>"
     ) % (
         _esc(_fmt_ts(r.get("ts"))),
+        agent_cell,
         _esc(action.get("tool") or "—"),
         _esc(action.get("type") or "—"),
         source_cell,
@@ -179,6 +200,7 @@ def _row(r):
 
 _VERIFY_JS = r"""
 const GENESIS = "%(genesis)s";
+const WINDOW = %(window_json)s;
 function canon(v){
   if (v === true) return "true";
   if (v === false) return "false";
@@ -218,17 +240,30 @@ async function verify(records){
 function completeness(records, cps){
   // Assumes the chain already verified. Mirrors anchor.verify_completeness:
   // every head the notary independently witnessed must still be present here.
+  // In a windowed report only the checkpoints that land inside the window can
+  // be re-checked in the browser; the ones before/beyond it are disclosed.
   if (!cps.length) return {ok:null};
   const latest = Math.max.apply(null, cps.map(c => c.count));
-  if (records.length < latest)
+  if (!WINDOW && records.length < latest)
     return {ok:false, why:"truncated below witnessed length", have:records.length, witnessed:latest};
+  let inWin = 0, before = 0, beyond = 0;
   for (const c of cps){
     const n = c.count;
-    if (n < 1 || n > records.length) return {ok:false, why:"witnessed count out of range", at:n};
-    const h = (records[n-1].integrity || {}).hash;
-    if (h !== c.head) return {ok:false, why:"record altered or dropped before witnessed point", at:n};
+    if (WINDOW){
+      if (n < WINDOW.first){ before++; continue; }
+      if (n > WINDOW.last){ beyond++; continue; }
+      const h = (records[n - WINDOW.first].integrity || {}).hash;
+      if (h !== c.head) return {ok:false, why:"record altered or dropped before witnessed point", at:n};
+      inWin++;
+    } else {
+      if (n < 1 || n > records.length) return {ok:false, why:"witnessed count out of range", at:n};
+      const h = (records[n-1].integrity || {}).hash;
+      if (h !== c.head) return {ok:false, why:"record altered or dropped before witnessed point", at:n};
+    }
   }
-  return {ok:true, witnessed:cps.length, latest:latest};
+  if (WINDOW && !inWin)
+    return {ok:null, windowed:true, before:before, beyond:beyond};
+  return {ok:true, witnessed:cps.length, latest:latest, inWin:inWin, before:before, beyond:beyond};
 }
 async function liveCheckpoints(cfg, embedded){
   // Completeness must be checked against the notary, not against checkpoints the
@@ -261,7 +296,13 @@ async function liveCheckpoints(cfg, embedded){
   }
   try {
     const res = await verify(records);
-    if (res.ok){
+    if (res.ok && WINDOW){
+      el.className = "verdict ok";
+      el.innerHTML = "&#10003; Verified in your browser — records " + WINDOW.first +
+        "&ndash;" + WINDOW.last + " of " + WINDOW.total +
+        ", window chain intact relative to its anchor. <span class='dim'>window head " +
+        res.head.slice(0,16) + "&hellip;</span>";
+    } else if (res.ok){
       el.className = "verdict ok";
       el.innerHTML = "&#10003; Verified in your browser — " + records.length +
         " records, hash chain intact. <span class='dim'>chain head " +
@@ -283,10 +324,24 @@ async function liveCheckpoints(cfg, embedded){
   const note = src.error
     ? " <span class='dim'>(couldn't reach the live witness — checked the embedded snapshot instead)</span>"
     : "";
-  if (comp.ok === null){
+  if (comp.ok === null && comp.windowed){
+    cel.className = "verdict neutral";
+    cel.innerHTML = "No witness checkpoint falls inside this window — window integrity is " +
+      "verified against its anchor above" +
+      (comp.beyond ? "; the chain is witnessed beyond this window" : "") +
+      (comp.before ? "; " + comp.before + " checkpoint(s) precede the window" : "") +
+      "." + note;
+  } else if (comp.ok === null){
     cel.className = "verdict neutral";
     cel.innerHTML = "Not yet anchored — no independent witness exists for this report. " +
       "Completeness rests on the vendor alone until Halo witnesses the chain." + note;
+  } else if (comp.ok && WINDOW){
+    cel.className = "verdict ok";
+    cel.innerHTML = "&#10003; Complete within window &mdash; " + witness + " confirmed " + comp.inWin +
+      " checkpoint(s) inside this window" +
+      (comp.beyond ? "; chain continues beyond the window (witnessed to record " + comp.latest + ")" : "") +
+      (comp.before ? "; " + comp.before + " earlier checkpoint(s) precede it" : "") +
+      ". No witnessed record in this window has been dropped or altered." + note;
   } else if (comp.ok){
     cel.className = "verdict ok";
     cel.innerHTML = "&#10003; Complete &mdash; " + witness + " confirmed " + comp.witnessed +
@@ -373,7 +428,7 @@ def _policy_block(records, policy, subject):
             % verdict_panel(result, subject=subject, show_pills=False))
 
 
-def render(records, checkpoints=None, *, witness_url=None, policy=None):
+def render(records, checkpoints=None, *, witness_url=None, policy=None, window=None):
     """Return the full HTML for a runtime-record report over ``records``.
 
     If ``checkpoints`` (a list of notary witnesses for this chain) is given, the
@@ -385,16 +440,23 @@ def render(records, checkpoints=None, *, witness_url=None, policy=None):
 
     If ``policy`` (a list of rule dicts) is given, a deterministic
     policy-corroboration verdict is rendered beside the integrity/completeness
-    verdicts."""
+    verdicts.
+
+    If ``window`` is given (see ``write_report``), the page carries only the
+    windowed records: in-browser verification is seeded with the window's
+    anchor (the chain head immediately before the window) instead of genesis,
+    and the window's position in the full chain is disclosed on the page."""
     checkpoints = checkpoints or []
     subject = _subject_label(records)
-    agent = _agent_label(records)
+    agents = _agents(records)
+    multi_agent = len(agents) > 1
     stats = _summary_stats(records)
-    rows = "\n".join(_row(r) for r in records) or (
-        '<tr><td colspan="10" class="dim" style="padding:24px;text-align:center">'
+    rows = "\n".join(_row(r, show_agent=multi_agent) for r in records) or (
+        '<tr><td colspan="%d" class="dim" style="padding:24px;text-align:center">'
         "No actions recorded yet — this report populates as the agent operates."
-        "</td></tr>"
+        "</td></tr>" % (11 if multi_agent else 10)
     )
+    agent_th = "<th>Agent</th>" if multi_agent else ""
     prov_panel, prov_present, n_cap, n_ing = _provenance(records)
     if prov_present:
         if n_ing and n_cap:
@@ -430,7 +492,31 @@ def render(records, checkpoints=None, *, witness_url=None, policy=None):
     config_json = json.dumps(
         {"witnessUrl": witness_url, "subject": _subject_id(records)},
         separators=(",", ":")).replace("<", "\\u003c")
-    verify_js = _VERIFY_JS % {"genesis": GENESIS_PREV}
+    if window:
+        window_json = json.dumps(
+            {"first": window["first"], "last": window["last"], "total": window["total"]},
+            separators=(",", ":"))
+        verify_js = _VERIFY_JS % {"genesis": window["anchor"] or GENESIS_PREV,
+                                  "window_json": window_json}
+        bounds = " to ".join(x for x in [window.get("from"), window.get("to")] if x)
+        if window["last"]:
+            span = "records <b>%s&ndash;%s</b> of a <b>%s</b>-record chain" % (
+                window["first"], window["last"], window["total"])
+        else:
+            span = "<b>0</b> of the chain's <b>%s</b> records fall in this window" % window["total"]
+        window_block = (
+            '<div class="verdict neutral">Date-windowed report &mdash; showing %s%s. '
+            'Window integrity verifies in your browser against its anchor '
+            '<span class="mono">%s&hellip;</span>; the full chain verified at generation '
+            '<span class="mono">(head %s&hellip;)</span>. Records outside the window are '
+            'not embedded in this page.</div>'
+            % (span,
+               (" (%s)" % _esc(bounds)) if bounds else "",
+               _esc((window["anchor"] or GENESIS_PREV)[:16]),
+               _esc((window["chain_head"] or "")[:16])))
+    else:
+        verify_js = _VERIFY_JS % {"genesis": GENESIS_PREV, "window_json": "null"}
+        window_block = ""
 
     return """<!doctype html>
 <html lang="en"><head>
@@ -442,9 +528,10 @@ def render(records, checkpoints=None, *, witness_url=None, policy=None):
 </head><body><div class="wrap">
 <div class="eyebrow">Halo Runtime Record</div>
 <h1>%(subject)s</h1>
-<div class="meta">Agent <b>%(agent)s</b> &middot; %(start)s &ndash; %(end)s &middot; <b>%(total)s</b> recorded actions</div>
+<div class="meta">%(agent_meta)s &middot; %(start)s &ndash; %(end)s &middot; <b>%(total)s</b> recorded actions</div>
 <div id="verdict" class="verdict neutral">Verifying hash chain&hellip;</div>
 <div id="completeness" class="verdict neutral">Checking completeness against the independent witness&hellip;</div>
+%(window_block)s
 <div class="note">This report re-computes its own SHA-256 / RFC 8785 hash chain in your browser (integrity) and checks it against Halo's independent witness (completeness) — neither is something you take on trust.</div>
 %(policy_block)s
 <div class="cards">
@@ -458,7 +545,7 @@ def render(records, checkpoints=None, *, witness_url=None, policy=None):
 %(provenance_block)s
 <h2>Activity</h2>
 <table>
-<thead><tr><th>Time (UTC)</th><th>Tool</th><th>Type</th><th>Source</th><th>Scope</th><th>Decision</th><th>Outcome</th><th>Findings</th><th>Summary</th><th>Hash</th></tr></thead>
+<thead><tr><th>Time (UTC)</th>%(agent_th)s<th>Tool</th><th>Type</th><th>Source</th><th>Scope</th><th>Decision</th><th>Outcome</th><th>Findings</th><th>Summary</th><th>Hash</th></tr></thead>
 <tbody>
 %(rows)s
 </tbody></table>
@@ -470,7 +557,8 @@ def render(records, checkpoints=None, *, witness_url=None, policy=None):
 <script>%(verify_js)s</script>
 </body></html>""" % {
         "subject": _esc(subject),
-        "agent": _esc(agent),
+        "agent_meta": _agent_meta(agents),
+        "agent_th": agent_th,
         "style": _STYLE,
         "start": _esc(stats["start"]),
         "end": _esc(stats["end"]),
@@ -481,6 +569,7 @@ def render(records, checkpoints=None, *, witness_url=None, policy=None):
         "scope_pills": scope_pills,
         "provenance_block": provenance_block,
         "policy_block": policy_block,
+        "window_block": window_block,
         "rows": rows,
         "records_json": records_json,
         "checkpoints_json": checkpoints_json,
@@ -490,13 +579,21 @@ def render(records, checkpoints=None, *, witness_url=None, policy=None):
 
 
 def write_report(log_path, out_path=None, witness_log=None, witness_url=None,
-                 policy_path=None):
+                 policy_path=None, start=None, end=None):
     """Render ``log_path`` to HTML. ``witness_log`` embeds a local notary's
     checkpoints (offline fallback / static report). ``witness_url`` points the
     page at a hosted Halo witness it fetches live, so completeness is checked
     against a party the vendor doesn't control. If both are given, the embedded
     checkpoints seed the offline fallback while the live witness is authoritative.
-    ``policy_path`` adds a deterministic policy-corroboration verdict to the report."""
+    ``policy_path`` adds a deterministic policy-corroboration verdict to the report.
+
+    ``start``/``end`` (aware datetimes, inclusive) render a **date-windowed
+    report** — the disclosure shape for audit periods and review windows. The
+    full chain is verified first (a windowed report is refused on a chain that
+    fails verification), then only the records inside the window are embedded:
+    the browser re-verifies the window against its anchor (the chain head
+    immediately before the window), and records outside the window never enter
+    the page."""
     records = _load(log_path)
     checkpoints = None
     if witness_log:
@@ -512,7 +609,31 @@ def write_report(log_path, out_path=None, witness_log=None, witness_url=None,
     if policy_path:
         from .policy import load_policy
         policy = load_policy(policy_path)
-    html_doc = render(records, checkpoints, witness_url=witness_url, policy=policy)
+    window = None
+    if start is not None or end is not None:
+        from .verify import verify_log
+        silent = lambda *a, **k: None  # noqa: E731
+        if not verify_log(log_path, out=silent):
+            raise ValueError(
+                "%s fails verification; refusing to render a windowed report "
+                "from an unverifiable chain" % log_path)
+        from .export import in_window
+        total = len(records)
+        chain_head = (records[-1].get("integrity") or {}).get("hash", "") if records else ""
+        idx = [i for i, r in enumerate(records) if in_window(r, start=start, end=end)]
+        if idx:
+            first, last = idx[0], idx[-1]
+            win_records = records[first:last + 1]
+            anchor = (win_records[0].get("integrity") or {}).get("prev_hash", "")
+        else:
+            first, last, win_records, anchor = -1, -1, [], ""
+        window = {"first": first + 1, "last": last + 1, "total": total,
+                  "anchor": anchor, "chain_head": chain_head,
+                  "from": start.isoformat() if start else None,
+                  "to": end.isoformat() if end else None}
+        records = win_records
+    html_doc = render(records, checkpoints, witness_url=witness_url, policy=policy,
+                      window=window)
     if out_path:
         with open(out_path, "w", encoding="utf-8") as fh:
             fh.write(html_doc)

@@ -72,9 +72,21 @@ def _cmd_hook(args):
 
 def _cmd_report(args):
     from .report import write_report
+    from .export import parse_bound
+    try:
+        start = parse_bound(getattr(args, "from"), end=False)
+        end = parse_bound(args.to, end=True)
+    except ValueError as e:
+        print(e)
+        return 2
     out = args.out or (args.log.rsplit(".", 1)[0] + ".html")
-    _, count = write_report(args.log, out, witness_log=args.witness,
-                            witness_url=args.witness_url, policy_path=args.policy)
+    try:
+        _, count = write_report(args.log, out, witness_log=args.witness,
+                                witness_url=args.witness_url, policy_path=args.policy,
+                                start=start, end=end)
+    except ValueError as e:
+        print("REFUSED: %s" % e)
+        return 1
     print("wrote %s (%d records)" % (out, count))
     return 0
 
@@ -222,6 +234,11 @@ def main(argv=None):
     p_report.add_argument("--policy",
                           help="policy JSON file to corroborate the chain against; adds a "
                                "deterministic verdict (vendor / buyer / framework rules) to the report")
+    p_report.add_argument("--from", dest="from", default=None,
+                          help="window start (YYYY-MM-DD or RFC 3339; inclusive) — renders a "
+                               "date-windowed report covering only the review period")
+    p_report.add_argument("--to", default=None,
+                          help="window end (YYYY-MM-DD or RFC 3339; inclusive)")
     p_report.set_defaults(func=_cmd_report)
 
     p_policy = sub.add_parser(
