@@ -143,7 +143,7 @@ A hosted, recognized witness is how this project will sustain itself. Early acce
 halo-record is an evidence layer, not a certification. It produces the artifact that assessment frameworks keep asking for in different words:
 
 - **Security questionnaires and SOC 2 reviews:** answer the AI sections with a verifiable Runtime Report instead of screenshots and prose.
-- **AIUC-1:** continuous runtime evidence for agent-behavior requirements, instead of evidence reconstructed at audit time.
+- **AIUC-1:** produces the tamper-evident logging (E015.4) and full-execution-chain records with authorization events (E015.2) the standard's Accountability controls call for — continuous runtime evidence, not reconstructed at audit time.
 - **OWASP (GenAI Security Project):** the runtime evidence behind the agent-behavior risks in the OWASP Top 10 for LLM Applications and the Agentic Security Initiative — excessive agency, tool misuse, sensitive-information disclosure — recorded as what the agent actually did, with which tools and data.
 - **AARM (CSA):** produces the tamper-evident action receipt AARM specifies (R5/R6) — chained and independently witnessed. halo-record is the receipt layer; pair it with an enforcement gateway for a full AARM system. See [`AARM.md`](AARM.md).
 - **Agentic Trust Controls:** the runtime records behind the ATC's evidence controls — tamper-evident action logging (RBM-03) and authority attestation (AID-05) in one chained record, with the witness layer beyond both. See [`ATC.md`](ATC.md).
@@ -157,6 +157,7 @@ None of this certifies anything by itself. It gives your assessor something veri
 ```
 halo verify   validate schema + hash chain (non-zero exit on failure; CI-friendly)
 halo report   render a chain as a self-verifying HTML Runtime Report
+              (--from/--to: a date-windowed report covering only the review period)
 halo serve    serve per-tenant reports over HTTP, access-scoped per customer
 halo grant    designate a report recipient (email or domain)
 halo anchor   witness a chain head, or --check completeness
