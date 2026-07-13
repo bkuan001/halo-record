@@ -157,7 +157,10 @@ def main(directory=None, *, serve=False, host="127.0.0.1", port=8721, verify=Fal
             opener.start()
         from .serve import serve as serve_fn
         return serve_fn(directory, host=host, port=port, witness=witness,
-                        gated=True, verify=verify)
+                        gated=True, verify=verify,
+                        gate_hint="Demo mode: any @acme-corp.com address opens Acme's "
+                                  "report (try alice@acme-corp.com); @initech.com opens "
+                                  "Initech's. Wrong domain gets denied — that's the point.")
     else:
         print()
         print("To go live:  halo serve %s --witness %s%s"

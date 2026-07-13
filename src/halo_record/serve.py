@@ -173,8 +173,10 @@ report. Ask the operator for yours.</p></div>""" % _STYLE)
              "dir": _esc(directory), "rows": body}
 
 
-def _gate_html(subject, token, error=None):
+def _gate_html(subject, token, error=None, hint=None):
     err = ('<div class="verdict fail">%s</div>' % _esc(error)) if error else ""
+    hint_html = ('<div class="verdict neutral" style="text-align:left">%s</div>'
+                 % _esc(hint)) if hint else ""
     return """<!doctype html><meta charset="utf-8"><title>%(subj)s — Runtime Report</title>
 <style>%(style)s
 .gate{max-width:440px;margin:9vh auto;text-align:center}
@@ -187,14 +189,15 @@ background:var(--gold);border:none;border-radius:10px;cursor:pointer}
 <div class="eyebrow">Halo Runtime Record</div>
 <h1>%(subj)s</h1>
 <p class="meta">This runtime report was shared with you. Enter your work email to view it.</p>
-%(err)s
+%(hint)s%(err)s
 <form method="POST" action="/r/%(token)s">
 <input type="email" name="email" placeholder="you@company.com" required autofocus>
 <button type="submit">View report</button>
 </form>
 <p class="note" style="margin-top:18px">Access is limited to recipients the vendor designated.
 Once inside, the report verifies its own integrity in your browser.</p>
-</div></div>""" % {"subj": _esc(subject), "style": _STYLE, "err": err, "token": _esc(token)}
+</div></div>""" % {"subj": _esc(subject), "style": _STYLE, "err": err, "hint": hint_html,
+           "token": _esc(token)}
 
 
 def _otp_html(subject, token, email, error=None):
@@ -297,7 +300,7 @@ class _Handler(BaseHTTPRequestHandler):
                 return self._send(404, "Not found.", "text/plain; charset=utf-8")
             if cfg["gated"] and not self._session_email(stem, token):
                 subject = _subject_label(_load(path))
-                return self._send(200, _gate_html(subject, token))
+                return self._send(200, _gate_html(subject, token, hint=cfg.get("gate_hint")))
             return self._send(200, self._render_report(path))
         return self._send(404, "Not found.", "text/plain; charset=utf-8")
 
@@ -345,7 +348,8 @@ class _Handler(BaseHTTPRequestHandler):
         if not _access.is_allowed(email, _access.allowed_for(cfg["dir"], stem)):
             return self._send(403, _gate_html(
                 subject, token,
-                error="That address isn't on the recipient list for this report."))
+                error="That address isn't on the recipient list for this report.",
+                hint=cfg.get("gate_hint")))
 
         # Direct-grant mode: allowlist match is sufficient (frictionless demo).
         if not cfg.get("verify"):
@@ -373,7 +377,7 @@ class _Handler(BaseHTTPRequestHandler):
 
 
 def serve(directory, *, host="127.0.0.1", port=DEFAULT_PORT, witness=None,
-          gated=True, verify=False, witness_url=None):
+          gated=True, verify=False, witness_url=None, gate_hint=None):
     directory = os.path.expanduser(directory)
     if not os.path.isdir(directory):
         raise SystemExit("not a directory: %s" % directory)
@@ -385,7 +389,8 @@ def serve(directory, *, host="127.0.0.1", port=DEFAULT_PORT, witness=None,
                                "verify": verify,
                                "otp": _access.OtpStore(),
                                "witness_url": witness_url,
-                               "witness": os.path.expanduser(witness) if witness else None}})
+                               "witness": os.path.expanduser(witness) if witness else None,
+                               "gate_hint": gate_hint}})
     httpd = ThreadingHTTPServer((host, port), handler)
     key = admin_key(secret)
     mode = "" if gated else "  (OPEN — gating off)"

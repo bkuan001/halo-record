@@ -110,5 +110,21 @@ class LeadTest(unittest.TestCase):
         self.assertEqual(access.read_leads(tempfile.mkdtemp()), [])
 
 
+class GateHintTest(unittest.TestCase):
+    """The email gate never reveals who can enter unless a hint is explicitly
+    configured (the demo does; real deployments must not leak the grant list)."""
+
+    def test_gate_has_no_hint_by_default(self):
+        from halo_record.serve import _gate_html
+        html = _gate_html("Acme Corp", "tok123")
+        self.assertNotIn("Demo mode", html)
+        self.assertNotIn("acme-corp.com", html)
+
+    def test_gate_renders_explicit_hint(self):
+        from halo_record.serve import _gate_html
+        html = _gate_html("Acme Corp", "tok123", hint="Demo mode: try alice@acme-corp.com")
+        self.assertIn("Demo mode: try alice@acme-corp.com", html)
+
+
 if __name__ == "__main__":
     unittest.main()
