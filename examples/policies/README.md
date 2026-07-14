@@ -38,9 +38,12 @@ Rules read dotted record fields; append `[]` to fan out across an array
 - **`aiuc-1-starter.json`** — approximates AIUC-1 control areas (data protection,
   human oversight, safety, accountability).
 - **`owasp-starter.json`** — approximates control areas from the OWASP Top 10 for
-  LLM Applications (2025) and the OWASP Agentic Security Initiative (Agentic AI:
-  Threats & Mitigations). The most directly relevant threat is **T8 Repudiation &
-  Untraceability** — the tamper-evident record is the mitigation.
+  Agentic Applications 2026 (ASI01–ASI10), the OWASP Top 10 for LLM Applications
+  (2025), and the Agentic Security Initiative's Threats & Mitigations research
+  that fed the 2026 list. Traceability is the cross-cutting mitigation — the
+  tamper-evident record is the forensic basis the ASI list assumes. ASI08 and
+  ASI09 are runtime/organizational risks a record policy cannot assert, so the
+  pack deliberately leaves them out.
 
 Both are starting points, not official certified mappings; rename and tune the
 rules to your agent's tools and your buyer's contract.

@@ -30,7 +30,8 @@ from .record import TenantRecorder, build
 from . import access as _access
 from .serve import admin_key, load_secret, token_for
 
-AGENT = {"id": "globex-agent", "name": "Globex Support Agent", "model": "claude-opus-4-8"}
+AGENT = {"id": "globex-agent", "name": "Globex Support Agent", "version": "2.4.1",
+         "model": "claude-opus-4-8"}
 
 # (subject, [actions]) — each action: (hours_ago, action_type, category, tool,
 #  tool_input, scope, decision, approver, outcome, source). ``hours_ago``
