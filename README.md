@@ -150,7 +150,7 @@ halo-record is an evidence layer, not a certification. It produces the artifact 
 - **EU AI Act:** logging and record-keeping obligations for high-risk AI systems.
 - **ISO 42001 / NIST AI RMF:** the operational evidence behind management-system controls.
 
-None of this certifies anything by itself. It gives your assessor something verifiable to look at.
+None of this certifies anything by itself. It gives your assessor something verifiable to look at. The boundaries — what halo-record deliberately does not do, and what to say when a reviewer asks — are documented in [`LIMITS.md`](LIMITS.md).
 
 ## CLI
 
