@@ -15,7 +15,7 @@ AARM's **R5** ("tamper-evident action receipt") requires each receipt to include
 | Timestamp (R5) | `ts` — RFC 3339 UTC |
 | Policy context used in evaluation (R5) | `framework_tags`, `action.authorization.scope`, `findings`, `threats` |
 | Verifiable against modification (R5) | `integrity` — SHA-256 over the RFC 8785 canonical form |
-| Cryptographically bound to agent identity (R6) | `signature` (ECDSA-P256 / Ed25519, `key_id`) over the record, plus the `agent` block (`id`, `name`, `version`, `model`) |
+| Cryptographically bound to agent identity (R6) | The `agent` block (`id`, `name`, `version`, `model`) identifies the acting agent in every record, and the schema reserves a `signature` block (ECDSA-P256 / Ed25519, `key_id`) for deployments that sign at emit. Asymmetric signing sits deliberately outside the zero-dependency core — pair the recorder with your signing infrastructure to satisfy R6's non-repudiation in full. |
 
 Requirement IDs follow AARM v1.0; [aarm.dev/spec](https://aarm.dev/spec) is the authoritative text.
 
