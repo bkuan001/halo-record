@@ -6,6 +6,8 @@ Every action your agent takes (tool calls, model calls, data access, approvals) 
 
 The record format is open and free to implement. This package is the reference implementation: recorder, verifier, witness client, and report server.
 
+> **Using halo-record, or thinking about it?** Tell me who you are and what for → [Who's using halo-record?](https://github.com/bkuan001/halo-record/discussions/7)
+
 ## Why you can trust this code
 
 You are being asked to put a recorder inside your agent. You should not take that on faith:
