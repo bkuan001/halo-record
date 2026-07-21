@@ -100,8 +100,9 @@ def _esc(x):
 
 # How each provenance tier reads to a buyer — kept short for the cell tooltip.
 _CAP_TITLE = {
-    "captured": "Captured at the boundary — Halo saw this call as it happened. "
-                "Strongest: nothing could be reshaped before it was recorded.",
+    "captured": "Declared captured at the boundary — per this record's own source tag, "
+                "Halo observed the call directly. The tag is set by the integration, "
+                "not independently verified.",
     "ingested": "Ingested from telemetry the vendor already emits — the witness "
                 "attests \"this is the stream you sent me\", not \"I watched it happen\".",
 }
@@ -342,21 +343,25 @@ async function liveCheckpoints(cfg, embedded){
     cel.innerHTML = "Not yet anchored — no independent witness exists for this report. " +
       "Completeness rests on the vendor alone until Halo witnesses the chain." + note;
   } else if (comp.ok && WINDOW){
-    cel.className = src.live ? "verdict ok" : "verdict neutral";
-    cel.innerHTML = (src.live ? "&#10003; Complete within window &mdash; " : "Consistent within window &mdash; ") +
+    cel.className = "verdict neutral";
+    cel.innerHTML = "Consistent within window &mdash; " +
       witness + " confirmed " + comp.inWin +
       " checkpoint(s) inside this window" +
       (comp.beyond ? "; chain continues beyond the window (witnessed to record " + comp.latest + ")" : "") +
       (comp.before ? "; " + comp.before + " earlier checkpoint(s) precede it" : "") +
-      ". No witnessed record in this window has been dropped or altered." +
-      (src.live ? "" : " The snapshot was supplied with this report by its operator &mdash; treat completeness as self-attested until a witness outside the operator confirms it.") + note;
+      ". No witnessed record in this window has been dropped or altered. " +
+      (src.live
+        ? "Whether this counts as independent verification depends on who operates the witness at " + (cfg.witnessUrl || "the configured URL") + " &mdash; treat it as self-attested unless that party is outside the operator's control."
+        : "The snapshot was supplied with this report by its operator &mdash; treat completeness as self-attested until a witness outside the operator confirms it.") + note;
   } else if (comp.ok){
-    cel.className = src.live ? "verdict ok" : "verdict neutral";
-    cel.innerHTML = (src.live ? "&#10003; Complete &mdash; " : "Consistent &mdash; ") +
+    cel.className = "verdict neutral";
+    cel.innerHTML = "Consistent &mdash; " +
       witness + " confirmed " + comp.witnessed +
       " checkpoint(s) up to record " + comp.latest +
-      ". No record the notary saw has been dropped or altered." +
-      (src.live ? "" : " The snapshot was supplied with this report by its operator &mdash; treat completeness as self-attested until a witness outside the operator confirms it.") + note;
+      ". No record the notary saw has been dropped or altered. " +
+      (src.live
+        ? "Whether this counts as independent verification depends on who operates the witness at " + (cfg.witnessUrl || "the configured URL") + " &mdash; treat it as self-attested unless that party is outside the operator's control."
+        : "The snapshot was supplied with this report by its operator &mdash; treat completeness as self-attested until a witness outside the operator confirms it.") + note;
   } else {
     cel.className = "verdict fail";
     cel.innerHTML = "&#10007; INCOMPLETE &mdash; conflicts with " + witness + " (" +
@@ -473,8 +478,9 @@ def render(records, checkpoints=None, *, witness_url=None, policy=None, window=N
         if n_ing and n_cap:
             prov_note = (
                 "Each action is tagged with how Halo observed it. "
-                "<b>Captured</b> means Halo saw the call at the boundary as it happened — "
-                "nothing could be reshaped first. <b>Ingested</b> means the record was built "
+                "<b>Captured</b> means the record's source tag declares Halo observed the call "
+                "at the boundary as it happened — the tag comes from the integration that wrote "
+                "the record. <b>Ingested</b> means the record was built "
                 "from telemetry the vendor already emits (a gateway, tracing store, or OTel span) — "
                 "real and anchorable, but the witness attests “this is the stream you sent me,” "
                 "not “I watched it happen.” The tier is disclosed, never flattened.")

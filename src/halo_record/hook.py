@@ -144,6 +144,7 @@ def record_event(event, recorder, *, subject=None, authority=None, summaries=Tru
         session_id=event.get("session_id") or "local",
         agent=hook_agent(event),
         scope=derive_scope(cls, tool_name),
+        source="hook",
         outcome=derive_outcome(event.get("tool_response")),
         subject=event.get("subject") or subject,
         authority=event.get("authority") or authority,

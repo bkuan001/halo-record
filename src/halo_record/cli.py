@@ -12,7 +12,12 @@ from .verify import verify_log
 
 def _cmd_verify(args):
     ok = verify_log(args.log)
-    return 0 if ok else 1
+    if ok:
+        with open(args.log, "r", encoding="utf-8") as fh:
+            if not any(ln.strip() for ln in fh):
+                return 3  # empty chain: verified vacuously, nothing attested
+        return 0
+    return 1
 
 
 def _cmd_sample(args):
@@ -123,7 +128,7 @@ def _cmd_anchor(args):
             print("%s — %s" % (status, json.dumps(result)))
             if result["ok"] is True:
                 return 0
-            return 1 if result["ok"] is False else 2  # UNWITNESSED: distinct, non-zero
+            return 1 if result["ok"] is False else 3  # UNWITNESSED: distinct, non-zero (3: argparse owns 2)
         cp = anchor_remote(args.remote, args.key, records)
         print("anchored to %s: subject=%s count=%d head=%s"
               % (args.remote, cp.get("subject") or cp.get("chain_root"),
@@ -141,7 +146,7 @@ def _cmd_anchor(args):
         print("%s — %s" % (status, json.dumps(result)))
         if result["ok"] is True:
             return 0
-        return 1 if result["ok"] is False else 2  # UNWITNESSED: distinct, non-zero
+        return 1 if result["ok"] is False else 3  # UNWITNESSED: distinct, non-zero (3: argparse owns 2)
     cp = notary.witness(records)
     print("witnessed %s: count=%d head=%s" % (cp.get("subject") or cp.get("chain_root"),
                                               cp["count"], cp["head"]))

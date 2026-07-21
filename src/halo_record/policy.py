@@ -158,6 +158,7 @@ def evaluate(records, policy):
     rule_results = []
     total_violations = 0
     total_gaps = 0
+    total_no_match = 0
 
     for rule in policy:
         when = rule.get("when", {})
@@ -190,6 +191,7 @@ def evaluate(records, policy):
             # its scope. Rendering this as a pass would be an evidence gap
             # wearing a green light; say plainly that nothing was attested.
             status = "no_match"
+            total_no_match += 1
         else:
             status = "pass"
 
@@ -208,6 +210,7 @@ def evaluate(records, policy):
         "checked": len(records),
         "violations": total_violations,
         "gaps": total_gaps,
+        "unexercised": total_no_match,
         "rules": rule_results,
     }
 
@@ -237,14 +240,22 @@ _MARK = {"pass": "PASS", "violated": "FAIL", "no_evidence": "GAP ", "no_match": 
 
 def render_text(result):
     lines = []
+    unex = result.get("unexercised", 0)
     if result["checked"] == 0:
         head = "NO EVIDENCE — 0 records in scope; nothing attested"
-    elif result["compliant"] and result["gaps"] == 0:
-        head = "COMPLIANT"
-    elif result["compliant"]:
-        head = "COMPLIANT (with %d evidence gap(s))" % result["gaps"]
-    else:
+    elif unex == len(result["rules"]):
+        head = "NO APPLICABLE EVIDENCE — records exist but none fall in any rule's scope"
+    elif not result["compliant"]:
         head = "NON-COMPLIANT: %d rule(s) violated" % result["violations"]
+    else:
+        head = "COMPLIANT"
+        notes = []
+        if result["gaps"]:
+            notes.append("%d evidence gap(s)" % result["gaps"])
+        if unex:
+            notes.append("%d rule(s) not exercised" % unex)
+        if notes:
+            head += " (" + ", ".join(notes) + ")"
     lines.append("Policy verdict: %s" % head)
     lines.append("Checked %d record(s) against %d rule(s)."
                  % (result["checked"], len(result["rules"])))
@@ -330,6 +341,8 @@ def verdict_panel(result, subject=None, show_pills=True):
                 len(r["violators"]), ", ".join(r["violators"]))
         elif r["status"] == "no_evidence":
             detail = "Policy declares this control. The log contains no evidence of it."
+        elif r["status"] == "no_match":
+            detail = "No records in scope — nothing attested."
         else:
             detail = "%d matching action(s), all within policy." % r["matched"]
         src = ('<span class="hp-src">%s</span>' % _html.escape(r["source"])) if r["source"] else ""
@@ -344,6 +357,8 @@ def verdict_panel(result, subject=None, show_pills=True):
 
     if result["checked"] == 0:
         verdict, vcolor = "NO EVIDENCE — 0 RECORDS IN SCOPE", "#6B6354"
+    elif result.get("unexercised", 0) == len(result["rules"]):
+        verdict, vcolor = "NO APPLICABLE EVIDENCE — NO RULES EXERCISED", "#6B6354"
     elif not result["compliant"]:
         verdict, vcolor = "NON-COMPLIANT", "#B23A48"
     elif result["gaps"]:

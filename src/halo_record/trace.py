@@ -28,7 +28,7 @@ import os
 
 from .capture import derive_outcome
 from .record import Recorder, TenantRecorder, build
-from .session import bind_recorder, current_recorder, reset_recorder
+from .session import bind_recorder, current_recorder, reset_recorder, bind_agent, reset_agent
 
 DEFAULT_HOME = "~/.halo"
 
@@ -72,6 +72,7 @@ def trace(fn=None, *, profile, log=None, dir=None, subject=None,
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
             token = bind_recorder(recorder)
+            agent_token = bind_agent(agent_meta)
             result = None
             error = None
             try:
@@ -92,8 +93,10 @@ def trace(fn=None, *, profile, log=None, dir=None, subject=None,
                         "agent_message", category, tool=profile,
                         tool_input=boundary_input, agent=agent_meta,
                         subject=subject, outcome=outcome, summaries=summaries,
+                        source="recorder",
                     )
                     recorder.append(rec)
+                reset_agent(agent_token)
                 reset_recorder(token)
 
         wrapper.halo_recorder = recorder

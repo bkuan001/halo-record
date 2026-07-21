@@ -176,7 +176,7 @@ None of this certifies anything by itself. It gives your assessor something veri
 ## CLI
 
 ```
-halo verify   validate schema + hash chain (non-zero exit on failure; CI-friendly)
+halo verify   validate schema + hash chain (exit 1 broken, 3 empty chain; CI-friendly)
 halo report   render a chain as a self-verifying HTML Runtime Report
               (--from/--to: a date-windowed report covering only the review period)
 halo policy   corroborate a chain against a declarative policy pack
@@ -184,7 +184,7 @@ halo policy   corroborate a chain against a declarative policy pack
 halo serve    serve per-tenant reports over HTTP, access-scoped per customer
 halo grant    designate a report recipient (email or domain)
 halo viewers  list who has unlocked a gated report
-halo anchor   witness a chain head, or --check completeness
+halo anchor   witness a chain head, or --check completeness (exit 1 incomplete, 3 unwitnessed)
 halo witness-serve  run a witness over HTTP: vendors anchor chain heads, viewers fetch checkpoints
 halo demo     scaffold the full vendor demo (record -> witness -> gated report)
 halo export   date-bounded evidence export: CSV + manifest tied to the chain head

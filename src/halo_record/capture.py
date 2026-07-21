@@ -24,7 +24,7 @@ import inspect
 from .canon import input_hash
 from .record import build
 from .redact import redact_text
-from .session import current_recorder
+from .session import current_recorder, current_agent
 
 
 def _extract_text(obj, depth=0):
@@ -113,9 +113,10 @@ class record_call:
         self.record = build(
             self.action_type, self.category, tool=self.tool,
             tool_input=self.tool_input, session_id=self.session_id,
-            agent=self.agent, scope=self.scope, decision=self.decision,
+            agent=self.agent or current_agent(), scope=self.scope, decision=self.decision,
             approver=self.approver, outcome=outcome,
             subject=self.subject, summaries=self.summaries,
+            source="recorder",
         )
         recorder.append(self.record)
         return False  # never suppress the exception
