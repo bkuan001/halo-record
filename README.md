@@ -66,6 +66,16 @@ The quickstart ends when you are looking at your own agent's Runtime Report in a
 
 Framework adapters and ingestion paths stamp each record with a `source` tag, so the report discloses how each piece of evidence was collected. Captured and ingested records live in the same chain.
 
+For LangChain / LangGraph, it is a callback handler:
+
+```python
+from halo_record import Recorder
+from halo_record.integrations.langchain import HaloCallbackHandler
+
+recorder = Recorder("audit.jsonl")
+result = my_chain.invoke(inputs, config={"callbacks": [HaloCallbackHandler(recorder)]})   # every tool call becomes a record
+```
+
 Anything that emits OpenTelemetry GenAI spans (CrewAI, LlamaIndex, and most agent frameworks with OTel instrumentation) lands in the chain through the OTel adapter, and the [TypeScript package](https://github.com/bkuan001/halo-record-ts) ships native adapters for the Vercel AI SDK and the JS agent ecosystem. Missing an adapter for your stack? Open an issue. Most adapters are about a hundred lines.
 
 ## Record your coding agent
@@ -113,6 +123,15 @@ halo report ~/.halo/audit.jsonl -o report.html
 ```
 
 Any agent runtime that exposes a post-action hook can feed the same command — the hook reads one event as JSON on stdin and appends one record.
+
+## When recording fails
+
+The two integration styles fail in opposite directions, on purpose — pick the one whose failure you can live with:
+
+- **Framework adapters (LangChain, hooks via callback managers) fail open.** If a record cannot be written (disk full, permissions), the agent's action completes normally and the record is lost. The LangChain handler prints a loud warning to stderr and counts the loss (`handler.lost_records`), but nothing in the chain itself can show a record that was never written — a stalled chain still verifies. Witness checkpoints on a cadence are what make a stalled chain visible: an expected checkpoint that never arrives is the alarm.
+- **The native `trace()` wrapper fails closed.** If the record cannot be written, the exception propagates into the agent's action — no evidence, no action. Stricter, and it can interrupt your agent.
+
+Neither default is right for everyone; know which one you are running.
 
 ## Integrity vs. completeness (read this part)
 

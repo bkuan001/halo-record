@@ -65,12 +65,24 @@ def _build_handler_class():
             pending = self._pending.pop(run_id, None)
             if pending is None:
                 return
-            record_tool_call(
-                self.recorder, pending["tool"], pending["input"],
-                response=output, error=error, agent=self.agent or _AGENT,
-                category=self.category, scope=self.scope,
-                session_id=self.session_id, subject=self.subject,
-                source="langchain", summaries=self.summaries)
+            try:
+                record_tool_call(
+                    self.recorder, pending["tool"], pending["input"],
+                    response=output, error=error, agent=self.agent or _AGENT,
+                    category=self.category, scope=self.scope,
+                    session_id=self.session_id, subject=self.subject,
+                    source="langchain", summaries=self.summaries)
+            except Exception as exc:
+                # LangChain's callback manager swallows handler exceptions, so a
+                # failed append would otherwise vanish silently — the worst
+                # failure mode an evidence recorder can have. Count it and say
+                # so loudly; the agent's own action is never interrupted.
+                self.lost_records = getattr(self, "lost_records", 0) + 1
+                import sys as _sys
+                _sys.stderr.write(
+                    "halo-record: FAILED to append record for tool %r (%s) — "
+                    "this action is NOT in the evidence log (lost so far: %d)\n"
+                    % (pending.get("tool"), exc, self.lost_records))
 
     return _HaloCallbackHandler
 

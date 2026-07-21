@@ -336,17 +336,21 @@ async function liveCheckpoints(cfg, embedded){
     cel.innerHTML = "Not yet anchored — no independent witness exists for this report. " +
       "Completeness rests on the vendor alone until Halo witnesses the chain." + note;
   } else if (comp.ok && WINDOW){
-    cel.className = "verdict ok";
-    cel.innerHTML = "&#10003; Complete within window &mdash; " + witness + " confirmed " + comp.inWin +
+    cel.className = src.live ? "verdict ok" : "verdict neutral";
+    cel.innerHTML = (src.live ? "&#10003; Complete within window &mdash; " : "Consistent within window &mdash; ") +
+      witness + " confirmed " + comp.inWin +
       " checkpoint(s) inside this window" +
       (comp.beyond ? "; chain continues beyond the window (witnessed to record " + comp.latest + ")" : "") +
       (comp.before ? "; " + comp.before + " earlier checkpoint(s) precede it" : "") +
-      ". No witnessed record in this window has been dropped or altered." + note;
+      ". No witnessed record in this window has been dropped or altered." +
+      (src.live ? "" : " The snapshot was supplied with this report by its operator &mdash; treat completeness as self-attested until a witness outside the operator confirms it.") + note;
   } else if (comp.ok){
-    cel.className = "verdict ok";
-    cel.innerHTML = "&#10003; Complete &mdash; " + witness + " confirmed " + comp.witnessed +
+    cel.className = src.live ? "verdict ok" : "verdict neutral";
+    cel.innerHTML = (src.live ? "&#10003; Complete &mdash; " : "Consistent &mdash; ") +
+      witness + " confirmed " + comp.witnessed +
       " checkpoint(s) up to record " + comp.latest +
-      ". No record the notary saw has been dropped or altered." + note;
+      ". No record the notary saw has been dropped or altered." +
+      (src.live ? "" : " The snapshot was supplied with this report by its operator &mdash; treat completeness as self-attested until a witness outside the operator confirms it.") + note;
   } else {
     cel.className = "verdict fail";
     cel.innerHTML = "&#10007; INCOMPLETE &mdash; conflicts with " + witness + " (" +

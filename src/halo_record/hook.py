@@ -71,9 +71,12 @@ def action_class(tool_name):
 
 def derive_scope(cls, tool_name):
     if cls == "connector":
+        # Only MCP-named tools (mcp__<server>__<tool>) get an mcp: scope; a
+        # plain framework tool that classified as a connector is just that.
         parts = tool_name.split("__")
-        server = parts[1] if len(parts) > 1 else "mcp"
-        return "mcp:" + server
+        if tool_name.startswith("mcp__") and len(parts) > 1:
+            return "mcp:" + parts[1]
+        return "connector"
     return {
         "data_read": "fs.read",
         "data_write": "fs.write",
