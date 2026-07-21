@@ -146,7 +146,7 @@ halo-record is an evidence layer, not a certification. It produces the artifact 
 
 - **Security questionnaires and SOC 2 reviews:** answer the AI sections with a verifiable Runtime Report instead of screenshots and prose.
 - **AIUC-1:** produces the tamper-evident logging (E015.4) and full-execution-chain records with authorization events (E015.2) the standard's Accountability controls call for — continuous runtime evidence, not reconstructed at audit time.
-- **OWASP (GenAI Security Project):** the runtime evidence behind the agent-behavior risks in the OWASP Top 10 for Agentic Applications 2026 and the LLM Top 10 — goal hijack, tool misuse, identity and privilege abuse — recorded as what the agent actually did, with which tools and data.
+- **OWASP (GenAI Security Project):** the runtime evidence behind the agent-behavior risks in the OWASP Top 10 for Agentic Applications 2026 and the LLM Top 10 — goal hijack, tool misuse, identity and privilege abuse — recorded as what the agent actually did, with which tools and data. See [`OWASP.md`](OWASP.md).
 - **AARM (CSA):** produces the tamper-evident action receipt AARM specifies (R5/R6) — chained and independently witnessed. halo-record is the receipt layer; pair it with an enforcement gateway for a full AARM system. See [`AARM.md`](AARM.md).
 - **Agentic Trust Controls:** the runtime records behind the ATC's evidence controls — tamper-evident action logging (RBM-03) and authority attestation (AID-05) in one chained record, with the witness layer beyond both. See [`ATC.md`](ATC.md).
 - **EU AI Act:** logging and record-keeping obligations for high-risk AI systems.
@@ -160,9 +160,13 @@ None of this certifies anything by itself. It gives your assessor something veri
 halo verify   validate schema + hash chain (non-zero exit on failure; CI-friendly)
 halo report   render a chain as a self-verifying HTML Runtime Report
               (--from/--to: a date-windowed report covering only the review period)
+halo policy   corroborate a chain against a declarative policy pack
+              (per-rule pass / violation / evidence-gap; non-zero exit on violation)
 halo serve    serve per-tenant reports over HTTP, access-scoped per customer
 halo grant    designate a report recipient (email or domain)
+halo viewers  list who has unlocked a gated report
 halo anchor   witness a chain head, or --check completeness
+halo witness-serve  run a witness over HTTP: vendors anchor chain heads, viewers fetch checkpoints
 halo demo     scaffold the full vendor demo (record -> witness -> gated report)
 halo export   date-bounded evidence export: CSV + manifest tied to the chain head
 halo sample   emit a valid example log
