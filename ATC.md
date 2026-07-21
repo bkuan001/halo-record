@@ -6,6 +6,8 @@ halo-record is an evidence layer, so it maps to the ATC the way evidence maps to
 
 ## ATC controls → what halo-record provides
 
+The [vendor profile on trustcontrols.ai](https://trustcontrols.ai/vendor/halo) maps the four controls where halo-record supports all three stages — evaluate, implement, operationalize. The table below is broader: it also describes how the same records serve two User-baseline controls (RBM-07, SCP-04) from the reviewing side, without claiming a vendor mapping for them.
+
 | ATC control | What halo-record provides |
 |---|---|
 | **RBM-03** Tamper-evident action logging | The core of the project. Every consequential action is one record — what was done (`action.type`, `action.tool`, `action.input` summary + hash), under whose authority (`principal`, `action.authorization`, `authority`), on what input — sealed by SHA-256 over the RFC 8785 canonical form and chained to the record before it (`integrity.prev_hash`), so edits, reordering, and deletions break the chain visibly. `halo verify` checks a log offline, without trusting the producer. |

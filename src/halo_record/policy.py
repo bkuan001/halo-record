@@ -237,7 +237,9 @@ _MARK = {"pass": "PASS", "violated": "FAIL", "no_evidence": "GAP ", "no_match": 
 
 def render_text(result):
     lines = []
-    if result["compliant"] and result["gaps"] == 0:
+    if result["checked"] == 0:
+        head = "NO EVIDENCE — 0 records in scope; nothing attested"
+    elif result["compliant"] and result["gaps"] == 0:
         head = "COMPLIANT"
     elif result["compliant"]:
         head = "COMPLIANT (with %d evidence gap(s))" % result["gaps"]
@@ -340,7 +342,9 @@ def verdict_panel(result, subject=None, show_pills=True):
             % (fg, bg, tag, _html.escape(r["id"]), _html.escape(r["severity"]), src,
                _html.escape(r["description"]), _html.escape(detail)))
 
-    if not result["compliant"]:
+    if result["checked"] == 0:
+        verdict, vcolor = "NO EVIDENCE — 0 RECORDS IN SCOPE", "#6B6354"
+    elif not result["compliant"]:
         verdict, vcolor = "NON-COMPLIANT", "#B23A48"
     elif result["gaps"]:
         verdict, vcolor = "COMPLIANT, WITH GAPS", "#3E7C5A"

@@ -121,7 +121,9 @@ def _cmd_anchor(args):
             result = verify_completeness(records, cps)
             status = {True: "COMPLETE", False: "INCOMPLETE", None: "UNWITNESSED"}[result["ok"]]
             print("%s — %s" % (status, json.dumps(result)))
-            return 0 if result["ok"] is not False else 1
+            if result["ok"] is True:
+                return 0
+            return 1 if result["ok"] is False else 2  # UNWITNESSED: distinct, non-zero
         cp = anchor_remote(args.remote, args.key, records)
         print("anchored to %s: subject=%s count=%d head=%s"
               % (args.remote, cp.get("subject") or cp.get("chain_root"),
@@ -137,7 +139,9 @@ def _cmd_anchor(args):
         result = verify_completeness(records, notary.checkpoints())
         status = {True: "COMPLETE", False: "INCOMPLETE", None: "UNWITNESSED"}[result["ok"]]
         print("%s — %s" % (status, json.dumps(result)))
-        return 0 if result["ok"] is not False else 1
+        if result["ok"] is True:
+            return 0
+        return 1 if result["ok"] is False else 2  # UNWITNESSED: distinct, non-zero
     cp = notary.witness(records)
     print("witnessed %s: count=%d head=%s" % (cp.get("subject") or cp.get("chain_root"),
                                               cp["count"], cp["head"]))

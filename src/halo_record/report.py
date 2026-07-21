@@ -295,6 +295,12 @@ async function liveCheckpoints(cfg, embedded){
     return;
   }
   try {
+    if (!records.length){
+      el.className = "verdict neutral";
+      el.innerHTML = "0 records — an empty chain; nothing to attest.";
+      if (cel){ cel.className = "verdict neutral"; cel.innerHTML = "No records to check for completeness."; }
+      return;
+    }
     const res = await verify(records);
     if (res.ok && WINDOW){
       el.className = "verdict ok";
@@ -527,8 +533,6 @@ def render(records, checkpoints=None, *, witness_url=None, policy=None, window=N
 <html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>%(subject)s — Runtime Record</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet">
 <style>%(style)s</style>
 </head><body><div class="wrap">
 <div class="eyebrow">Halo Runtime Record</div>

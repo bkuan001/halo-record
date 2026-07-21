@@ -49,6 +49,7 @@ def _build_handler_class():
             self.agent = agent
             self.subject = subject
             self.summaries = summaries
+            self.lost_records = 0
             self._pending = {}
 
         def on_tool_start(self, serialized, input_str, *, run_id=None, **kwargs):

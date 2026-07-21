@@ -1,6 +1,6 @@
 # halo-record
 
-Tamper-evident **runtime records for AI agents**: the audit trail the vendor runs but cannot edit.
+Tamper-evident **runtime records for AI agents**: the audit trail the vendor runs but cannot silently edit.
 
 Every action your agent takes (tool calls, model calls, data access, approvals) becomes one record in an append-structured, hash-chained log. Any party holding a checkpoint of the chain can verify the records behind it were never altered, without trusting whoever produced them. When a customer's security team asks "what did your agent do with our data?", you hand them a link instead of a paragraph. Security reviews already ask AI questions next to the SOC 2 checklist, and today a written assurance still passes. The bet behind this project is that it won't for long.
 
@@ -14,8 +14,8 @@ You are being asked to put a recorder inside your agent. You should not take tha
 
 - **Zero runtime dependencies.** Standard library only. `pip install halo-record` installs exactly one package.
 - **No network calls**, except the witness, which is opt-in and receives only a record count and a chain fingerprint. Record contents never leave your infrastructure.
-- **Raw inputs never enter a record.** Arguments are hashed and stored only as a redacted summary — never the raw value. Redaction is best-effort (regex over common secret and PII formats): treat it as defense-in-depth, not a guarantee.
-- **Small enough to audit.** ~4,300 lines of Python. Read all of it in an afternoon.
+- **Full payloads never enter a record.** Arguments are hashed and stored only as a short redacted summary — the complete raw value is never written, though a summary can carry fragments of it. Redaction is best-effort (regex over common secret and PII formats plus an entropy catch-all): treat it as defense-in-depth, not a guarantee.
+- **Small enough to audit.** ~4,800 lines of Python. Read all of it in an afternoon.
 - **Apache-2.0.**
 
 ## 60-second demo
