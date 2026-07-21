@@ -10,7 +10,7 @@ curated subset?")
 The notary closes that gap. A neutral party (Halo) periodically *witnesses* each
 chain's head: it records ``(chain_root, count, head, ts)`` in its own append-only
 log that the vendor does not control. To later hide record ``k``, the vendor
-would have to rewrite history on Halo's independent witness log too. Completeness
+would have to rewrite history on the witness log too. Completeness
 becomes something the buyer checks against a party with no incentive to help the
 vendor hide — which is exactly the guarantee the vendor's own logs can never give.
 

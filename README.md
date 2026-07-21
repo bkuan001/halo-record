@@ -64,7 +64,7 @@ The quickstart ends when you are looking at your own agent's Runtime Report in a
 | OpenAI Agents SDK hooks | Any gateway / reverse-proxy log |
 | Claude Code / Claude Agent SDK hook | |
 
-Every record carries a `source` tag, so the report discloses how each piece of evidence was collected. Captured and ingested records live in the same chain.
+Framework adapters and ingestion paths stamp each record with a `source` tag, so the report discloses how each piece of evidence was collected. Captured and ingested records live in the same chain.
 
 Anything that emits OpenTelemetry GenAI spans (CrewAI, LlamaIndex, and most agent frameworks with OTel instrumentation) lands in the chain through the OTel adapter, and the [TypeScript package](https://github.com/bkuan001/halo-record-ts) ships native adapters for the Vercel AI SDK and the JS agent ecosystem. Missing an adapter for your stack? Open an issue. Most adapters are about a hundred lines.
 

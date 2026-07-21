@@ -320,7 +320,7 @@ async function liveCheckpoints(cfg, embedded){
   if (!cel) return;
   const src = await liveCheckpoints(cfg, embedded);
   const comp = completeness(records, src.cps);
-  const witness = src.live ? "Halo's live witness" : "Halo's independent witness";
+  const witness = src.live ? "the live witness log" : "the witness log embedded in this report";
   const note = src.error
     ? " <span class='dim'>(couldn't reach the live witness — checked the embedded snapshot instead)</span>"
     : "";
@@ -533,7 +533,7 @@ def render(records, checkpoints=None, *, witness_url=None, policy=None, window=N
 <div id="verdict" class="verdict neutral">Verifying hash chain&hellip;</div>
 <div id="completeness" class="verdict neutral">Checking completeness against the independent witness&hellip;</div>
 %(window_block)s
-<div class="note">This report re-computes its own SHA-256 / RFC 8785 hash chain in your browser (integrity) and checks it against Halo's independent witness (completeness) — neither is something you take on trust.</div>
+<div class="note">This report re-computes its own SHA-256 / RFC 8785 hash chain in your browser (integrity) and checks it against the witness checkpoints it was anchored to (completeness) — neither is something you take on trust.</div>
 %(policy_block)s
 <div class="cards">
   <div class="card"><div class="n">%(total)s</div><div class="l">Actions</div></div>

@@ -20,7 +20,7 @@ Routes:
   POST /anchor                  vendor-authed (Bearer key); append one checkpoint,
                                 return a receipt. Append-only — no update/delete.
   GET  /v1/checkpoints?subject= public, CORS-open so a viewer's browser can fetch
-                                Halo's independent witness while verifying a report.
+                                the witness log while verifying a report.
   GET  /healthz                 liveness probe.
 
 Pure-stdlib, like the rest of the package. Offline *signed* receipts (so a buyer

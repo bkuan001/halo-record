@@ -145,7 +145,7 @@ def main(directory=None, *, serve=False, host="127.0.0.1", port=8721, verify=Fal
           % directory)
     print("     even though the (shortened) hash chain still verifies. That gap is")
     print("     the part only an independent witness catches.")
-    print("  6. `halo leads %s` -> every reviewer who opened a report." % directory)
+    print("  6. `halo viewers %s` -> every reviewer who opened a report." % directory)
 
     if serve:
         print()
