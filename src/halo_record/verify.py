@@ -99,7 +99,9 @@ def verify_log(path, schema=None, out=print):
 
         prev_hash = declared_hash if declared_hash else recomputed
 
-    if ok:
+    if ok and not lines:
+        out("OK: 0 records — an empty chain; nothing to attest.")
+    elif ok:
         out("OK: %d record(s) valid, hash chain intact — tamper-evident relative to the verified head." % len(lines))
     else:
         out("FAIL: log did not verify — sequence integrity gap detected (see above).")

@@ -122,9 +122,12 @@ def _row(record):
             f.get("type", "") for f in findings if isinstance(f, dict)
         ),
         "outcome": (record.get("outcome") or {}).get("status", ""),
-        "source": (record.get("source") or {}).get("kind", "")
-        if isinstance(record.get("source"), dict)
-        else (record.get("source") or ""),
+        "source": (
+            "%s:%s" % ((record.get("source") or {}).get("capture", ""),
+                       (record.get("source") or {}).get("adapter", ""))
+            if isinstance(record.get("source"), dict)
+            else (record.get("source") or "")
+        ),
         "authority_snapshot": authority.get("snapshot_id", ""),
         "hash": (record.get("integrity") or {}).get("hash", ""),
     }

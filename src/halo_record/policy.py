@@ -185,6 +185,11 @@ def evaluate(records, policy):
         elif expect and matched == 0:
             status = "no_evidence"
             total_gaps += 1
+        elif matched == 0 and (forbid is not None or require is not None):
+            # A rule that would have checked something, but no record fell in
+            # its scope. Rendering this as a pass would be an evidence gap
+            # wearing a green light; say plainly that nothing was attested.
+            status = "no_match"
         else:
             status = "pass"
 
@@ -227,7 +232,7 @@ def evaluate_log(log_path, policy_path):
 # Rendering (plain-text verdict; deterministic, no model)
 # --------------------------------------------------------------------------- #
 
-_MARK = {"pass": "PASS", "violated": "FAIL", "no_evidence": "GAP "}
+_MARK = {"pass": "PASS", "violated": "FAIL", "no_evidence": "GAP ", "no_match": "NONE"}
 
 
 def render_text(result):
@@ -243,7 +248,7 @@ def render_text(result):
                  % (result["checked"], len(result["rules"])))
     lines.append("")
     # exceptions first, routine collapsed (mirrors the report UX doctrine)
-    order = {"violated": 0, "no_evidence": 1, "pass": 2}
+    order = {"violated": 0, "no_evidence": 1, "no_match": 2, "pass": 3}
     for r in sorted(result["rules"], key=lambda x: order[x["status"]]):
         line = "[%s] %s  (%s)" % (_MARK[r["status"]], r["id"], r["severity"])
         if r["status"] == "violated":
@@ -252,6 +257,8 @@ def render_text(result):
                 ", ".join(r["violators"][:5]) + (" ..." if len(r["violators"]) > 5 else ""))
         elif r["status"] == "no_evidence":
             line += "  -> policy declares this control; log shows no evidence"
+        elif r["status"] == "no_match":
+            line += "  -> no records in scope — nothing attested"
         else:
             line += "  -> %d matched, clean" % r["matched"]
         lines.append(line)
@@ -270,6 +277,7 @@ _HTML_META = {
     "violated":    ("FAIL", "#B23A48", "#F7E4E6"),
     "no_evidence": ("GAP",  "#9A6A00", "#F6ECCF"),
     "pass":        ("PASS", "#3E7C5A", "#E2EFE5"),
+    "no_match":    ("NONE", "#6B6354", "#EFEDE7"),
 }
 
 _PANEL_CSS = """
@@ -311,7 +319,7 @@ def verdict_panel(result, subject=None, show_pills=True):
     completeness with its own *live* in-browser verdicts — two static pills there
     would compete with (and could contradict) the real ones.
     """
-    order = {"violated": 0, "no_evidence": 1, "pass": 2}
+    order = {"violated": 0, "no_evidence": 1, "no_match": 2, "pass": 3}
     rows = []
     for r in sorted(result["rules"], key=lambda x: order[x["status"]]):
         tag, fg, bg = _HTML_META[r["status"]]
