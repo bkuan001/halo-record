@@ -531,7 +531,7 @@ def render(records, checkpoints=None, *, witness_url=None, policy=None, window=N
 <h1>%(subject)s</h1>
 <div class="meta">%(agent_meta)s &middot; %(start)s &ndash; %(end)s &middot; <b>%(total)s</b> recorded actions</div>
 <div id="verdict" class="verdict neutral">Verifying hash chain&hellip;</div>
-<div id="completeness" class="verdict neutral">Checking completeness against the independent witness&hellip;</div>
+<div id="completeness" class="verdict neutral">Checking completeness against the witness checkpoints&hellip;</div>
 %(window_block)s
 <div class="note">This report re-computes its own SHA-256 / RFC 8785 hash chain in your browser (integrity) and checks it against the witness checkpoints it was anchored to (completeness) — neither is something you take on trust.</div>
 %(policy_block)s
