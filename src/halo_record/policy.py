@@ -320,14 +320,14 @@ _PANEL_CSS = """
 """
 
 
-def verdict_panel(result, subject=None, show_pills=True):
+def verdict_panel(result, subject=None):
     """Return the self-contained HTML fragment for the verdict panel (embeddable).
 
     Includes its own scoped (`hp-`) styles so it can drop into the Runtime Report
     or stand alone. Deterministic: every line is rendered from `result`, which is
     computed by `evaluate` from rules, never from a model.
 
-    `show_pills` draws the "integrity / witnessed" reassurance pills. Turn it off
+    Deliberately renders no static "integrity verified / witnessed" pills: the
     when embedding inside the Runtime Report, which proves integrity and
     completeness with its own *live* in-browser verdicts — two static pills there
     would compete with (and could contradict) the real ones.
@@ -366,24 +366,21 @@ def verdict_panel(result, subject=None, show_pills=True):
     else:
         verdict, vcolor = "COMPLIANT", "#3E7C5A"
 
-    sub = "%d records checked against %d policy rules. %d violation(s), %d evidence gap(s)." % (
-        result["checked"], len(result["rules"]), result["violations"], result["gaps"])
+    unex = result.get("unexercised", 0)
+    sub = "%d records checked against %d policy rules. %d violation(s), %d evidence gap(s), %d rule(s) not exercised." % (
+        result["checked"], len(result["rules"]), result["violations"], result["gaps"], unex)
     subj = ("halo-record &middot; %s" % _html.escape(subject)) if subject else "halo-record"
-    pills = (
-        '<div class="hp-pills"><span class="hp-pill">&#10003; Integrity verified</span>'
-        '<span class="hp-pill">&#10003; Witnessed &middot; complete</span></div>'
-    ) if show_pills else ""
 
     return (
         '<style>%s</style>'
         '<div class="hp-card"><div class="hp-top">'
         '<div class="hp-eyebrow">Runtime Report &middot; Policy Corroboration</div>'
         '<div class="hp-h1">Verdict: <span style="color:%s">%s</span></div>'
-        '<div class="hp-sub">%s</div>%s</div>'
+        '<div class="hp-sub">%s</div></div>'
         '<div class="hp-rows">%s</div>'
         '<div class="hp-foot"><span>Every verdict computed from explicit rules over the '
         'record. <b>No model judgment.</b></span><span>%s</span></div></div>'
-        % (_PANEL_CSS, vcolor, verdict, _html.escape(sub), pills, "".join(rows), subj))
+        % (_PANEL_CSS, vcolor, verdict, _html.escape(sub), "".join(rows), subj))
 
 
 def render_html(result, subject=None):
@@ -391,9 +388,5 @@ def render_html(result, subject=None):
     return (
         '<!doctype html><html><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width, initial-scale=1">'
-        '<link rel="preconnect" href="https://fonts.googleapis.com">'
-        '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>'
-        '<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif&'
-        'family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet">'
         '<style>body{background:#F4EEE2;margin:0;padding:46px}</style></head>'
         '<body>%s</body></html>' % verdict_panel(result, subject))

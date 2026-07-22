@@ -441,7 +441,7 @@ def _policy_block(records, policy, subject):
     from .policy import evaluate, verdict_panel
     result = evaluate(records, policy)
     return ('<h2>Policy corroboration</h2>\n<div style="margin:0 0 30px">%s</div>'
-            % verdict_panel(result, subject=subject, show_pills=False))
+            % verdict_panel(result, subject=subject))
 
 
 def render(records, checkpoints=None, *, witness_url=None, policy=None, window=None):
