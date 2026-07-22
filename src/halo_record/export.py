@@ -4,12 +4,15 @@ Auditors collect evidence over an audit period, in formats that drop into
 working papers: flat files, one row per event, dated. ``halo export`` turns a
 chain (or a window of it) into exactly that — a CSV of one row per record —
 plus a small JSON manifest that ties the export back to the verifiable chain
-it came from (chain head hash, record counts, window bounds).
+it came from (chain head hash, record counts, window bounds) and to the CSV
+itself (the file's SHA-256).
 
 The CSV is a review surface, not the evidence itself: full fidelity stays in
-the chain, and the manifest's head hash is the link between the two. The
-export refuses to run on a chain that fails verification — an evidence file
-should never outlive the integrity of its source.
+the chain. The manifest's head hash links the export to its source chain, and
+its ``csv_sha256`` links it to the exact file bytes — a CSV edited after
+export no longer matches its manifest. The export refuses to run on a chain
+that fails verification — an evidence file should never outlive the integrity
+of its source.
 
 Dates are inclusive: ``--from 2026-06-01 --to 2026-06-30`` covers the whole
 of June 30. Timestamps are compared in UTC.
@@ -22,6 +25,7 @@ actually running during the window.
 
 import csv
 import datetime
+import hashlib
 import json
 import os
 
@@ -133,7 +137,8 @@ def _row(record):
     }
 
 
-def build_manifest(records, window_records, *, source_log, start=None, end=None, verified=None):
+def build_manifest(records, window_records, *, source_log, start=None, end=None,
+                   verified=None, csv_sha256=None):
     def _iso(dt):
         return dt.isoformat() if dt else None
 
@@ -142,6 +147,10 @@ def build_manifest(records, window_records, *, source_log, start=None, end=None,
         "source_log": os.path.basename(str(source_log)),
         "window": {"from": _iso(start), "to": _iso(end)},
         "window_records": len(window_records),
+        # SHA-256 of the exported CSV file's bytes: ties the manifest to the
+        # exact evidence file it describes, so a CSV edited after export no
+        # longer matches its manifest.
+        "csv_sha256": csv_sha256,
         "chain": {
             "total_records": len(records),
             "head_hash": (records[-1].get("integrity") or {}).get("hash", "")
@@ -174,8 +183,11 @@ def export(log_path, out_path, *, start=None, end=None, manifest_path=None, out=
         writer.writeheader()
         for record in window:
             writer.writerow(_row(record))
+    with open(out_path, "rb") as fh:
+        csv_sha256 = hashlib.sha256(fh.read()).hexdigest()
     manifest = build_manifest(
-        records, window, source_log=log_path, start=start, end=end, verified=True
+        records, window, source_log=log_path, start=start, end=end, verified=True,
+        csv_sha256=csv_sha256,
     )
     m_path = manifest_path or (str(out_path) + ".manifest.json")
     with open(m_path, "w", encoding="utf-8") as fh:

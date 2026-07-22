@@ -173,6 +173,18 @@ halo-record is an evidence layer, not a certification. It produces the artifact 
 
 None of this certifies anything by itself. It gives your assessor something verifiable to look at. The boundaries — what halo-record deliberately does not do, and what to say when a reviewer asks — are documented in [`LIMITS.md`](LIMITS.md).
 
+### Getting the evidence into your GRC platform
+
+Most GRC platforms (Vanta, Drata, and similar) accept uploaded files as custom evidence against a control. halo-record's export is built to drop into that flow:
+
+```bash
+halo export audit.jsonl --from 2026-06-01 --to 2026-06-30 -o evidence.csv
+```
+
+This writes two files for the audit window: the CSV (one row per recorded action, with the agent build and model that produced each) and a manifest (`evidence.csv.manifest.json`) that ties the CSV to its source — the chain's head hash links it to the verifiable log it came from, and `csv_sha256` is the exported file's own hash, so a CSV edited after export no longer matches its manifest. Upload both against your logging or monitoring control; attach the Runtime Report HTML when a reviewer wants to verify the chain themselves. The export refuses to run on a chain that fails verification.
+
+A native push integration — evidence landing in your platform automatically — is on the roadmap. The file path above works today with any platform that accepts uploaded evidence.
+
 ## CLI
 
 ```

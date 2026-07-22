@@ -71,6 +71,23 @@ class ExportTest(unittest.TestCase):
         self.assertEqual(manifest["window_records"], 2)
         self.assertTrue(manifest["chain"]["verified"])
 
+    def test_manifest_csv_hash_matches_file_and_detects_edits(self):
+        import hashlib
+        log, out = self._paths()
+        _chain(log, [1, 10, 20])
+        export(log, out, out=_silent)
+        with open(out + ".manifest.json") as fh:
+            manifest = json.load(fh)
+        with open(out, "rb") as fh:
+            self.assertEqual(manifest["csv_sha256"],
+                             hashlib.sha256(fh.read()).hexdigest())
+        # an edited CSV no longer matches its manifest
+        with open(out, "a", encoding="utf-8") as fh:
+            fh.write("2026-06-30T00:00:00Z,forged-row\n")
+        with open(out, "rb") as fh:
+            self.assertNotEqual(manifest["csv_sha256"],
+                                hashlib.sha256(fh.read()).hexdigest())
+
     def test_refuses_tampered_chain(self):
         log, out = self._paths()
         _chain(log, [1, 10])
