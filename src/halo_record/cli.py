@@ -21,6 +21,7 @@ def _cmd_verify(args):
 
 
 def _cmd_sample(args):
+    args.out = args.out or getattr(args, "out_opt", None)
     rec1 = build(
         "tool_call", "security", tool="mcp__gmail__search_threads",
         tool_input={"query": "open invoices"},
@@ -209,6 +210,8 @@ def main(argv=None):
 
     p_sample = sub.add_parser("sample", help="emit a valid example log")
     p_sample.add_argument("out", nargs="?", help="output path (default: stdout)")
+    p_sample.add_argument("-o", "--out", dest="out_opt", metavar="OUT",
+                          help="output path (same as the positional; matches the other commands)")
     p_sample.set_defaults(func=_cmd_sample)
 
     p_hash = sub.add_parser("hash", help="print the canonical sha256: hash of a JSON value")

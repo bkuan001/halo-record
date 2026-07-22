@@ -88,6 +88,21 @@ class ExportTest(unittest.TestCase):
             self.assertNotEqual(manifest["csv_sha256"],
                                 hashlib.sha256(fh.read()).hexdigest())
 
+    def test_formula_cells_are_neutralized(self):
+        # An evidence CSV gets opened in Excel/Sheets — cells must never
+        # execute as formulas there.
+        log, out = self._paths()
+        rec = Recorder(log)
+        rec.append(build("tool_call", "security",
+                         tool='=HYPERLINK("http://evil.example","x")',
+                         tool_input={"q": 1}, session_id="=cmd|calc",
+                         ts="2026-06-15T00:00:00+00:00"))
+        export(log, out, out=_silent)
+        with open(out, newline="") as fh:
+            row = list(csv.DictReader(fh))[0]
+        self.assertTrue(row["tool"].startswith("'="))
+        self.assertTrue(row["session_id"].startswith("'="))
+
     def test_refuses_tampered_chain(self):
         log, out = self._paths()
         _chain(log, [1, 10])

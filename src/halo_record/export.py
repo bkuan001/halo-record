@@ -102,13 +102,27 @@ def in_window(record, start=None, end=None):
     return True
 
 
+def _neutralize(value):
+    """Defuse spreadsheet formula injection in a CSV cell.
+
+    The export's target flow is "open in Excel/Sheets or upload to a GRC
+    platform", and record fields (tool names, session ids, summaries) can be
+    influenced by whatever the agent touched. A cell starting with ``=``,
+    ``+``, ``-``, ``@``, tab, or CR would execute as a formula there, so those
+    cells are prefixed with a single quote — the standard neutralization,
+    displayed by spreadsheets as plain text."""
+    if isinstance(value, str) and value[:1] in ("=", "+", "-", "@", "\t", "\r"):
+        return "'" + value
+    return value
+
+
 def _row(record):
     action = record.get("action") or {}
     authority = record.get("authority") or {}
     subject = record.get("subject") or {}
     agent = record.get("agent") or {}
     findings = record.get("findings") or []
-    return {
+    row = {
         "ts": record.get("ts", ""),
         "record_id": record.get("record_id", ""),
         "session_id": record.get("session_id", ""),
@@ -135,6 +149,7 @@ def _row(record):
         "authority_snapshot": authority.get("snapshot_id", ""),
         "hash": (record.get("integrity") or {}).get("hash", ""),
     }
+    return {k: _neutralize(v) for k, v in row.items()}
 
 
 def build_manifest(records, window_records, *, source_log, start=None, end=None,
