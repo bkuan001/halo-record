@@ -301,8 +301,6 @@ _PANEL_CSS = """
 .hp-eyebrow{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:#A98C4B;font-weight:600}
 .hp-h1{font-family:"Instrument Serif",Georgia,serif;font-weight:400;font-size:33px;margin:9px 0 4px}
 .hp-sub{font-size:14.5px;line-height:1.5;color:#6B6354;max-width:600px;margin-top:7px}
-.hp-pills{display:flex;gap:14px;margin-top:18px;flex-wrap:wrap}
-.hp-pill{font-size:12.5px;color:#3E7C5A;background:#E2EFE5;border-radius:999px;padding:5px 12px;font-weight:600}
 .hp-rows{padding:12px 18px 18px}
 .hp-row{display:flex;gap:15px;padding:15px 18px;border-bottom:1px solid #F1EAD9}
 .hp-row:last-child{border-bottom:none}
@@ -327,10 +325,10 @@ def verdict_panel(result, subject=None):
     or stand alone. Deterministic: every line is rendered from `result`, which is
     computed by `evaluate` from rules, never from a model.
 
-    Deliberately renders no static "integrity verified / witnessed" pills: the
-    when embedding inside the Runtime Report, which proves integrity and
-    completeness with its own *live* in-browser verdicts — two static pills there
-    would compete with (and could contradict) the real ones.
+    Deliberately renders no static "integrity verified / witnessed" pills.
+    When embedded in the Runtime Report, that page proves integrity and
+    completeness with its own live in-browser verdicts; a static pill would
+    only compete with — and could contradict — the real one.
     """
     order = {"violated": 0, "no_evidence": 1, "no_match": 2, "pass": 3}
     rows = []

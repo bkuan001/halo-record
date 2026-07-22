@@ -107,8 +107,15 @@ def _cmd_policy(args):
         print("wrote %s" % args.html)
     else:
         print(render_text(result))
-    # CI-friendly: non-zero exit when the activity violates policy
-    return 0 if result["compliant"] else 1
+    # CI-friendly exit codes: 1 = policy violated; 3 = nothing in scope to
+    # attest (no records, or records but no rule matched any) — vacuously
+    # "compliant" but assured nothing, mirroring verify/anchor's vacuous case;
+    # 0 = at least one rule was exercised and none were violated.
+    if not result["compliant"]:
+        return 1
+    if result["checked"] == 0 or result.get("unexercised", 0) == len(result["rules"]):
+        return 3
+    return 0
 
 
 def _cmd_anchor(args):

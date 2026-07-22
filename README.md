@@ -180,7 +180,7 @@ halo verify   validate schema + hash chain (exit 1 broken, 3 empty chain; CI-fri
 halo report   render a chain as a self-verifying HTML Runtime Report
               (--from/--to: a date-windowed report covering only the review period)
 halo policy   corroborate a chain against a declarative policy pack
-              (per-rule pass / violation / evidence-gap; non-zero exit on violation)
+              (per-rule pass / violation / evidence-gap; exit 1 violated, 3 nothing in scope)
 halo serve    serve per-tenant reports over HTTP, access-scoped per customer
 halo grant    designate a report recipient (email or domain)
 halo viewers  list who has unlocked a gated report

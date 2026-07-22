@@ -433,9 +433,8 @@ def _policy_block(records, policy, subject):
 
     ``policy`` is a list of rule dicts. The verdict panel is computed by
     ``policy.evaluate`` from explicit rules (never a model), so it is safe to sit
-    beside the integrity/completeness verdicts. Integrity + completeness are
-    proven by the page's own live checks, so the panel's reassurance pills are
-    suppressed here to avoid a static claim competing with the live one."""
+    beside the integrity/completeness verdicts, which the page proves with its
+    own live checks."""
     if not policy:
         return ""
     from .policy import evaluate, verdict_panel
