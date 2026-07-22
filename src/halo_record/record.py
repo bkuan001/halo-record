@@ -11,6 +11,11 @@ import threading
 import uuid
 from datetime import datetime, timezone
 
+try:  # POSIX inter-process append lock; on other platforms appends are
+    import fcntl  # serialized per-process only (the threading.Lock below).
+except ImportError:  # pragma: no cover
+    fcntl = None
+
 from .canon import GENESIS_PREV, compute_hash, input_hash
 from .redact import redact_text, scan, top_severity
 
@@ -158,13 +163,47 @@ def build(action_type, category, tool=None, tool_input=None, *,
     return record
 
 
+def _read_last_line(path):
+    """Last non-empty line of ``path``, read from the tail without scanning the
+    whole file. Falls back to a full scan only if the final line is longer than
+    the tail window (records are ~1 KB; the window is 256 KB)."""
+    try:
+        with open(path, "rb") as fh:
+            fh.seek(0, os.SEEK_END)
+            size = fh.tell()
+            if size == 0:
+                return None
+            back = min(size, 262144)
+            fh.seek(size - back)
+            buf = fh.read(back)
+        stripped = buf.rstrip()
+        if stripped:
+            nl = stripped.rfind(b"\n")
+            if nl != -1:
+                return stripped[nl + 1:]
+            if back == size:
+                return stripped  # single-line file, fully in the window
+        elif back == size:
+            return None  # whitespace-only file
+    except OSError:
+        return None
+    last = None
+    with open(path, "rb") as fh:
+        for line in fh:
+            if line.strip():
+                last = line
+    return last
+
+
 class Recorder:
     """Append-only writer that maintains the hash chain in a JSONL file.
 
-    Appends are thread-safe within a process (agents call tools in parallel),
-    and the chain head is cached after the first read so appending stays O(1)
-    per record instead of re-scanning the file. One Recorder instance should
-    own a given log file per process — that is also the TenantRecorder model.
+    Appends are serialized both within a process (threading.Lock — agents call
+    tools in parallel) and across processes (an ``fcntl`` lock on a ``.lock``
+    sidecar file, POSIX) — hook-style capture spawns one short-lived process
+    per tool call, and two of those appending at once must not both extend the
+    same chain head. The head is cached per instance and re-read from disk
+    whenever the file has grown underneath the cache.
     """
 
     def __init__(self, path):
@@ -172,45 +211,62 @@ class Recorder:
         self._lock = threading.Lock()
         self._last_hash = None
         self._last_authority_snapshot_id = None
+        self._tail_loaded = False
+        self._last_size = None
+
+    def _acquire_flock(self):
+        if fcntl is None:
+            return None
+        fh = open(self.path + ".lock", "ab")
+        fcntl.flock(fh, fcntl.LOCK_EX)
+        return fh
+
+    @staticmethod
+    def _release_flock(fh):
+        if fh is None:
+            return
+        try:
+            fcntl.flock(fh, fcntl.LOCK_UN)
+        finally:
+            fh.close()
+
+    def _size(self):
+        try:
+            return os.path.getsize(self.path)
+        except OSError:
+            return 0
+
+    def _refresh_tail(self):
+        """Read the chain head (and last authority snapshot) from disk."""
+        line = _read_last_line(self.path) if os.path.exists(self.path) else None
+        self._last_hash = GENESIS_PREV
+        self._last_authority_snapshot_id = None
+        if line is not None:
+            try:
+                rec = json.loads(line)
+                self._last_hash = rec.get("integrity", {}).get("hash") or GENESIS_PREV
+                authority = rec.get("authority")
+                if isinstance(authority, dict):
+                    self._last_authority_snapshot_id = authority.get("snapshot_id")
+            except Exception:
+                pass
+        self._last_size = self._size()
+        self._tail_loaded = True
+
+    def _current_tail(self):
+        """Chain head + authority snapshot id, re-reading from disk if another
+        process has appended since this instance last looked."""
+        if not self._tail_loaded or self._size() != self._last_size:
+            self._refresh_tail()
+        return self._last_hash, self._last_authority_snapshot_id
 
     def last_hash(self):
-        if self._last_hash is not None:
-            return self._last_hash
-        if not os.path.exists(self.path):
-            return GENESIS_PREV
-        last = None
-        with open(self.path, "rb") as fh:
-            for line in fh:
-                if line.strip():
-                    last = line
-        if last is None:
-            return GENESIS_PREV
-        try:
-            rec = json.loads(last)
-            return rec.get("integrity", {}).get("hash") or GENESIS_PREV
-        except Exception:
-            return GENESIS_PREV
+        with self._lock:
+            return self._current_tail()[0]
 
     def last_authority_snapshot_id(self):
-        if self._last_authority_snapshot_id is not None:
-            return self._last_authority_snapshot_id
-        if not os.path.exists(self.path):
-            return None
-        last = None
-        with open(self.path, "rb") as fh:
-            for line in fh:
-                if line.strip():
-                    last = line
-        if last is None:
-            return None
-        try:
-            rec = json.loads(last)
-        except Exception:
-            return None
-        authority = rec.get("authority")
-        if isinstance(authority, dict):
-            return authority.get("snapshot_id")
-        return None
+        with self._lock:
+            return self._current_tail()[1]
 
     @staticmethod
     def _dedupe_authority(record, previous_snapshot_id):
@@ -227,17 +283,21 @@ class Recorder:
 
     def append(self, record):
         with self._lock:
-            prev = self.last_hash()
-            authority_snapshot_id = self._dedupe_authority(
-                record, self.last_authority_snapshot_id()
-            )
-            record.setdefault("integrity", {})
-            record["integrity"]["prev_hash"] = prev
-            record["integrity"]["hash"] = compute_hash(record, prev)
-            with open(self.path, "a", encoding="utf-8") as fh:
-                fh.write(json.dumps(record, separators=(",", ":")) + "\n")
-            self._last_hash = record["integrity"]["hash"]
-            self._last_authority_snapshot_id = authority_snapshot_id
+            flock = self._acquire_flock()
+            try:
+                prev, prev_snapshot_id = self._current_tail()
+                authority_snapshot_id = self._dedupe_authority(record, prev_snapshot_id)
+                record.setdefault("integrity", {})
+                record["integrity"]["prev_hash"] = prev
+                record["integrity"]["hash"] = compute_hash(record, prev)
+                with open(self.path, "a", encoding="utf-8") as fh:
+                    fh.write(json.dumps(record, separators=(",", ":")) + "\n")
+                    fh.flush()
+                    self._last_size = fh.tell()
+                self._last_hash = record["integrity"]["hash"]
+                self._last_authority_snapshot_id = authority_snapshot_id
+            finally:
+                self._release_flock(flock)
         return record
 
 

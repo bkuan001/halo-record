@@ -371,6 +371,52 @@ async function liveCheckpoints(cfg, embedded){
 """
 
 
+# Activity rows are rendered newest-first. The first batch sits in the table;
+# the rest wait in an inert <template> and stream in as the reader scrolls, so
+# the page stays responsive on multi-thousand-record chains while row rendering
+# stays entirely in Python (the template holds ready-made rows, not data).
+_ROW_BATCH = 100
+
+_PAGINATE_JS = r"""
+(function(){
+  var tbody = document.getElementById("activity-body");
+  var tpl = document.getElementById("more-rows");
+  var wrap = document.getElementById("tablewrap");
+  var counter = document.getElementById("rowcount");
+  var sentinel = document.getElementById("more-sentinel");
+  if (!tbody || !tpl || !wrap || !sentinel) return;
+  var BATCH = 100;
+  function remaining(){ return tpl.content.querySelectorAll("tr").length; }
+  function shown(){ return tbody.querySelectorAll("tr").length; }
+  function update(){
+    if (!counter) return;
+    var left = remaining();
+    counter.textContent = "Showing " + shown() + " of " + (shown() + left) +
+      " actions, newest first" + (left ? " — scroll the table for more" : "");
+  }
+  var io = null;
+  function loadMore(){
+    var rows = tpl.content.querySelectorAll("tr");
+    for (var i = 0; i < BATCH && i < rows.length; i++) tbody.appendChild(rows[i]);
+    if (!remaining() && io) io.disconnect();
+    update();
+  }
+  if ("IntersectionObserver" in window){
+    io = new IntersectionObserver(function(entries){
+      for (var i = 0; i < entries.length; i++)
+        if (entries[i].isIntersecting){ loadMore(); break; }
+    }, {root: wrap, rootMargin: "600px"});
+    io.observe(sentinel);
+  } else {
+    wrap.addEventListener("scroll", function(){
+      if (wrap.scrollTop + wrap.clientHeight > wrap.scrollHeight - 600) loadMore();
+    });
+  }
+  update();
+})();
+"""
+
+
 _STYLE = """
 :root{--ink:#1a1714;--dim:#8a7f74;--line:#ece5db;--bg:#fbf8f3;--gold:#b8860b;
 --gold-soft:#f3e9cf;--ok:#2f7d4f;--ok-bg:#e6f1ea;--warn:#9a5b00;--warn-bg:#f7ecd9;
@@ -396,16 +442,20 @@ border:1px solid var(--line);background:#fff}
 .card .n{font-family:"Instrument Serif",Georgia,serif;font-size:32px;line-height:1}
 .card .l{font-size:12px;color:var(--dim);text-transform:uppercase;letter-spacing:.08em;margin-top:6px}
 h2{font-family:"Instrument Serif",Georgia,serif;font-weight:400;font-size:24px;margin:0 0 14px}
-table{width:100%;border-collapse:collapse;font-size:13px;background:#fff;
-border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.tablewrap{max-height:72vh;overflow:auto;background:#fff;border:1px solid var(--line);
+border-radius:12px;margin-bottom:8px}
+table{width:100%;min-width:960px;border-collapse:separate;border-spacing:0;font-size:13px;background:#fff}
 th{text-align:left;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--dim);
-font-weight:600;padding:11px 12px;border-bottom:1px solid var(--line);background:#fdfbf7}
+font-weight:600;padding:11px 12px;border-bottom:1px solid var(--line);background:#fdfbf7;
+position:sticky;top:0;z-index:2}
 td{padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:top}
 td:first-child{white-space:nowrap}
-tr:last-child td{border-bottom:none}
+tbody tr:last-child td{border-bottom:none}
+.rowcount{font-size:12px;color:var(--dim);margin:-6px 0 10px}
+#more-sentinel{height:1px}
 .mono{font-family:"SF Mono",ui-monospace,Menlo,monospace;font-size:12px}
 .dim{color:var(--dim)}
-.trunc{max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.trunc{max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .pill{display:inline-block;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:600;
 background:var(--neutral-bg);color:var(--ink)}
 .pill.ok{background:var(--ok-bg);color:var(--ok)}
@@ -413,8 +463,9 @@ background:var(--neutral-bg);color:var(--ink)}
 .pill.neutral{background:var(--neutral-bg);color:var(--dim)}
 .pill.cap{background:var(--gold-soft);color:#7a5a04}
 .pill.ing{background:var(--neutral-bg);color:var(--dim)}
-.scopes{margin:-22px 0 30px;display:flex;flex-wrap:wrap;gap:8px}
+.scopes{margin:2px 0 34px;display:flex;flex-wrap:wrap;gap:8px}
 .scopes .pill{background:var(--gold-soft);color:#7a5a04}
+@media print{.tablewrap{max-height:none;overflow:visible}}
 .provgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px;margin-bottom:14px}
 .prov{display:flex;align-items:center;gap:10px;background:#fff;border:1px solid var(--line);
 border-radius:10px;padding:11px 14px}
@@ -466,11 +517,30 @@ def render(records, checkpoints=None, *, witness_url=None, policy=None, window=N
     agents = _agents(records)
     multi_agent = len(agents) > 1
     stats = _summary_stats(records)
-    rows = "\n".join(_row(r, show_agent=multi_agent) for r in records) or (
-        '<tr><td colspan="%d" class="dim" style="padding:24px;text-align:center">'
-        "No actions recorded yet — this report populates as the agent operates."
-        "</td></tr>" % (11 if multi_agent else 10)
-    )
+    # Display is newest-first; the embedded JSON stays in chain order because
+    # in-browser verification walks the chain from its anchor forward.
+    row_html = [_row(r, show_agent=multi_agent) for r in reversed(records)]
+    if row_html:
+        rows = "\n".join(row_html[:_ROW_BATCH])
+        more_rows = "\n".join(row_html[_ROW_BATCH:])
+        rowcount = (
+            '<div class="rowcount" id="rowcount">Showing %d of %d actions, '
+            "newest first%s</div>"
+            % (min(len(row_html), _ROW_BATCH), len(row_html),
+               " — scroll the table for more" if len(row_html) > _ROW_BATCH else ""))
+        noscript = (
+            '<noscript><div class="note">JavaScript is off — showing the newest '
+            "%d recorded actions only; the full list and in-browser verification "
+            "need JavaScript.</div></noscript>" % _ROW_BATCH
+            if len(row_html) > _ROW_BATCH else "")
+    else:
+        rows = (
+            '<tr><td colspan="%d" class="dim" style="padding:24px;text-align:center">'
+            "No actions recorded yet — this report populates as the agent operates."
+            "</td></tr>" % (11 if multi_agent else 10))
+        more_rows = ""
+        rowcount = ""
+        noscript = ""
     agent_th = "<th>Agent</th>" if multi_agent else ""
     prov_panel, prov_present, n_cap, n_ing = _provenance(records)
     if prov_present:
@@ -558,17 +628,24 @@ def render(records, checkpoints=None, *, witness_url=None, policy=None, window=N
 <div class="scopes">%(scope_pills)s</div>
 %(provenance_block)s
 <h2>Activity</h2>
+%(rowcount)s
+%(noscript)s
+<div class="tablewrap" id="tablewrap">
 <table>
 <thead><tr><th>Time (UTC)</th>%(agent_th)s<th>Tool</th><th>Type</th><th>Source</th><th>Scope</th><th>Decision</th><th>Outcome</th><th>Findings</th><th>Summary</th><th>Hash</th></tr></thead>
-<tbody>
+<tbody id="activity-body">
 %(rows)s
 </tbody></table>
+<div id="more-sentinel"></div>
+</div>
+<template id="more-rows">%(more_rows)s</template>
 <footer>Generated by <a href="https://github.com/bkuan001/halo-record">halo-record</a> &middot; format <a href="https://github.com/bkuan001/halo-record/blob/main/src/halo_record/halo-record.schema.json">Halo Runtime Record v0.1</a></footer>
 </div>
 <script id="records" type="application/json">%(records_json)s</script>
 <script id="checkpoints" type="application/json">%(checkpoints_json)s</script>
 <script id="halo-config" type="application/json">%(config_json)s</script>
 <script>%(verify_js)s</script>
+<script>%(paginate_js)s</script>
 </body></html>""" % {
         "subject": _esc(subject),
         "agent_meta": _agent_meta(agents),
@@ -585,10 +662,14 @@ def render(records, checkpoints=None, *, witness_url=None, policy=None, window=N
         "policy_block": policy_block,
         "window_block": window_block,
         "rows": rows,
+        "more_rows": more_rows,
+        "rowcount": rowcount,
+        "noscript": noscript,
         "records_json": records_json,
         "checkpoints_json": checkpoints_json,
         "config_json": config_json,
         "verify_js": verify_js,
+        "paginate_js": _PAGINATE_JS,
     }
 
 
