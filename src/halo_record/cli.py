@@ -161,9 +161,14 @@ def _cmd_anchor(args):
         if result["ok"] is True:
             return 0
         return 1 if result["ok"] is False else 3  # UNWITNESSED: distinct, non-zero (3: argparse owns 2)
-    cp = notary.witness(records)
-    print("witnessed %s: count=%d head=%s" % (cp.get("subject") or cp.get("chain_root"),
-                                              cp["count"], cp["head"]))
+    cp = notary.witness(records, timestamp=args.timestamp, tsa_url=args.tsa)
+    line = "witnessed %s: count=%d head=%s" % (
+        cp.get("subject") or cp.get("chain_root"), cp["count"], cp["head"])
+    tsa = cp.get("tsa")
+    if isinstance(tsa, dict) and tsa.get("gen_time"):
+        line += "\ntimestamped by %s at %s (RFC 3161 — verify: openssl ts -verify)" % (
+            tsa["url"], tsa["gen_time"])
+    print(line)
     return 0
 
 
@@ -293,6 +298,12 @@ def main(argv=None):
                           help="vendor bearer key for --remote anchoring")
     p_anchor.add_argument("--check", action="store_true",
                           help="verify completeness against existing witnesses instead of adding one")
+    p_anchor.add_argument("--timestamp", action="store_true",
+                          help="attach an RFC 3161 third-party time proof to the checkpoint "
+                               "(binds the chain state to a time the operator can't set)")
+    p_anchor.add_argument("--tsa",
+                          help="Timestamp Authority URL for --timestamp "
+                               "(default: a public RFC 3161 TSA; use a commercial one in production)")
     p_anchor.set_defaults(func=_cmd_anchor)
 
     p_serve = sub.add_parser(

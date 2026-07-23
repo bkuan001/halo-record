@@ -18,6 +18,13 @@ checkpoints (a record count and a head hash). The witness protocol ships in
 this repo (`halo witness-serve`, `halo anchor`); a hosted, recognized witness
 is the piece still being built.
 
+For *time* specifically, `halo anchor --timestamp` countersigns a checkpoint
+with an external RFC 3161 Timestamp Authority — a third party the operator does
+not control attests when the chain reached a given state, so records cannot be
+backdated, with no hosted infrastructure. It is a partial step: it proves time,
+not completeness (the witness is still what proves nothing was dropped), and the
+token is a standard artifact anyone can verify in full with `openssl ts -verify`.
+
 **What you say to a reviewer:** "The chain is tamper-evident against everyone
 except the party that operates the recorder. Completeness against the operator
 requires the external witness, and until one holds checkpoints for this chain,

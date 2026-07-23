@@ -6,7 +6,7 @@ halo-record implements the **receipt** half of that spec. It is record-only by d
 
 ## AARM receipt requirements → halo-record fields
 
-AARM's **R5** ("tamper-evident action receipt") requires each receipt to include, at minimum, the original action, the decision, the timestamp, and the policy context used in evaluation, and to be verifiable against unauthorized modification. **R6** requires the receipt to be cryptographically bound to an agent identity, verifiably and supporting non-repudiation.
+AARM's **R5** ("tamper-evident action receipt") requires each receipt to include, at minimum, the original action, the decision, the timestamp, and the policy context used in evaluation, and to be verifiable against unauthorized modification. **R6** requires each receipt to be cryptographically bound to an agent identity, with the binding verifiable and uniquely identifying the agent that acted.
 
 | AARM receipt requirement | halo-record field |
 |---|---|
@@ -15,7 +15,7 @@ AARM's **R5** ("tamper-evident action receipt") requires each receipt to include
 | Timestamp (R5) | `ts` — RFC 3339 UTC |
 | Policy context used in evaluation (R5) | `framework_tags`, `action.authorization.scope`, `findings`, `threats` |
 | Verifiable against modification (R5) | `integrity` — SHA-256 over the RFC 8785 canonical form |
-| Cryptographically bound to agent identity (R6) | The `agent` block (`id`, `name`, `version`, `model`) identifies the acting agent in every record, and the schema reserves a `signature` block (ECDSA-P256 / Ed25519, `key_id`) for deployments that sign at emit. Asymmetric signing sits deliberately outside the zero-dependency core — pair the recorder with your signing infrastructure to satisfy R6's non-repudiation in full. |
+| Cryptographically bound to agent identity (R6) | The `agent` block (`id`, `name`, `version`, `model`) is sealed into every record's SHA-256 hash — so the acting agent's identity is **cryptographically bound and verifiable**: it cannot be altered without breaking the chain. The open half of R6 is *uniqueness* — those `agent` values are integration-supplied (self-asserted), not bound to an authenticated runtime identity. For deployments that want signature-level non-repudiation on top, the schema reserves a `signature` block (ECDSA-P256 / Ed25519, `key_id`); asymmetric signing sits deliberately outside the zero-dependency core — pair the recorder with your signing infrastructure. |
 
 Requirement IDs follow AARM v1.0; [aarm.dev/spec](https://aarm.dev/spec) is the authoritative text.
 

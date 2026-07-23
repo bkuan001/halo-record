@@ -20,11 +20,12 @@ planned extra (asymmetric signatures) and intentionally not implemented here; th
 witness store is the complete guarantee on its own.
 """
 
+import base64
 import json
 import os
 from datetime import datetime, timezone
 
-from .canon import GENESIS_PREV, compute_hash
+from .canon import GENESIS_PREV, canon, compute_hash, sha256_hex
 
 
 def _now():
@@ -65,6 +66,36 @@ def checkpoint(records):
     }
 
 
+def checkpoint_digest(cp):
+    """SHA-256 (hex) of a checkpoint's *state* — chain_root, subject, count, head
+    — excluding the self-asserted ``ts`` and any attached ``tsa``. This is what an
+    RFC 3161 TSA timestamps: it binds this chain state to a time set by a party
+    the operator does not control."""
+    state = {k: cp.get(k) for k in ("chain_root", "subject", "count", "head")}
+    return sha256_hex(canon(state))
+
+
+def attach_timestamp(cp, tsa_url=None):
+    """Fetch an RFC 3161 time proof over ``checkpoint_digest(cp)`` from a TSA the
+    operator doesn't control, and attach it as ``cp['tsa']``. Network call, and
+    the only place the witness layer reaches out — done solely on request. The
+    raw token is stored base64 so anyone can verify it in full with
+    ``openssl ts -verify`` (see timestamp.py)."""
+    from . import timestamp as _ts
+    url = tsa_url or _ts.DEFAULT_TSA_URL
+    digest = checkpoint_digest(cp)
+    token = _ts.request_token(digest, url)
+    checked = _ts.verify(token, digest)
+    out = dict(cp)
+    out["tsa"] = {
+        "url": url,
+        "digest": digest,
+        "gen_time": checked.get("gen_time"),
+        "token_b64": base64.b64encode(token).decode("ascii"),
+    }
+    return out
+
+
 def _chain_intact(records):
     """Recompute the hash chain (mirrors verify.verify_log, record-list form).
     Returns the index (1-based) of the first broken record, or 0 if intact."""
@@ -87,9 +118,14 @@ class Notary:
     def __init__(self, witness_log):
         self.path = os.path.expanduser(witness_log)
 
-    def witness(self, records):
-        """Record one checkpoint for ``records`` and return it."""
-        return self.record_checkpoint(checkpoint(records))
+    def witness(self, records, *, timestamp=False, tsa_url=None):
+        """Record one checkpoint for ``records`` and return it. With
+        ``timestamp=True``, also fetch an RFC 3161 time proof over the checkpoint
+        state (from a TSA the operator doesn't control) and attach it."""
+        cp = checkpoint(records)
+        if timestamp:
+            cp = attach_timestamp(cp, tsa_url)
+        return self.record_checkpoint(cp)
 
     def record_checkpoint(self, cp):
         """Append a pre-computed checkpoint (e.g. one a vendor anchored over the
@@ -159,5 +195,10 @@ def verify_completeness(records, checkpoints):
             return {"ok": False, "why": "record altered or dropped before witnessed point",
                     "at": n, "witnessed": len(relevant)}
 
-    return {"ok": True, "witnessed": len(relevant), "latest_count": latest,
-            "head": head(records)}
+    result = {"ok": True, "witnessed": len(relevant), "latest_count": latest,
+              "head": head(records)}
+    tsa_times = [c["tsa"]["gen_time"] for c in relevant
+                 if isinstance(c.get("tsa"), dict) and c["tsa"].get("gen_time")]
+    if tsa_times:
+        result["tsa_time"] = max(tsa_times)   # third-party-attested: chain reached
+    return result                             # this state no later than tsa_time
