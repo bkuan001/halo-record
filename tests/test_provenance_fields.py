@@ -67,7 +67,7 @@ class TestProvenanceFields(unittest.TestCase):
                              parent_id=r1["record_id"]))
             msgs = []
             self.assertTrue(verify_log(path, out=msgs.append))
-            self.assertTrue(any("all resolved" in m for m in msgs))
+            self.assertTrue(any("resolve within this chain" in m for m in msgs))
 
     def test_verify_flags_orphan_parent_without_failing(self):
         with tempfile.TemporaryDirectory() as d:
@@ -79,6 +79,39 @@ class TestProvenanceFields(unittest.TestCase):
             # an orphaned parent_id is surfaced but does not fail the chain
             self.assertTrue(verify_log(path, out=msgs.append))
             self.assertTrue(any("not found earlier" in m for m in msgs))
+
+    def test_credit_card_and_iban_tolerate_separators(self):
+        # canonical printed formats (spaces/dashes) must not leak raw
+        from halo_record.redact import scan, redact_text
+        for v in ("4111 1111 1111 1111", "4111-1111-1111-1111", "5555 5555 5555 4444"):
+            self.assertIn("credit_card", [f["type"] for f in scan(v)])
+            self.assertNotIn(v, redact_text(v))
+        for v in ("DE89 3704 0044 0532 0130 00", "GB82 WEST 1234 5698 7654 32"):
+            self.assertIn("iban", [f["type"] for f in scan(v)])
+            self.assertNotIn(v, redact_text(v))
+
+    def test_iban_not_misclassified_as_credit_card(self):
+        # Luhn disambiguation: an IBAN's digit groups must not raise a card finding
+        from halo_record.redact import scan
+        types = [f["type"] for f in scan("DE89 3704 0044 0532 0130 00")]
+        self.assertIn("iban", types)
+        self.assertNotIn("credit_card", types)
+
+    def test_threats_non_iterable_never_crashes(self):
+        # instrumentation must not crash a host tool on a stray scalar
+        r = build("tool_call", "security", tool="t", threats=1)
+        self.assertNotIn("threats", r)
+
+    def test_threats_single_dict_is_one_threat(self):
+        r = build("tool_call", "security", tool="t",
+                  threats={"type": "prompt_injection", "ref": "R1"})
+        self.assertEqual(r["threats"], [{"type": "prompt_injection", "ref": "R1"}])
+
+    def test_cross_region_bool_coerced_to_number(self):
+        from halo_record.verify import validate_record
+        r = build("read", "privacy", tool="t", data={"cross_region": True})
+        self.assertEqual(r["data"]["cross_region"], 1)
+        self.assertEqual(validate_record(r), [])  # schema-valid, no chain poison
 
     def test_pii_types_derived_from_findings(self):
         # an email in the input → findings include 'email' → data.pii_types

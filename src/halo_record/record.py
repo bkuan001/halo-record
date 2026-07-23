@@ -102,8 +102,11 @@ def _norm_threats(threats):
     """
     if not threats:
         return None
-    if isinstance(threats, str):
-        threats = [threats]
+    if isinstance(threats, str) or isinstance(threats, dict):
+        threats = [threats]          # a single string or dict is one threat
+    elif not isinstance(threats, (list, tuple)):
+        return None                  # unrecognized scalar (int, etc.): drop, never
+                                     # raise — instrumentation must not crash a tool
     out = []
     for t in threats:
         if isinstance(t, str):
@@ -157,9 +160,10 @@ def build(action_type, category, tool=None, tool_input=None, *,
     sub-agent chains); ``halo verify`` reports whether each link resolves within
     the chain. ``threats`` is an INGESTED set of flags from an upstream
     guardrail/detector — a list of ``{"type": ..., "ref": ...}`` dicts and/or
-    bare type strings, or a single bare string — Halo records that a threat was
-    flagged, it never judges or detects one itself. ``data`` carries
-    request-context fields (``region`` / ``cross_region`` / ``purpose``);
+    bare type strings, or a single string or dict — Halo records that a threat
+    was flagged, it never judges or detects one itself. ``data`` carries
+    request-context fields (``region`` str / ``cross_region`` numeric 0|1 /
+    ``purpose`` str; a boolean ``cross_region`` is coerced to 0/1);
     ``data.pii_types`` is filled automatically from the deterministic scanner's
     named personal-data categories (email, ssn, credit_card, phone, iban), which
     is not comprehensive PII coverage — see LIMITS.md.
@@ -240,6 +244,10 @@ def build(action_type, category, tool=None, tool_input=None, *,
     # data.pii_types is derived from the scanner's personal-data findings and
     # merged with any caller-supplied request-context (region/purpose/...).
     data_block = dict(data) if isinstance(data, dict) else {}
+    # cross_region is a numeric field (0/1); coerce the intuitive boolean so a
+    # caller passing True never seals a schema-invalid record into the chain.
+    if isinstance(data_block.get("cross_region"), bool):
+        data_block["cross_region"] = int(data_block["cross_region"])
     pii_types = _pii_types_from_findings(findings)
     if pii_types is not None:
         data_block["pii_types"] = pii_types

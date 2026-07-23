@@ -30,13 +30,13 @@ PATTERNS = [
     ("private_key",  "CRITICAL", re.compile(r'-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----')),
     ("db_conn",      "CRITICAL", re.compile(r'(?:postgres|mysql|mongodb(?:\+srv)?|redis)://[^\s"\'<>]+')),
     ("jwt",          "HIGH",     re.compile(r'eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}')),
-    ("credit_card",  "HIGH",     re.compile(r'\b(?:4[0-9]{12}(?:[0-9]{3})?|5[1-5][0-9]{14}|3[47][0-9]{13}|6(?:011|5[0-9]{2})[0-9]{12})\b')),
+    ("credit_card",  "HIGH",     re.compile(r'\b(?:4[0-9]{3}|5[1-5][0-9]{2}|3[47][0-9]{2}|6(?:011|5[0-9]{2}))(?:[ -]?[0-9]){9,13}\b')),
     ("ssn",          "HIGH",     re.compile(r'\b\d{3}-\d{2}-\d{4}\b')),
     ("bearer_token", "HIGH",     re.compile(r'Bearer\s+[a-zA-Z0-9\-_\.]{20,}')),
     ("email",        "MEDIUM",   re.compile(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b')),
     ("ip_internal",  "MEDIUM",   re.compile(r'\b(10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3})\b')),
     ("phone",        "MEDIUM",   re.compile(r'\b(?:\+?1[-.\s])?\(?\d{3}\)?[-.\s]\d{3}[-.\s]\d{4}\b')),
-    ("iban",         "HIGH",     re.compile(r'\b[A-Z]{2}\d{2}[A-Z0-9]{11,30}\b')),
+    ("iban",         "HIGH",     re.compile(r'\b[A-Z]{2}[0-9]{2}(?:[ ]?[A-Z0-9]){11,30}\b')),
 ]
 
 SEVERITY_RANK = {"CRITICAL": 4, "HIGH": 3, "MEDIUM": 2, "LOW": 1, "INFO": 0}
@@ -111,10 +111,33 @@ def redact_sample(ftype, value):
     return "****"
 
 
+def _luhn_ok(value):
+    """Luhn check over the digits of ``value`` (13–19 long). Distinguishes a real
+    card number from an incidental digit run — e.g. the numeric body of an IBAN,
+    whose groups can look card-shaped — so a card finding is only raised for a
+    number that actually checksums as one."""
+    digits = [int(c) for c in str(value) if c.isdigit()]
+    if not 13 <= len(digits) <= 19:
+        return False
+    total = 0
+    for i, d in enumerate(reversed(digits)):
+        if i % 2 == 1:
+            d *= 2
+            if d > 9:
+                d -= 9
+        total += d
+    return total % 10 == 0
+
+
 def _apply_patterns(text):
     out = text
     for name, _sev, pattern in PATTERNS:
-        out = pattern.sub(lambda m, n=name: redact_sample(n, m.group(0)), out)
+        if name == "credit_card":
+            out = pattern.sub(
+                lambda m: redact_sample("credit_card", m.group(0))
+                if _luhn_ok(m.group(0)) else m.group(0), out)
+        else:
+            out = pattern.sub(lambda m, n=name: redact_sample(n, m.group(0)), out)
     return out
 
 
@@ -144,6 +167,8 @@ def scan(text):
         n = 0
         for m in pattern.findall(s):
             raw = m if isinstance(m, str) else next((x for x in m if x), "")
+            if name == "credit_card" and not _luhn_ok(raw):
+                continue
             sample = redact_sample(name, str(raw)[:120])
             key = name + ":" + sample
             if key in seen:

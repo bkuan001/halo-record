@@ -153,9 +153,13 @@ def _row(r, show_agent=False):
     sev = r.get("severity", "INFO")
     summary = (action.get("input") or {}).get("summary") or outcome.get("summary") or ""
     short_hash = (r.get("integrity") or {}).get("hash", "")[:12]
+    # "no flags" — not "clean": an empty findings list means no redaction
+    # pattern matched, which is not a guarantee that no sensitive data is
+    # present (unstructured PII has no pattern; see LIMITS.md).
     finding_cell = (
-        '<span class="pill warn">%d</span>' % len(findings) if findings else
-        '<span class="pill ok">clean</span>'
+        '<span class="pill warn" title="redaction patterns that matched">%d</span>' % len(findings)
+        if findings else
+        '<span class="pill ok" title="no redaction pattern matched; not a guarantee no sensitive data is present">no flags</span>'
     )
     src = r.get("source") or {}
     cap = src.get("capture")

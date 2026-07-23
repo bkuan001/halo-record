@@ -123,13 +123,15 @@ def verify_log(path, schema=None, out=print):
                 "this chain (expected only for a windowed export)."
                 % (orphan_links, parent_links))
         else:
-            out("delegation: %d parent link(s), all resolved within this chain."
-                % parent_links)
+            out("delegation: %d parent link(s) resolve within this chain "
+                "(referential integrity only — not a claim the delegation graph "
+                "is complete)." % parent_links)
 
     if ok and not lines:
         out("OK: 0 records — an empty chain; nothing to attest.")
     elif ok:
         out("OK: %d record(s) valid, hash chain intact — tamper-evident relative to the verified head." % len(lines))
+        out("note: this is integrity, not completeness — a self-held chain cannot show records dropped from the tail; an external witness (halo anchor --check) is what attests nothing was dropped.")
     else:
         out("FAIL: log did not verify — sequence integrity gap detected (see above).")
     return ok
