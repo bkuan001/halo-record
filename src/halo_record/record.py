@@ -136,6 +136,48 @@ def _pii_types_from_findings(findings):
     return types or None
 
 
+def _canon_safe(value):
+    """Recursively make a value safe for RFC 8785 canonicalization, which permits
+    only integer-valued numbers. A non-integer float is preserved as a string
+    instead of crashing the recorder when the record is hashed. A no-op on any
+    value that was already canonicalizable, so it never changes an existing hash.
+    Instrumentation must never take down the tool it is recording."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, float):
+        return int(value) if value.is_integer() else str(value)
+    if isinstance(value, dict):
+        return {k: _canon_safe(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_canon_safe(v) for v in value]
+    return value
+
+
+def _norm_data(data):
+    """Normalize the caller's ``data`` block so intuitive input can neither crash
+    the recorder nor seal a schema-invalid record. The schema-typed keys are
+    coerced (``region``/``purpose`` to string; ``cross_region`` to 0/1 from a
+    bool or integer-valued number, dropped if it is not numeric so a stray
+    ``"yes"`` never poisons the chain); every other key is made canon-safe."""
+    if not isinstance(data, dict):
+        return {}
+    out = {}
+    for k, v in data.items():
+        if k == "cross_region":
+            if isinstance(v, bool):
+                out[k] = int(v)
+            elif isinstance(v, int):
+                out[k] = v
+            elif isinstance(v, float) and v.is_integer():
+                out[k] = int(v)
+            # a non-numeric cross_region is dropped, not sealed as invalid
+        elif k in ("region", "purpose"):
+            out[k] = v if isinstance(v, str) else str(v)
+        else:
+            out[k] = _canon_safe(v)
+    return out
+
+
 def build(action_type, category, tool=None, tool_input=None, *,
           session_id="local", agent=None, scope=None, decision="allowed",
           approver=None, findings=None, outcome=None, ts=None,
@@ -243,11 +285,7 @@ def build(action_type, category, tool=None, tool_input=None, *,
         record["threats"] = threats
     # data.pii_types is derived from the scanner's personal-data findings and
     # merged with any caller-supplied request-context (region/purpose/...).
-    data_block = dict(data) if isinstance(data, dict) else {}
-    # cross_region is a numeric field (0/1); coerce the intuitive boolean so a
-    # caller passing True never seals a schema-invalid record into the chain.
-    if isinstance(data_block.get("cross_region"), bool):
-        data_block["cross_region"] = int(data_block["cross_region"])
+    data_block = _norm_data(data)
     pii_types = _pii_types_from_findings(findings)
     if pii_types is not None:
         data_block["pii_types"] = pii_types
@@ -255,7 +293,10 @@ def build(action_type, category, tool=None, tool_input=None, *,
         record["data"] = data_block
     if outcome is not None:
         record["outcome"] = outcome
-    return record
+    # Final guard: a caller-supplied value (a float score in data/outcome, say)
+    # must never crash the recorder when the record is hashed. No-op on a record
+    # that was already canonicalizable, so the hash of valid records is unchanged.
+    return _canon_safe(record)
 
 
 def _read_last_line(path):

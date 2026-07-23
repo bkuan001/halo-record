@@ -273,10 +273,16 @@ def render_text(result):
         elif r["status"] == "no_match":
             line += "  -> no records in scope — nothing attested"
         else:
-            line += "  -> %d matched, clean" % r["matched"]
+            line += "  -> %d matched, none flagged" % r["matched"]
         lines.append(line)
         if r["description"]:
             lines.append("       %s" % r["description"])
+    if result["checked"] and result["compliant"]:
+        lines.append("")
+        lines.append("Scope: a PASS means no flagged item was found in scope for "
+                     "that rule — it corroborates over the fields the record "
+                     "carries and the scanner's named categories, not an "
+                     "independent claim that a secret, PII, or threat is absent.")
     return "\n".join(lines)
 
 

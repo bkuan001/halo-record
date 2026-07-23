@@ -86,7 +86,12 @@ does, that is a vulnerability report we want (see SECURITY.md).
 
 The same bound applies to `data.pii_types`: it is derived from the scanner's
 *named* personal-data categories (email, ssn, credit_card, phone, iban), so it
-is a floor, not a census. Free-form personal data with no fixed shape — a
+is a floor, not a census. Within a category the coverage is by shape: cards and
+IBANs are caught in their spaced/hyphenated printed forms (cards Luhn-checked);
+SSNs are caught in delimited form (`123-45-6789`, `123 45 6789`), but an
+undelimited nine-digit run is deliberately not classified as an SSN — it is
+indistinguishable from any other nine-digit identifier, and treating every one
+as PII would redact ordinary IDs. Free-form personal data with no fixed shape — a
 person's name, a postal address — has no reliable pattern and will not appear
 in `pii_types` or be masked in a summary. A policy rule over `pii_types` (e.g.
 "no SSN crosses the boundary") therefore corroborates over what the scanner

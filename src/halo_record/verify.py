@@ -69,6 +69,7 @@ def verify_log(path, schema=None, out=print):
         lines = [ln for ln in fh.read().splitlines() if ln.strip()]
 
     ok = True
+    chain_ok = True           # hash-chain/sequence integrity, distinct from schema
     prev_hash = GENESIS_PREV
     seen_ids = set()          # record_ids seen so far, to resolve parent links
     parent_links = 0          # records that declare a parent_id
@@ -93,12 +94,14 @@ def verify_log(path, schema=None, out=print):
             out("record %d: chain: prev_hash %s does not match expected %s"
                 % (n, declared_prev, prev_hash))
             ok = False
+            chain_ok = False
 
         recomputed = compute_hash(record, prev_hash)
         if declared_hash != recomputed:
             out("record %d: chain: hash %s does not match recomputed %s"
                 % (n, declared_hash, recomputed))
             ok = False
+            chain_ok = False
 
         # Delegation referential integrity: a parent_id should point at a record
         # that appeared earlier in this chain. An orphan is surfaced but does not
@@ -132,6 +135,9 @@ def verify_log(path, schema=None, out=print):
     elif ok:
         out("OK: %d record(s) valid, hash chain intact — tamper-evident relative to the verified head." % len(lines))
         out("note: this is integrity, not completeness — a self-held chain cannot show records dropped from the tail; an external witness (halo anchor --check) is what attests nothing was dropped.")
-    else:
+    elif not chain_ok:
         out("FAIL: log did not verify — sequence integrity gap detected (see above).")
+    else:
+        out("FAIL: log did not verify — records do not match the record format "
+            "(schema); the hash chain itself is intact (see above).")
     return ok

@@ -187,6 +187,10 @@ def build_manifest(records, window_records, *, source_log, start=None, end=None,
             if records
             else None,
             "verified": verified,
+            # what "verified" attests: the chain is intact relative to its own
+            # head (integrity). It is NOT a completeness claim — records dropped
+            # from the tail need an external witness (see LIMITS.md).
+            "verified_scope": "integrity_relative_to_head",
         },
     }
     if window_records:

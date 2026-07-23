@@ -31,7 +31,7 @@ PATTERNS = [
     ("db_conn",      "CRITICAL", re.compile(r'(?:postgres|mysql|mongodb(?:\+srv)?|redis)://[^\s"\'<>]+')),
     ("jwt",          "HIGH",     re.compile(r'eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}')),
     ("credit_card",  "HIGH",     re.compile(r'\b(?:4[0-9]{3}|5[1-5][0-9]{2}|3[47][0-9]{2}|6(?:011|5[0-9]{2}))(?:[ -]?[0-9]){9,13}\b')),
-    ("ssn",          "HIGH",     re.compile(r'\b\d{3}-\d{2}-\d{4}\b')),
+    ("ssn",          "HIGH",     re.compile(r'\b\d{3}[- ]\d{2}[- ]\d{4}\b')),
     ("bearer_token", "HIGH",     re.compile(r'Bearer\s+[a-zA-Z0-9\-_\.]{20,}')),
     ("email",        "MEDIUM",   re.compile(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b')),
     ("ip_internal",  "MEDIUM",   re.compile(r'\b(10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3})\b')),

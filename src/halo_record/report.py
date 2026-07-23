@@ -565,8 +565,10 @@ def render(records, checkpoints=None, *, witness_url=None, policy=None, window=N
                 "<b>captured</b> tier.")
         else:
             prov_note = (
-                "Every action was <b>captured</b> at the boundary — Halo saw each call as it "
-                "happened, so nothing could be reshaped before it was recorded. The strongest tier.")
+                "Every action is <b>declared captured</b> at the boundary — per each record's "
+                "own source tag, Halo saw the call as it happened, so nothing could be reshaped "
+                "before it was recorded. The strongest tier the source field asserts; the tag is "
+                "set by the integration, not independently verified.")
         provenance_block = (
             '<h2>Captured via</h2>\n%s\n<div class="note prov-note">%s</div>'
             % (prov_panel, prov_note))
@@ -579,6 +581,20 @@ def render(records, checkpoints=None, *, witness_url=None, policy=None, window=N
     # the embedded JSON block. The in-browser JSON.parse reads these unchanged.
     records_json = json.dumps(records, separators=(",", ":")).replace("<", "\\u003c")
     checkpoints_json = json.dumps(checkpoints, separators=(",", ":")).replace("<", "\\u003c")
+    # The completeness half of the banner only holds when the report is actually
+    # anchored; an un-anchored report is integrity-only and must say so, not imply
+    # a witness it never had.
+    anchored = bool(checkpoints) or bool(witness_url)
+    if anchored:
+        integrity_note = ("This report re-computes its own SHA-256 / RFC 8785 hash chain in your "
+                          "browser (integrity) and checks it against the witness checkpoints it "
+                          "was anchored to (completeness) — neither is something you take on trust.")
+    else:
+        integrity_note = ("This report re-computes its own SHA-256 / RFC 8785 hash chain in your "
+                          "browser (integrity) — you don't take that on trust. Completeness — that "
+                          "no records were dropped — is <b>not yet witnessed</b>: this report is "
+                          "anchored to no external witness, so completeness rests on the vendor "
+                          "until one holds checkpoints for this chain (see below).")
     config_json = json.dumps(
         {"witnessUrl": witness_url, "subject": _subject_id(records)},
         separators=(",", ":")).replace("<", "\\u003c")
@@ -620,7 +636,7 @@ def render(records, checkpoints=None, *, witness_url=None, policy=None, window=N
 <div id="verdict" class="verdict neutral">Verifying hash chain&hellip;</div>
 <div id="completeness" class="verdict neutral">Checking completeness against the witness checkpoints&hellip;</div>
 %(window_block)s
-<div class="note">This report re-computes its own SHA-256 / RFC 8785 hash chain in your browser (integrity) and checks it against the witness checkpoints it was anchored to (completeness) — neither is something you take on trust.</div>
+<div class="note">%(integrity_note)s</div>
 %(policy_block)s
 <div class="cards">
   <div class="card"><div class="n">%(total)s</div><div class="l">Actions</div></div>
@@ -662,6 +678,7 @@ def render(records, checkpoints=None, *, witness_url=None, policy=None, window=N
         "nscopes": len(stats["scopes"]),
         "nflagged": sum(1 for r in records if r.get("findings")),
         "scope_pills": scope_pills,
+        "integrity_note": integrity_note,
         "provenance_block": provenance_block,
         "policy_block": policy_block,
         "window_block": window_block,

@@ -113,6 +113,30 @@ class TestProvenanceFields(unittest.TestCase):
         self.assertEqual(r["data"]["cross_region"], 1)
         self.assertEqual(validate_record(r), [])  # schema-valid, no chain poison
 
+    def test_float_in_data_or_outcome_never_crashes_hashing(self):
+        # instrumentation must not crash the host tool: a non-integer float is
+        # preserved as a string, and the record hashes + verifies cleanly
+        import os
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "c.jsonl")
+            rec = Recorder(path)
+            rec.append(build("read", "privacy", tool="t", data={"score": 0.87}))
+            rec.append(build("read", "privacy", tool="t", outcome={"status": "ok", "n": 1.5}))
+            self.assertTrue(verify_log(path, out=lambda *a, **k: None))
+
+    def test_wrong_typed_data_keys_do_not_poison_chain(self):
+        from halo_record.verify import validate_record
+        for bad in ({"cross_region": "yes"}, {"cross_region": 3.7},
+                    {"region": 5}, {"purpose": 99}):
+            r = build("read", "privacy", tool="t", data=bad)
+            self.assertEqual(validate_record(r), [])
+
+    def test_ssn_delimited_forms_detected(self):
+        from halo_record.redact import scan
+        for v in ("123-45-6789", "123 45 6789"):
+            self.assertIn("ssn", [f["type"] for f in scan(v)])
+
     def test_pii_types_derived_from_findings(self):
         # an email in the input → findings include 'email' → data.pii_types
         r = build("read", "privacy", tool="t",
