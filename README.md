@@ -13,7 +13,7 @@ The record format is open and free to implement. This package is the reference i
 You are being asked to put a recorder inside your agent. You should not take that on faith:
 
 - **Zero runtime dependencies.** Standard library only. `pip install halo-record` installs exactly one package.
-- **No network calls**, except the witness, which is opt-in and receives only a record count and a chain fingerprint. Record contents never leave your infrastructure.
+- **No network calls**, except two opt-in ones — the witness (receives only a record count and a chain fingerprint) and the RFC 3161 timestamp (sends only a checkpoint's state hash to a Timestamp Authority). Both are off unless you invoke them; record contents never leave your infrastructure.
 - **Full payloads never enter a record.** Arguments are hashed and stored only as a short redacted summary — the complete raw value is never written, though a summary can carry fragments of it. Redaction is best-effort (regex over common secret and PII formats plus an entropy catch-all): treat it as defense-in-depth, not a guarantee.
 - **Small enough to audit.** ~4,800 lines of Python. Read all of it in an afternoon.
 - **Apache-2.0.**
@@ -144,6 +144,22 @@ That is the witness: a party outside the operator holding periodic fingerprints 
 ```
 halo anchor audit.jsonl witness.jsonl           # anchor a checkpoint to a local witness
 halo anchor audit.jsonl witness.jsonl --check   # completeness verdict against it
+```
+
+For *time* specifically, an external RFC 3161 timestamp replaces the checkpoint's self-asserted clock with a proof from a Timestamp Authority the operator does not control — "this chain reached this head no later than T", verifiable by a third party with no hosted infrastructure. The default TSA is the free freetsa.org (fine for evaluation); point at a commercial TSA (DigiCert / Sectigo / your own) with `--tsa` for production:
+
+```
+halo anchor audit.jsonl witness.jsonl --timestamp          # attach a TSA time proof to the checkpoint
+halo anchor audit.jsonl witness.jsonl --check              # reads the token's claimed time
+```
+
+`--check` confirms the token binds this chain state and reads its attested time, but it does **not** validate the TSA's signature — that is deliberately left to a standard tool so a reviewer trusts no code of ours. To verify the time independently (this is what you hand a security reviewer):
+
+```
+# tsa.token_b64 lives in the witness log; decode the latest one to a standard .tsr file
+python3 -c 'import json,base64; cps=[json.loads(l) for l in open("witness.jsonl") if l.strip()]; t=[c["tsa"] for c in cps if c.get("tsa")][-1]; open("token.tsr","wb").write(base64.b64decode(t["token_b64"])); print(t["digest"])'
+curl -s -o tsa-ca.pem https://freetsa.org/files/cacert.pem     # CA for the default TSA (a commercial TSA publishes its own)
+openssl ts -verify -digest <the digest printed above> -in token.tsr -CAfile tsa-ca.pem   # → "Verification: OK"
 ```
 
 One more boundary, stated plainly: neither the chain nor the witness proves that every real-world action passed through the recorder. That is **capture completeness** — a property of where the recorder sits in the stack (native instrumentation, hooks, gateway ingestion), not of any hash. Records carry a `source` tag for exactly this reason.
