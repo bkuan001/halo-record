@@ -181,7 +181,7 @@ Most GRC platforms (Vanta, Drata, and similar) accept uploaded files as custom e
 halo export audit.jsonl --from 2026-06-01 --to 2026-06-30 -o evidence.csv
 ```
 
-This writes two files for the audit window: the CSV (one row per recorded action, with the agent build and model that produced each) and a manifest (`evidence.csv.manifest.json`) that ties the CSV to its source — the chain's head hash links it to the verifiable log it came from, and `csv_sha256` is the exported file's own hash, so a CSV edited after export no longer matches its manifest. Upload both against your logging or monitoring control; attach the Runtime Report HTML when a reviewer wants to verify the chain themselves. The export refuses to run on a chain that fails verification.
+This writes two files for the audit window: the CSV (one row per recorded action — the agent build and model that produced each, the identity it ran on behalf of, the record it was caused by, its authorization decision, and any personal-data categories or ingested threat flags) and a manifest (`evidence.csv.manifest.json`) that ties the CSV to its source — the chain's head hash links it to the verifiable log it came from, and `csv_sha256` is the exported file's own hash, so a CSV edited after export no longer matches its manifest. Upload both against your logging or monitoring control; attach the Runtime Report HTML when a reviewer wants to verify the chain themselves. The export refuses to run on a chain that fails verification.
 
 A native push integration — evidence landing in your platform automatically — is on the roadmap. The file path above works today with any platform that accepts uploaded evidence.
 

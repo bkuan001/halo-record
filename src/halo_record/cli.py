@@ -22,20 +22,26 @@ def _cmd_verify(args):
 
 def _cmd_sample(args):
     args.out = args.out or getattr(args, "out_opt", None)
+    _agent = {"id": "claude-code", "name": "claude-code", "version": "1.4.0",
+              "model": "claude-opus-4-8", "model_version": "2026-05-30"}
     rec1 = build(
         "tool_call", "security", tool="mcp__gmail__search_threads",
-        tool_input={"query": "open invoices"},
+        tool_input={"query": "open invoices from j.doe@acme.com"},
         session_id="conv_9a2f",
-        agent={"id": "claude-code", "name": "claude-code", "model": "claude-opus-4-8"},
+        agent=_agent,
         scope="gmail.read",
+        principal={"human_id": "u_alice_chen", "role_scope": "support"},
+        data={"region": "us-east", "purpose": "customer_support"},
         outcome={"status": "ok", "summary": "postgres://****"},
     )
     rec2 = build(
         "write", "safety", tool="Write",
         tool_input={"path": "report.md", "bytes": 4096},
         session_id="conv_9a2f",
-        agent={"id": "claude-code", "name": "claude-code"},
+        agent=_agent,
         scope="fs.write", decision="human_approved", approver="alice.chen",
+        parent_id=rec1["record_id"],
+        principal={"human_id": "u_alice_chen", "role_scope": "support"},
         outcome={"status": "ok", "summary": "wrote report.md"},
     )
     prev = GENESIS_PREV

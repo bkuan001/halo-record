@@ -34,8 +34,10 @@ from .verify import verify_log
 CSV_COLUMNS = [
     "ts",
     "record_id",
+    "parent_id",
     "session_id",
     "subject",
+    "principal",
     "agent",
     "agent_version",
     "model",
@@ -46,6 +48,8 @@ CSV_COLUMNS = [
     "decision",
     "severity",
     "findings",
+    "threats",
+    "pii_types",
     "outcome",
     "source",
     "authority_snapshot",
@@ -120,13 +124,20 @@ def _row(record):
     action = record.get("action") or {}
     authority = record.get("authority") or {}
     subject = record.get("subject") or {}
+    principal = record.get("principal") or {}
     agent = record.get("agent") or {}
     findings = record.get("findings") or []
+    threats = record.get("threats") or []
+    data = record.get("data") or {}
     row = {
         "ts": record.get("ts", ""),
         "record_id": record.get("record_id", ""),
+        "parent_id": record.get("parent_id", ""),
         "session_id": record.get("session_id", ""),
         "subject": subject.get("id", ""),
+        "principal": "; ".join("%s=%s" % (k, principal[k]) for k in
+                               ("human_id", "creator_id", "service_account", "role_scope")
+                               if principal.get(k)),
         "agent": agent.get("name") or agent.get("id", ""),
         "agent_version": agent.get("version", ""),
         "model": agent.get("model", ""),
@@ -139,6 +150,10 @@ def _row(record):
         "findings": "; ".join(
             f.get("type", "") for f in findings if isinstance(f, dict)
         ),
+        "threats": "; ".join(
+            t.get("type", "") for t in threats if isinstance(t, dict)
+        ),
+        "pii_types": "; ".join(data.get("pii_types") or []),
         "outcome": (record.get("outcome") or {}).get("status", ""),
         "source": (
             "%s:%s" % ((record.get("source") or {}).get("capture", ""),

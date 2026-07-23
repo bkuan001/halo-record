@@ -149,6 +149,12 @@ def record_event(event, recorder, *, subject=None, authority=None, summaries=Tru
         subject=event.get("subject") or subject,
         authority=event.get("authority") or authority,
         summaries=summaries,
+        # Passed through when the harness supplies them; a plain PostToolUse
+        # event carries none, so these stay absent unless present.
+        principal=event.get("principal"),
+        parent_id=event.get("parent_id"),
+        threats=event.get("threats"),
+        data=event.get("data"),
     )
     recorder.append(record)
     return record

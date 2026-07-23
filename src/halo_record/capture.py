@@ -84,7 +84,8 @@ class record_call:
     def __init__(self, recorder=None, tool=None, tool_input=None, *, category="security",
                  action_type="tool_call", scope=None, session_id="local",
                  agent=None, decision="allowed", approver=None,
-                 subject=None, summaries=True):
+                 subject=None, summaries=True, principal=None, parent_id=None,
+                 threats=None, data=None):
         self.recorder = recorder
         self.tool = tool
         self.tool_input = tool_input
@@ -97,6 +98,10 @@ class record_call:
         self.approver = approver
         self.subject = subject
         self.summaries = summaries
+        self.principal = principal
+        self.parent_id = parent_id
+        self.threats = threats
+        self.data = data
         self.result = None
         self.record = None
 
@@ -116,6 +121,8 @@ class record_call:
             agent=self.agent or current_agent(), scope=self.scope, decision=self.decision,
             approver=self.approver, outcome=outcome,
             subject=self.subject, summaries=self.summaries,
+            principal=self.principal, parent_id=self.parent_id,
+            threats=self.threats, data=self.data,
             source="recorder",
         )
         recorder.append(self.record)
@@ -124,7 +131,8 @@ class record_call:
 
 def record(recorder=None, *, category="security", action_type="tool_call",
            scope=None, tool=None, session_id="local", agent=None,
-           decision="allowed", approver=None, subject=None, summaries=True):
+           decision="allowed", approver=None, subject=None, summaries=True,
+           principal=None, parent_id=None, threats=None, data=None):
     """Decorator that records every call to a tool function.
 
     The function's bound arguments become the input; its return value (or a
@@ -157,7 +165,8 @@ def record(recorder=None, *, category="security", action_type="tool_call",
                 recorder, name, tool_input, category=category,
                 action_type=action_type, scope=scope, session_id=session_id,
                 agent=agent, decision=decision, approver=approver,
-                subject=subject, summaries=summaries,
+                subject=subject, summaries=summaries, principal=principal,
+                parent_id=parent_id, threats=threats, data=data,
             ) as call:
                 call.result = fn(*args, **kwargs)
                 return call.result

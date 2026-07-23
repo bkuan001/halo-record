@@ -76,10 +76,61 @@ def _norm_subject(subject):
     return subject
 
 
+_PRINCIPAL_KEYS = ("human_id", "creator_id", "service_account", "role_scope")
+
+
+def _norm_principal(principal):
+    """Keep only the four schema-defined principal layers; drop unknown keys and
+    empty values. Returns None if nothing usable remains."""
+    if principal is None:
+        return None
+    if not isinstance(principal, dict):
+        return None
+    out = {k: str(principal[k]) for k in _PRINCIPAL_KEYS
+           if principal.get(k) not in (None, "")}
+    return out or None
+
+
+def _norm_threats(threats):
+    """Normalize an ingested threats list into schema shape ([{type, ref?}]).
+
+    Threats are INGESTED from an upstream guardrail/detector — Halo records that
+    a threat was flagged, it does not itself judge or detect. A bare string is
+    read as a threat type; a dict keeps ``type`` (required) and optional ``ref``.
+    """
+    if not threats:
+        return None
+    out = []
+    for t in threats:
+        if isinstance(t, str):
+            if t:
+                out.append({"type": t})
+        elif isinstance(t, dict) and t.get("type"):
+            item = {"type": str(t["type"])}
+            if t.get("ref") not in (None, ""):
+                item["ref"] = str(t["ref"])
+            out.append(item)
+    return out or None
+
+
+# Which redaction finding types are personal data (vs. secrets/credentials).
+# ``data.pii_types`` is DERIVED from what the deterministic scanner already
+# found — no separate detector, no model judgement.
+_PII_FINDING_TYPES = {"email", "ssn", "credit_card"}
+
+
+def _pii_types_from_findings(findings):
+    """Distinct personal-data categories detected in this record's findings."""
+    types = sorted({f.get("type") for f in findings
+                    if f.get("type") in _PII_FINDING_TYPES})
+    return types or None
+
+
 def build(action_type, category, tool=None, tool_input=None, *,
           session_id="local", agent=None, scope=None, decision="allowed",
           approver=None, findings=None, outcome=None, ts=None,
-          subject=None, source=None, authority=None, summaries=True):
+          subject=None, source=None, authority=None, summaries=True,
+          principal=None, parent_id=None, threats=None, data=None):
     """Construct a v0.1 record (without integrity.hash filled in).
 
     ``tool_input`` is hashed (canonical) and, by default, a redacted summary is
@@ -92,6 +143,16 @@ def build(action_type, category, tool=None, tool_input=None, *,
     (hashes and refs, not raw prompts or private policy text). ``summaries=False``
     drops every human-readable summary, leaving only hashes: a hash-only record
     safe to share across a trust boundary, since no payload text is stored.
+
+    ``principal`` records the identities on whose behalf the action ran
+    (``human_id`` / ``creator_id`` / ``service_account`` / ``role_scope``);
+    ``parent_id`` links this record to the one that caused it (delegation /
+    sub-agent chains). ``threats`` is an INGESTED list of flags from an upstream
+    guardrail/detector ([{"type": ..., "ref": ...}] or bare type strings) — Halo
+    records that a threat was flagged, it never judges or detects one itself.
+    ``data`` carries request-context fields (``region`` / ``cross_region`` /
+    ``purpose``); ``data.pii_types`` is filled automatically from the
+    deterministic scanner's personal-data findings.
     """
     if action_type not in ACTION_TYPES:
         raise ValueError("action.type must be one of %s" % sorted(ACTION_TYPES))
@@ -153,11 +214,27 @@ def build(action_type, category, tool=None, tool_input=None, *,
     subject = _norm_subject(subject)
     if subject is not None:
         record["subject"] = subject
+    principal = _norm_principal(principal)
+    if principal is not None:
+        record["principal"] = principal
+    if parent_id:
+        record["parent_id"] = str(parent_id)
     source = normalize_source(source)
     if source is not None:
         record["source"] = source
     if authority is not None:
         record["authority"] = dict(authority)
+    threats = _norm_threats(threats)
+    if threats is not None:
+        record["threats"] = threats
+    # data.pii_types is derived from the scanner's personal-data findings and
+    # merged with any caller-supplied request-context (region/purpose/...).
+    data_block = dict(data) if isinstance(data, dict) else {}
+    pii_types = _pii_types_from_findings(findings)
+    if pii_types is not None:
+        data_block["pii_types"] = pii_types
+    if data_block:
+        record["data"] = data_block
     if outcome is not None:
         record["outcome"] = outcome
     return record
