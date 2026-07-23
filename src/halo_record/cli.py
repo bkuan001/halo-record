@@ -126,7 +126,8 @@ def _cmd_policy(args):
 
 
 def _cmd_anchor(args):
-    from .anchor import Notary, verify_completeness, _subject_id
+    from .anchor import (Notary, verify_completeness, _subject_id,
+                         checkpoint, attach_timestamp, TimestampError)
     from .report import _load
     records = _load(args.log)
 
@@ -161,14 +162,27 @@ def _cmd_anchor(args):
         if result["ok"] is True:
             return 0
         return 1 if result["ok"] is False else 3  # UNWITNESSED: distinct, non-zero (3: argparse owns 2)
-    cp = notary.witness(records, timestamp=args.timestamp, tsa_url=args.tsa)
-    line = "witnessed %s: count=%d head=%s" % (
-        cp.get("subject") or cp.get("chain_root"), cp["count"], cp["head"])
+    cp = checkpoint(records)
+    warn = None
+    if args.timestamp:
+        if not records:
+            warn = "timestamp skipped: empty chain (nothing to attest)"
+        else:
+            try:
+                cp = attach_timestamp(cp, args.tsa)   # raises TimestampError on any TSA failure
+            except TimestampError as e:
+                warn = "timestamp skipped (%s); checkpoint recorded without it" % e
+    notary.record_checkpoint(cp)
+    print("witnessed %s: count=%d head=%s" % (
+        cp.get("subject") or cp.get("chain_root"), cp["count"], cp["head"]))
     tsa = cp.get("tsa")
-    if isinstance(tsa, dict) and tsa.get("gen_time"):
-        line += "\ntimestamped by %s at %s (RFC 3161 — verify: openssl ts -verify)" % (
-            tsa["url"], tsa["gen_time"])
-    print(line)
+    if isinstance(tsa, dict) and tsa.get("token_b64"):
+        print("timestamp CLAIMED by %s at %s — the token binds this chain state, but this\n"
+              "  does NOT verify the TSA signature: run `openssl ts -verify -digest %s "
+              "-in <token> -CAfile <tsa-ca.pem>` to trust the time." % (
+                  tsa["url"], tsa.get("gen_time"), tsa["digest"]))
+    if warn:
+        print(warn, file=sys.stderr)
     return 0
 
 

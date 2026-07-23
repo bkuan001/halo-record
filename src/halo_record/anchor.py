@@ -75,25 +75,63 @@ def checkpoint_digest(cp):
     return sha256_hex(canon(state))
 
 
+class TimestampError(Exception):
+    """The TSA was unreachable, errored, or returned a token that does not cover
+    this checkpoint. Raised so the caller can degrade to an un-timestamped
+    checkpoint rather than losing it."""
+
+
 def attach_timestamp(cp, tsa_url=None):
     """Fetch an RFC 3161 time proof over ``checkpoint_digest(cp)`` from a TSA the
     operator doesn't control, and attach it as ``cp['tsa']``. Network call, and
     the only place the witness layer reaches out — done solely on request. The
-    raw token is stored base64 so anyone can verify it in full with
-    ``openssl ts -verify`` (see timestamp.py)."""
+    raw token is stored base64 so it can be verified in full with
+    ``openssl ts -verify`` (see timestamp.py).
+
+    Raises ``TimestampError`` on any TSA failure, or if the returned token does
+    not actually cover our digest — a token that doesn't bind this checkpoint is
+    worse than none, so it is never stored. The ``gen_time`` recorded here is a
+    convenience cache: authoritative time is re-derived from the token on read
+    (``checkpoint_verified_time``)."""
     from . import timestamp as _ts
     url = tsa_url or _ts.DEFAULT_TSA_URL
     digest = checkpoint_digest(cp)
-    token = _ts.request_token(digest, url)
+    try:
+        token = _ts.request_token(digest, url)
+    except Exception as e:                       # urllib / HTTP / socket / ...
+        raise TimestampError("TSA %s: %s" % (url, e))
     checked = _ts.verify(token, digest)
+    if not checked.get("imprint_ok"):
+        raise TimestampError(
+            "TSA %s returned a token that does not cover this checkpoint" % url)
     out = dict(cp)
     out["tsa"] = {
         "url": url,
         "digest": digest,
-        "gen_time": checked.get("gen_time"),
+        "gen_time": checked.get("gen_time"),     # cache; re-derived on read
         "token_b64": base64.b64encode(token).decode("ascii"),
     }
     return out
+
+
+def checkpoint_verified_time(cp):
+    """Re-derive a checkpoint's attested time from its stored RFC 3161 token —
+    never from the (operator-editable) ``tsa.gen_time`` field. Returns the ISO
+    time only if the token is present and its imprint matches this checkpoint's
+    recomputed digest; otherwise None (a forged or missing token yields no time,
+    so editing the JSON cannot fabricate an attestation). NOTE: this confirms the
+    token binds this chain state and reads its claimed time; it does NOT validate
+    the TSA's signature — run ``openssl ts -verify`` for that."""
+    tsa = cp.get("tsa")
+    if not isinstance(tsa, dict) or not tsa.get("token_b64"):
+        return None
+    from . import timestamp as _ts
+    try:
+        token = base64.b64decode(tsa["token_b64"])
+    except (ValueError, TypeError):
+        return None
+    checked = _ts.verify(token, checkpoint_digest(cp))
+    return checked.get("gen_time") if checked.get("imprint_ok") else None
 
 
 def _chain_intact(records):
@@ -118,14 +156,9 @@ class Notary:
     def __init__(self, witness_log):
         self.path = os.path.expanduser(witness_log)
 
-    def witness(self, records, *, timestamp=False, tsa_url=None):
-        """Record one checkpoint for ``records`` and return it. With
-        ``timestamp=True``, also fetch an RFC 3161 time proof over the checkpoint
-        state (from a TSA the operator doesn't control) and attach it."""
-        cp = checkpoint(records)
-        if timestamp:
-            cp = attach_timestamp(cp, tsa_url)
-        return self.record_checkpoint(cp)
+    def witness(self, records):
+        """Record one checkpoint for ``records`` and return it."""
+        return self.record_checkpoint(checkpoint(records))
 
     def record_checkpoint(self, cp):
         """Append a pre-computed checkpoint (e.g. one a vendor anchored over the
@@ -197,8 +230,20 @@ def verify_completeness(records, checkpoints):
 
     result = {"ok": True, "witnessed": len(relevant), "latest_count": latest,
               "head": head(records)}
-    tsa_times = [c["tsa"]["gen_time"] for c in relevant
-                 if isinstance(c.get("tsa"), dict) and c["tsa"].get("gen_time")]
+    # Attested time is re-derived from each token (not the editable JSON field);
+    # a checkpoint whose token is missing/forged/imprint-mismatched yields no time.
+    tsa_times, tsa_unverified = [], 0
+    for c in relevant:
+        if isinstance(c.get("tsa"), dict) and c["tsa"].get("token_b64"):
+            t = checkpoint_verified_time(c)
+            (tsa_times.append(t) if t else None)
+            if not t:
+                tsa_unverified += 1
     if tsa_times:
-        result["tsa_time"] = max(tsa_times)   # third-party-attested: chain reached
-    return result                             # this state no later than tsa_time
+        result["tsa_time"] = max(tsa_times)   # upper bound: chain reached this
+        # state no later than tsa_time. Time only, not completeness — and the
+        # TSA signature must be checked (openssl ts -verify) to trust the source.
+        result["tsa_time_status"] = "claimed — verify the TSA signature with `openssl ts -verify`"
+    if tsa_unverified:
+        result["tsa_unverified"] = tsa_unverified  # a stored token that does not bind this state
+    return result

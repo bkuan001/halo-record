@@ -69,5 +69,64 @@ class TestTimestamp(unittest.TestCase):
             self.assertTrue(out["tsa"]["token_b64"])
 
 
+    def test_attach_timestamp_raises_on_tsa_failure(self):
+        from halo_record.anchor import attach_timestamp, TimestampError
+        cp = {"chain_root": "r", "subject": "s", "count": 1, "head": "h"}
+
+        def boom(*a, **k):
+            raise OSError("unreachable")
+        with mock.patch.object(ts, "request_token", boom):
+            with self.assertRaises(TimestampError):
+                attach_timestamp(cp)   # degrade, don't crash+lose the checkpoint
+
+    def test_attach_timestamp_rejects_token_that_does_not_bind(self):
+        from halo_record.anchor import attach_timestamp, TimestampError
+        cp = {"chain_root": "r", "subject": "s", "count": 1, "head": "h"}
+        # a token whose imprint is for someone else's digest is worse than none
+        with mock.patch.object(ts, "request_token", lambda *a, **k: _fake_token("ff" * 32)):
+            with self.assertRaises(TimestampError):
+                attach_timestamp(cp)
+
+    def test_check_time_comes_from_token_not_editable_field(self):
+        import base64
+        from halo_record.anchor import checkpoint_digest, checkpoint_verified_time
+        cp = {"chain_root": "r", "subject": "acme", "count": 2, "head": "h"}
+        dig = checkpoint_digest(cp)
+        cp["tsa"] = {"url": "u", "digest": dig,
+                     "gen_time": "2099-01-01T00:00:00Z",   # FORGED json field
+                     "token_b64": base64.b64encode(
+                         _fake_token(dig, gen="20260101000000Z")).decode()}
+        # re-derived from the token, ignoring the forged field
+        self.assertEqual(checkpoint_verified_time(cp), "2026-01-01T00:00:00Z")
+        # a garbage token cannot fabricate a time
+        cp["tsa"]["token_b64"] = base64.b64encode(b"not-a-token").decode()
+        self.assertIsNone(checkpoint_verified_time(cp))
+
+    def test_verify_completeness_ignores_forged_tsa_time(self):
+        import base64
+        import os
+        import tempfile
+        from halo_record import Recorder, build
+        from halo_record.anchor import (Notary, checkpoint, checkpoint_digest,
+                                        verify_completeness)
+        from halo_record.report import _load
+        with tempfile.TemporaryDirectory() as d:
+            path, wl = os.path.join(d, "c.jsonl"), os.path.join(d, "w.log")
+            rec = Recorder(path)
+            rec.append(build("tool_call", "security", tool="a", subject="acme"))
+            records = _load(path)
+            cp = checkpoint(records)
+            dig = checkpoint_digest(cp)
+            cp["tsa"] = {"url": "u", "digest": dig,
+                         "gen_time": "2099-01-01T00:00:00Z",   # operator edits this
+                         "token_b64": base64.b64encode(
+                             _fake_token(dig, gen="20260101000000Z")).decode()}
+            Notary(wl).record_checkpoint(cp)
+            res = verify_completeness(records, Notary(wl).checkpoints())
+            self.assertTrue(res["ok"])
+            self.assertEqual(res["tsa_time"], "2026-01-01T00:00:00Z")  # token, not the edit
+            self.assertNotIn("tsa_unverified", res)
+
+
 if __name__ == "__main__":
     unittest.main()

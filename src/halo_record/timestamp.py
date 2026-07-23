@@ -13,11 +13,16 @@ a light check (the returned token timestamps *our* digest, and at what time). It
 deliberately does NOT verify the TSA's signature or certificate chain — that
 needs asymmetric crypto and belongs outside the zero-dependency core. The token
 is a standard artifact, so anyone can verify it in full with an off-the-shelf
-tool and never touch this library:
+tool and never touch this library. The token is the base64 ``tsa.token_b64`` in
+the witness log; the digest it covers is ``tsa.digest``. Write the token to a
+file and:
 
-    openssl ts -verify -in checkpoint.tsr -data checkpoint.bin -CAfile tsa-ca.pem
+    openssl ts -verify -digest <tsa.digest> -in token.tsr -CAfile tsa-ca.pem -untrusted tsa.crt
 
 That is the point: a third-party time proof, checkable with third-party tools.
+This binds a checkpoint's *state* — it proves the chain reached that state no
+later than the attested time; individual records' ``ts`` fields stay
+self-asserted, and completeness is still the witness's job, not the clock's.
 """
 
 import urllib.request
@@ -141,10 +146,11 @@ def verify(token_der, expected_digest_hex):
       TSA signed this chain state, not some other).
     - ``gen_time``: the time the TSA attested (ISO-8601 UTC), or None.
 
-    This does NOT validate the TSA's signature or certificate — that is the job
-    of ``openssl ts -verify`` (or the optional ``halo-record[timestamp]`` extra).
-    A token that passes this check *and* a full openssl verify is a third-party
-    time proof for the chain."""
+    This does NOT validate the TSA's signature or certificate — that requires
+    asymmetric crypto and is the job of ``openssl ts -verify``. On its own this
+    check confirms the token binds *our* chain state and reads its claimed time;
+    only a full openssl verify against a trusted TSA turns that claim into a
+    third-party proof."""
     digest = bytes.fromhex(expected_digest_hex)
     imprint = _message_imprint(digest)
     idx = token_der.find(imprint)
