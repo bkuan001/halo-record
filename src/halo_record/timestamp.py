@@ -14,10 +14,13 @@ deliberately does NOT verify the TSA's signature or certificate chain — that
 needs asymmetric crypto and belongs outside the zero-dependency core. The token
 is a standard artifact, so anyone can verify it in full with an off-the-shelf
 tool and never touch this library. The token is the base64 ``tsa.token_b64`` in
-the witness log; the digest it covers is ``tsa.digest``. Write the token to a
-file and:
+the witness log; the digest it covers is ``tsa.digest``. base64-decode the token
+into a file (``token.tsr``) and:
 
-    openssl ts -verify -digest <tsa.digest> -in token.tsr -CAfile tsa-ca.pem -untrusted tsa.crt
+    openssl ts -verify -digest <tsa.digest> -in token.tsr -CAfile tsa-ca.pem
+
+(``certReq`` is set, so the token embeds the signing cert; a TSA that does not
+embed it needs an extra ``-untrusted tsa.crt``.)
 
 That is the point: a third-party time proof, checkable with third-party tools.
 This binds a checkpoint's *state* — it proves the chain reached that state no
@@ -30,6 +33,10 @@ from datetime import datetime, timezone
 
 DEFAULT_TSA_URL = "https://freetsa.org/tsr"  # free, RFC 3161; point at a
 # commercial TSA (DigiCert / Sectigo / your own) for production.
+
+# RFC 3161 tokens are a few KB. Cap the response read so a malicious or
+# man-in-the-middled TSA cannot OOM the recorder with a huge body.
+_MAX_TSA_RESPONSE = 1 << 21  # 2 MiB
 
 _SHA256_OID = "2.16.840.1.101.3.4.2.1"
 
@@ -110,7 +117,10 @@ def request_token(digest_hex, tsa_url=DEFAULT_TSA_URL, *, timeout=20):
                  "Content-Length": str(len(req))},
     )
     with urllib.request.urlopen(http, timeout=timeout) as resp:
-        return resp.read()
+        body = resp.read(_MAX_TSA_RESPONSE + 1)
+    if len(body) > _MAX_TSA_RESPONSE:
+        raise ValueError("TSA response exceeds %d bytes; refusing" % _MAX_TSA_RESPONSE)
+    return body
 
 
 # --------------------------------------------------------------------------- #

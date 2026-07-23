@@ -69,6 +69,21 @@ class TestTimestamp(unittest.TestCase):
             self.assertTrue(out["tsa"]["token_b64"])
 
 
+    def test_request_token_caps_oversized_response(self):
+        class _Resp:
+            def __init__(self, body):
+                self._b = body
+            def read(self, n=-1):
+                return self._b[:n] if n and n >= 0 else self._b
+            def __enter__(self):
+                return self
+            def __exit__(self, *a):
+                return False
+        huge = b"x" * (ts._MAX_TSA_RESPONSE + 100)
+        with mock.patch("urllib.request.urlopen", lambda *a, **k: _Resp(huge)):
+            with self.assertRaises(ValueError):
+                ts.request_token("ab" * 32, "https://tsa.example/tsr")
+
     def test_attach_timestamp_raises_on_tsa_failure(self):
         from halo_record.anchor import attach_timestamp, TimestampError
         cp = {"chain_root": "r", "subject": "s", "count": 1, "head": "h"}

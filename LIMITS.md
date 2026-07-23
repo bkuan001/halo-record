@@ -27,8 +27,9 @@ per-record `ts` fields stay self-asserted — and it proves time, not completene
 confirms the token binds this chain state and reads its claimed time, but it does
 **not** validate the TSA's signature; the token is a standard artifact, so trust
 the time by verifying that signature yourself against a TSA you trust:
-`openssl ts -verify -digest <tsa.digest> -in <token> -CAfile <tsa-ca>` (use a
-commercial TSA in production).
+`openssl ts -verify -digest <tsa.digest> -in <token> -CAfile <tsa-ca>`
+(base64-decode `tsa.token_b64` into `<token>` first; use a commercial TSA in
+production).
 
 **What you say to a reviewer:** "The chain is tamper-evident against everyone
 except the party that operates the recorder. Completeness against the operator

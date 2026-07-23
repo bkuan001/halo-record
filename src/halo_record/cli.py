@@ -136,15 +136,22 @@ def _cmd_anchor(args):
         if not args.key:
             print("anchor --remote requires --key (the vendor bearer key)", file=sys.stderr)
             return 2
-        if args.check:
-            cps = fetch_checkpoints(args.remote, subject=_subject_id(records))
-            result = verify_completeness(records, cps)
-            status = {True: "COMPLETE", False: "INCOMPLETE", None: "UNWITNESSED"}[result["ok"]]
-            print("%s — %s" % (status, json.dumps(result)))
-            if result["ok"] is True:
-                return 0
-            return 1 if result["ok"] is False else 3  # UNWITNESSED: distinct, non-zero (3: argparse owns 2)
-        cp = anchor_remote(args.remote, args.key, records)
+        if args.timestamp:
+            print("note: --timestamp is not carried over --remote; the hosted "
+                  "witness records its own time", file=sys.stderr)
+        try:
+            if args.check:
+                cps = fetch_checkpoints(args.remote, subject=_subject_id(records))
+                result = verify_completeness(records, cps)
+                status = {True: "COMPLETE", False: "INCOMPLETE", None: "UNWITNESSED"}[result["ok"]]
+                print("%s — %s" % (status, json.dumps(result)))
+                if result["ok"] is True:
+                    return 0
+                return 1 if result["ok"] is False else 3  # UNWITNESSED: distinct, non-zero (3: argparse owns 2)
+            cp = anchor_remote(args.remote, args.key, records)
+        except Exception as e:                       # unreachable host / HTTP / bad response
+            print("anchor --remote failed (%s: %s)" % (args.remote, e), file=sys.stderr)
+            return 1
         print("anchored to %s: subject=%s count=%d head=%s"
               % (args.remote, cp.get("subject") or cp.get("chain_root"),
                  cp["count"], cp["head"]))
