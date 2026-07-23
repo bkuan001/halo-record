@@ -35,6 +35,51 @@ class TestProvenanceFields(unittest.TestCase):
             {"type": "policy_violation", "ref": "POL-7"},
         ])
 
+    def test_threats_bare_string_is_single_threat(self):
+        # a bare string must be one threat, not iterated character by character
+        r = build("tool_call", "security", tool="t", threats="prompt_injection")
+        self.assertEqual(r["threats"], [{"type": "prompt_injection"}])
+
+    def test_parent_id_zero_is_preserved(self):
+        r = build("tool_call", "security", tool="t", parent_id=0)
+        self.assertEqual(r["parent_id"], "0")
+
+    def test_parent_id_empty_string_omitted(self):
+        r = build("tool_call", "security", tool="t", parent_id="")
+        self.assertNotIn("parent_id", r)
+
+    def test_phone_and_iban_detected_as_pii(self):
+        r = build("read", "privacy", tool="t",
+                  tool_input={"contact": "call 415-555-2020",
+                              "acct": "GB82WEST12345698765432"})
+        ftypes = {f["type"] for f in r["findings"]}
+        self.assertIn("phone", ftypes)
+        self.assertIn("iban", ftypes)
+        self.assertIn("phone", r["data"]["pii_types"])
+        self.assertIn("iban", r["data"]["pii_types"])
+
+    def test_verify_reports_resolved_delegation(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "chain.jsonl")
+            rec = Recorder(path)
+            r1 = rec.append(build("tool_call", "security", tool="a"))
+            rec.append(build("write", "safety", tool="b",
+                             parent_id=r1["record_id"]))
+            msgs = []
+            self.assertTrue(verify_log(path, out=msgs.append))
+            self.assertTrue(any("all resolved" in m for m in msgs))
+
+    def test_verify_flags_orphan_parent_without_failing(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "chain.jsonl")
+            rec = Recorder(path)
+            rec.append(build("tool_call", "security", tool="a",
+                             parent_id="does-not-exist"))
+            msgs = []
+            # an orphaned parent_id is surfaced but does not fail the chain
+            self.assertTrue(verify_log(path, out=msgs.append))
+            self.assertTrue(any("not found earlier" in m for m in msgs))
+
     def test_pii_types_derived_from_findings(self):
         # an email in the input → findings include 'email' → data.pii_types
         r = build("read", "privacy", tool="t",

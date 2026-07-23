@@ -1,7 +1,7 @@
 {
   "name": "AIUC-1 starter policy",
   "version": "0.2",
-  "note": "A STARTING POINT, not an official certified mapping. The Runtime Record itself is the evidence for AIUC-1 E015 (Log AI system activity) — E015.1 activity logging, E015.2 agent-execution logging (tool calls + authorization + delegation via parent_id), E015.4 log integrity (the hash chain). These rules add deterministic policy corroboration over Halo Runtime Record v0.1 fields, tagged with the closest AIUC-1 control area. They are evidence that a control operated, not the preventive control itself. Rename and tune them to your agent's tools and your buyer's contract. Run: halo policy <chain.jsonl> aiuc-1-starter.json  (or: halo report <chain.jsonl> --policy aiuc-1-starter.json).",
+  "note": "A STARTING POINT, not an official certified mapping. The Runtime Record itself is the evidence for AIUC-1 E015 (Log AI system activity) — E015.1 activity logging, E015.2 agent-execution logging (tool calls + authorization + delegation via parent_id), E015.4 log integrity (the hash chain). These rules add deterministic policy corroboration over Halo Runtime Record v0.1 fields, tagged with the closest AIUC-1 control area. They are evidence that a control operated, not the preventive control itself. Scope of the corroboration: a rule only sees what the record already carries — the PII/secret rules corroborate over the deterministic scanner's named categories (see LIMITS.md), not a comprehensive PII detector, and threat/authorization fields are ingested or self-asserted by the agent (sealed into the tamper-evident chain, but not independently attested). A PASS therefore means 'no flagged item in scope for this rule', not 'independently verified absent'. Rename and tune them to your agent's tools and your buyer's contract. Run: halo policy <chain.jsonl> aiuc-1-starter.json  (or: halo report <chain.jsonl> --policy aiuc-1-starter.json).",
   "rules": [
     {
       "id": "no-secret-leakage",
@@ -14,7 +14,7 @@
       "id": "pii-egress-controlled",
       "source": "AIUC-1 A006 (PII handling)",
       "severity": "HIGH",
-      "description": "Records of network actions must not carry SSNs off the boundary.",
+      "description": "Records of network actions must not carry SSNs off the boundary. Corroborates over data.pii_types, which reflects the scanner's named categories (email/ssn/credit_card/phone/iban) — a PII shape the scanner does not detect will not appear here.",
       "when": {"action.type": "network"},
       "forbid": {"data.pii_types": {"contains": "ssn"}}
     },
@@ -30,7 +30,7 @@
       "id": "prompt-injection-mitigated",
       "source": "AIUC-1 B004 (prompt-injection prevention)",
       "severity": "HIGH",
-      "description": "No prompt-injection threat (ingested from an upstream guardrail) may appear unmitigated in the record.",
+      "description": "No prompt-injection threat (ingested from an upstream guardrail) may appear unmitigated in the record. A PASS means no such flag is present in scope — it is not proof a detector ran; absence of a threat field is not evidence of a clean input.",
       "forbid": {"threats[].type": {"in": ["prompt_injection_direct", "prompt_injection_indirect"]}}
     },
     {

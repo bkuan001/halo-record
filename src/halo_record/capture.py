@@ -23,7 +23,6 @@ import inspect
 
 from .canon import input_hash
 from .record import build
-from .redact import redact_text
 from .session import current_recorder, current_agent
 
 
@@ -44,13 +43,18 @@ def derive_outcome(response, error=None):
 
     ``status`` is ``error`` only on a raised exception or an explicit error
     marker in the response — never inferred (ledger, not classifier). The full
-    response is hashed into the chain; only a redacted summary is stored, never
-    the raw content.
+    response is hashed into the chain.
+
+    The ``summary`` here is the *raw* extracted text: ``build`` is the single
+    place that scans it (so secrets or PII returned in a tool's response are
+    flagged the same as ones passed in its arguments) and then redacts it before
+    it is stored. Redacting here instead would hide response-borne findings from
+    that scan, so the raw text is handed to ``build`` and never stored raw.
     """
     if error is not None:
         return {
             "status": "error",
-            "summary": redact_text(str(error))[:200],
+            "summary": str(error),
             "hash": input_hash({"error": str(error)}),
         }
     status = "ok"
@@ -61,7 +65,7 @@ def derive_outcome(response, error=None):
     ):
         status = "error"
     out = {"status": status, "hash": input_hash(response)}
-    summary = redact_text(_extract_text(response))[:200]
+    summary = _extract_text(response)
     if summary:
         out["summary"] = summary
     return out

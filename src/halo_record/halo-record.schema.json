@@ -137,7 +137,7 @@
         "type": "object",
         "required": ["type", "severity"],
         "properties": {
-          "type": { "type": "string", "description": "e.g. api_key, private_key, db_conn, credit_card, ssn, email, ip_internal, bearer_token" },
+          "type": { "type": "string", "description": "e.g. api_key, private_key, db_conn, credit_card, ssn, email, phone, iban, ip_internal, bearer_token" },
           "severity": { "type": "string", "enum": ["CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"] },
           "sample": { "type": "string", "description": "Redacted excerpt. Unredacted value MUST NOT appear." }
         }

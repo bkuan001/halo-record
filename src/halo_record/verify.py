@@ -70,6 +70,9 @@ def verify_log(path, schema=None, out=print):
 
     ok = True
     prev_hash = GENESIS_PREV
+    seen_ids = set()          # record_ids seen so far, to resolve parent links
+    parent_links = 0          # records that declare a parent_id
+    orphan_links = 0          # parent_ids not found earlier in this chain
     for n, line in enumerate(lines, start=1):
         try:
             record = json.loads(line)
@@ -97,7 +100,31 @@ def verify_log(path, schema=None, out=print):
                 % (n, declared_hash, recomputed))
             ok = False
 
+        # Delegation referential integrity: a parent_id should point at a record
+        # that appeared earlier in this chain. An orphan is surfaced but does not
+        # fail verification — a windowed export legitimately references parents
+        # outside the window (see LIMITS.md).
+        parent_id = record.get("parent_id")
+        if parent_id:
+            parent_links += 1
+            if parent_id not in seen_ids:
+                orphan_links += 1
+                out("record %d: delegation: parent_id %s not found earlier in "
+                    "this chain" % (n, parent_id))
+        record_id = record.get("record_id")
+        if record_id:
+            seen_ids.add(record_id)
+
         prev_hash = declared_hash if declared_hash else recomputed
+
+    if parent_links:
+        if orphan_links:
+            out("delegation: %d of %d parent link(s) reference records not in "
+                "this chain (expected only for a windowed export)."
+                % (orphan_links, parent_links))
+        else:
+            out("delegation: %d parent link(s), all resolved within this chain."
+                % parent_links)
 
     if ok and not lines:
         out("OK: 0 records — an empty chain; nothing to attest.")

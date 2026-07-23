@@ -84,6 +84,18 @@ provider-specific patterns plus an entropy catch-all — defense in depth, not a
 proof. A novel secret format can land in a summary. If you find a path that
 does, that is a vulnerability report we want (see SECURITY.md).
 
+The same bound applies to `data.pii_types`: it is derived from the scanner's
+*named* personal-data categories (email, ssn, credit_card, phone, iban), so it
+is a floor, not a census. Free-form personal data with no fixed shape — a
+person's name, a postal address — has no reliable pattern and will not appear
+in `pii_types` or be masked in a summary. A policy rule over `pii_types` (e.g.
+"no SSN crosses the boundary") therefore corroborates over what the scanner
+catches; it is not a comprehensive PII gate.
+
+**What you say to a reviewer:** "PII detection is by named pattern. Categories
+we name, we catch and can gate on; unstructured PII is out of the scanner's
+scope, and the report never implies otherwise."
+
 ---
 
 ## 7. The policy engine is evaluative, never enforcing
@@ -111,3 +123,36 @@ Each subject's chain assumes one recorder appending in order. Multi-writer or
 distributed recording requires coordination this library does not provide.
 Multi-agent *attribution* is supported (records carry the acting agent);
 concurrent multi-process *writing* to one chain is not.
+
+---
+
+## 10. Principal and authorization are declared, not externally attested
+
+The `principal` block (human_id / creator_id / service_account / role_scope)
+and `action.authorization.decision` are supplied by integration code, the same
+as the `agent` block (§5). They are sealed into the hash chain, so they are
+tamper-evident *after the fact* — no one can rewrite who the agent said it acted
+for without breaking the chain. But the declaration itself is not bound to an
+authenticated session or IdP token: the record attests "the agent asserted this
+principal / this authorization decision," not "an identity provider proved it."
+
+**What you say to a reviewer:** "Attribution is as strong as the integration
+that supplies it, sealed so it cannot be altered later. Binding it to an
+authenticated session is an integration question — the hook can carry a signed
+session assertion — not a property the chain invents on its own. Treat it as
+corroborating evidence for who acted, not cryptographic proof of authorization."
+
+---
+
+## 11. Delegation links are asserted; verification reports their resolution
+
+`parent_id` records which action caused this one (sub-agent / delegation
+chains). `halo verify` checks referential integrity: for a complete chain it
+reports whether every `parent_id` resolves to a record that appeared earlier,
+and surfaces any that do not. It does not fail verification on an unresolved
+link, because a windowed export legitimately references parents outside the
+window — so an orphan is reported, not treated as tampering.
+
+**What you say to a reviewer:** "Over a complete chain, 'all parent links
+resolved' is a checkable property, not a claim you take on faith. On a windowed
+export, unresolved parents are expected and the verifier says so."

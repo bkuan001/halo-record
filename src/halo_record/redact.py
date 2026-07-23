@@ -1,15 +1,21 @@
 """Sensitive-data detection and redaction.
 
-A conforming record MUST NOT contain raw secrets or personal data. ``scan``
-finds them; ``redact_sample`` / ``redact_text`` mask them. Detection is two
-layers, both deterministic and explainable (never a model judgement):
+``scan`` finds known secret and personal-data patterns in text; ``redact_text``
+/ ``redact_sample`` mask them. Detection is two layers, both deterministic and
+explainable (never a model judgement):
 
-1. a list of known secret/PII patterns, and
+1. a list of known secret/PII patterns — API keys, tokens, private keys, DB
+   connection strings, JWTs, credit cards, SSNs, emails, phone numbers, IBANs,
+   internal IPs — and
 2. a high-entropy catch-all that flags long random-looking tokens the patterns
    miss (the provider key formats nobody has hardcoded yet).
 
-Over-redaction is the safe failure: this artifact is meant to be handed to a
-third party. Pattern-for-pattern port of the TypeScript ``redact.ts``.
+Coverage is by named pattern, so it is best-effort, not comprehensive: free-form
+personal data with no fixed shape — a person's name, a postal address — has no
+reliable pattern and is not detected here. Treat redaction as defense-in-depth
+for an artifact handed to a third party, not a guarantee that a summary can
+carry no personal data (see LIMITS.md). Over-redaction is the safe failure.
+Pattern-for-pattern port of the TypeScript ``redact.ts``.
 """
 
 import math
@@ -29,6 +35,8 @@ PATTERNS = [
     ("bearer_token", "HIGH",     re.compile(r'Bearer\s+[a-zA-Z0-9\-_\.]{20,}')),
     ("email",        "MEDIUM",   re.compile(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b')),
     ("ip_internal",  "MEDIUM",   re.compile(r'\b(10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3})\b')),
+    ("phone",        "MEDIUM",   re.compile(r'\b(?:\+?1[-.\s])?\(?\d{3}\)?[-.\s]\d{3}[-.\s]\d{4}\b')),
+    ("iban",         "HIGH",     re.compile(r'\b[A-Z]{2}\d{2}[A-Z0-9]{11,30}\b')),
 ]
 
 SEVERITY_RANK = {"CRITICAL": 4, "HIGH": 3, "MEDIUM": 2, "LOW": 1, "INFO": 0}
@@ -92,6 +100,11 @@ def redact_sample(ftype, value):
         return ("****" + digits[-4:]) if len(digits) >= 4 else "****"
     if ftype == "ssn":
         return ("***-**-" + v[-4:]) if len(v) >= 4 else "****"
+    if ftype == "phone":
+        digits = re.sub(r'\D', '', v)
+        return ("***-***-" + digits[-4:]) if len(digits) >= 4 else "****"
+    if ftype == "iban":
+        return (v[:2] + "****") if len(v) > 2 else "****"
     if ftype == "ip_internal":
         parts = v.split(".")
         return ".".join(parts[:2] + ["*", "*"]) if len(parts) == 4 else "****"

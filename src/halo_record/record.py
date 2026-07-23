@@ -92,14 +92,18 @@ def _norm_principal(principal):
 
 
 def _norm_threats(threats):
-    """Normalize an ingested threats list into schema shape ([{type, ref?}]).
+    """Normalize ingested threats into schema shape ([{type, ref?}]).
 
     Threats are INGESTED from an upstream guardrail/detector — Halo records that
-    a threat was flagged, it does not itself judge or detect. A bare string is
-    read as a threat type; a dict keeps ``type`` (required) and optional ``ref``.
+    a threat was flagged, it does not itself judge or detect. Accepts a list of
+    bare type strings and/or ``{type, ref?}`` dicts; a single bare string is
+    read as one threat (so ``threats="prompt_injection"`` is not iterated
+    character by character). Dicts without a ``type`` are dropped.
     """
     if not threats:
         return None
+    if isinstance(threats, str):
+        threats = [threats]
     out = []
     for t in threats:
         if isinstance(t, str):
@@ -115,8 +119,11 @@ def _norm_threats(threats):
 
 # Which redaction finding types are personal data (vs. secrets/credentials).
 # ``data.pii_types`` is DERIVED from what the deterministic scanner already
-# found — no separate detector, no model judgement.
-_PII_FINDING_TYPES = {"email", "ssn", "credit_card"}
+# found — no separate detector, no model judgement. This is the scanner's set
+# of *named* personal-data categories, not a claim of comprehensive PII
+# coverage: free-form data with no fixed shape (a name, a postal address) has
+# no reliable pattern and never appears here (see LIMITS.md).
+_PII_FINDING_TYPES = {"email", "ssn", "credit_card", "phone", "iban"}
 
 
 def _pii_types_from_findings(findings):
@@ -147,12 +154,15 @@ def build(action_type, category, tool=None, tool_input=None, *,
     ``principal`` records the identities on whose behalf the action ran
     (``human_id`` / ``creator_id`` / ``service_account`` / ``role_scope``);
     ``parent_id`` links this record to the one that caused it (delegation /
-    sub-agent chains). ``threats`` is an INGESTED list of flags from an upstream
-    guardrail/detector ([{"type": ..., "ref": ...}] or bare type strings) — Halo
-    records that a threat was flagged, it never judges or detects one itself.
-    ``data`` carries request-context fields (``region`` / ``cross_region`` /
-    ``purpose``); ``data.pii_types`` is filled automatically from the
-    deterministic scanner's personal-data findings.
+    sub-agent chains); ``halo verify`` reports whether each link resolves within
+    the chain. ``threats`` is an INGESTED set of flags from an upstream
+    guardrail/detector — a list of ``{"type": ..., "ref": ...}`` dicts and/or
+    bare type strings, or a single bare string — Halo records that a threat was
+    flagged, it never judges or detects one itself. ``data`` carries
+    request-context fields (``region`` / ``cross_region`` / ``purpose``);
+    ``data.pii_types`` is filled automatically from the deterministic scanner's
+    named personal-data categories (email, ssn, credit_card, phone, iban), which
+    is not comprehensive PII coverage — see LIMITS.md.
     """
     if action_type not in ACTION_TYPES:
         raise ValueError("action.type must be one of %s" % sorted(ACTION_TYPES))
@@ -217,7 +227,7 @@ def build(action_type, category, tool=None, tool_input=None, *,
     principal = _norm_principal(principal)
     if principal is not None:
         record["principal"] = principal
-    if parent_id:
+    if parent_id is not None and str(parent_id) != "":
         record["parent_id"] = str(parent_id)
     source = normalize_source(source)
     if source is not None:
