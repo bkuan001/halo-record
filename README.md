@@ -173,7 +173,7 @@ One more boundary, stated plainly: neither the chain nor the witness proves that
 
 Anyone can run a witness. A witness you run yourself commits history to *you*; committing it to *your customer* requires a witness they have reason to trust. The protocol is open either way.
 
-A hosted, recognized witness is how this project will sustain itself. Early access: bkuan001@gmail.com.
+A hosted, recognized witness is how this project will sustain itself. Early access: brian@briankuan.com.
 
 ## Where this sits in a compliance stack
 

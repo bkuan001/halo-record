@@ -4,7 +4,7 @@ This project asks you to put a recorder inside your agent, so its own security p
 
 ## Reporting a vulnerability
 
-Email **bkuan001@gmail.com** with "halo-record security" in the subject. Include what you found, a reproduction if you have one, and how you'd like to be credited.
+Email **brian@briankuan.com** with "halo-record security" in the subject. Include what you found, a reproduction if you have one, and how you'd like to be credited.
 
 You will get a human reply within 48 hours. Please give us a chance to ship a fix before public disclosure; we will credit reporters in the release notes unless you prefer otherwise.
 
