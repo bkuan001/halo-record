@@ -23,6 +23,7 @@ audit answer is only as strong as its binding to the version that was
 actually running during the window.
 """
 
+import ast
 import csv
 import datetime
 import hashlib
@@ -31,28 +32,45 @@ import os
 
 from .verify import verify_log
 
+# Grouped so a reviewer reading left to right gets: when → what happened →
+# who did it → under what authority → what was flagged → where it came from →
+# how to verify it. The plain-language columns (action_summary, outcome_summary)
+# sit next to the machine fields deliberately: an assessor scanning the sheet
+# should be able to tell what an action DID without opening the JSONL.
 CSV_COLUMNS = [
+    # when
     "ts",
-    "record_id",
-    "parent_id",
-    "session_id",
+    # what happened
+    "action_type",
+    "category",
+    "tool",
+    "action_summary",
+    "outcome",
+    "outcome_summary",
+    # who
     "subject",
+    "subject_name",
     "principal",
     "agent",
     "agent_version",
     "model",
     "model_version",
-    "action_type",
-    "category",
-    "tool",
+    # under what authority
     "decision",
+    "scope",
+    "authority_snapshot",
+    # what was flagged
     "severity",
     "findings",
     "threats",
     "pii_types",
-    "outcome",
+    # provenance
     "source",
-    "authority_snapshot",
+    "session_id",
+    # identity + verification
+    "record_id",
+    "parent_id",
+    "prev_hash",
     "hash",
 ]
 
@@ -106,6 +124,49 @@ def in_window(record, start=None, end=None):
     return True
 
 
+def _readable(value):
+    """Render a summary field as something a person reads in a spreadsheet.
+
+    Summaries are redacted at capture but arrive in whatever shape the adapter
+    wrote — a string, or a small mapping of the call's arguments. A raw dict
+    repr (``{'ticket': 'T-8841'}``) is noise in a review sheet, so mappings are
+    flattened to ``key=value; key=value`` and sequences joined, matching how
+    the principal column already reads."""
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        # The recorder stores a redacted summary of the call's arguments, and
+        # for structured inputs that lands as the *string form* of a mapping
+        # ("{'to': 'a****@acme.com'}"). Readable in JSON, noise in a review
+        # sheet — so re-render it. literal_eval only evaluates literals (no
+        # code execution), and anything that isn't one is returned untouched.
+        stripped = value.strip()
+        if stripped[:1] in ("{", "[") and stripped[-1:] in ("}", "]"):
+            try:
+                return _readable(ast.literal_eval(stripped))
+            except (ValueError, SyntaxError, MemoryError, RecursionError):
+                return value
+        return value
+    if isinstance(value, dict):
+        return "; ".join("%s=%s" % (k, _readable(v)) for k, v in value.items())
+    if isinstance(value, (list, tuple)):
+        return "; ".join(_readable(v) for v in value)
+    return str(value)
+
+
+def matches_tools(record, tools=None):
+    """Whether a record's tool is in ``tools`` (case-insensitive, exact match).
+
+    ``None`` or an empty selection means "no tool filter" — every record passes.
+    Scoping an export to specific tools is how an assessor pulls just the
+    actions a control covers (e.g. only the email or database calls) without
+    hand-filtering the sheet afterward."""
+    if not tools:
+        return True
+    tool = ((record.get("action") or {}).get("tool") or "").lower()
+    return tool in {t.strip().lower() for t in tools if t and t.strip()}
+
+
 def _neutralize(value):
     """Defuse spreadsheet formula injection in a CSV cell.
 
@@ -135,6 +196,7 @@ def _row(record):
         "parent_id": record.get("parent_id", ""),
         "session_id": record.get("session_id", ""),
         "subject": subject.get("id", ""),
+        "subject_name": subject.get("name", ""),
         "principal": "; ".join("%s=%s" % (k, principal[k]) for k in
                                ("human_id", "creator_id", "service_account", "role_scope")
                                if principal.get(k)),
@@ -145,7 +207,14 @@ def _row(record):
         "action_type": action.get("type", ""),
         "category": action.get("category", ""),
         "tool": action.get("tool", ""),
+        # The redacted, human-readable description of the call and its result.
+        # Raw arguments are never exported — only the scrubbed summary the
+        # recorder already wrote (see LIMITS.md §6 on redaction bounds).
+        "action_summary": _readable((action.get("input") or {}).get("summary")),
+        "outcome_summary": _readable((record.get("outcome") or {}).get("summary")),
         "decision": (action.get("authorization") or {}).get("decision", ""),
+        "scope": (action.get("authorization") or {}).get("scope", ""),
+        "prev_hash": (record.get("integrity") or {}).get("prev_hash", ""),
         "severity": record.get("severity", ""),
         "findings": "; ".join(
             f.get("type", "") for f in findings if isinstance(f, dict)
@@ -168,7 +237,7 @@ def _row(record):
 
 
 def build_manifest(records, window_records, *, source_log, start=None, end=None,
-                   verified=None, csv_sha256=None):
+                   verified=None, csv_sha256=None, tools=None):
     def _iso(dt):
         return dt.isoformat() if dt else None
 
@@ -176,6 +245,10 @@ def build_manifest(records, window_records, *, source_log, start=None, end=None,
         "generated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         "source_log": os.path.basename(str(source_log)),
         "window": {"from": _iso(start), "to": _iso(end)},
+        # A tool filter narrows the exported population, so it is disclosed
+        # here: a reviewer must be able to see that this CSV is a SUBSET and
+        # exactly how it was scoped, never a silent selection.
+        "tool_filter": sorted({t.strip() for t in tools if t and t.strip()}) if tools else None,
         "window_records": len(window_records),
         # SHA-256 of the exported CSV file's bytes: ties the manifest to the
         # exact evidence file it describes, so a CSV edited after export no
@@ -201,7 +274,8 @@ def build_manifest(records, window_records, *, source_log, start=None, end=None,
     return manifest
 
 
-def export(log_path, out_path, *, start=None, end=None, manifest_path=None, out=print):
+def export(log_path, out_path, *, start=None, end=None, tools=None,
+           manifest_path=None, out=print):
     """Verify the chain, then write the windowed CSV + manifest.
 
     Returns 0 on success, 1 if the chain fails verification (nothing is
@@ -211,7 +285,8 @@ def export(log_path, out_path, *, start=None, end=None, manifest_path=None, out=
         out(f"REFUSED: {log_path} fails verification; no export written.")
         return 1
     records = load_records(log_path)
-    window = [r for r in records if in_window(r, start, end)]
+    window = [r for r in records
+              if in_window(r, start, end) and matches_tools(r, tools)]
     with open(out_path, "w", encoding="utf-8", newline="") as fh:
         writer = csv.DictWriter(fh, fieldnames=CSV_COLUMNS)
         writer.writeheader()
@@ -221,7 +296,7 @@ def export(log_path, out_path, *, start=None, end=None, manifest_path=None, out=
         csv_sha256 = hashlib.sha256(fh.read()).hexdigest()
     manifest = build_manifest(
         records, window, source_log=log_path, start=start, end=end, verified=True,
-        csv_sha256=csv_sha256,
+        csv_sha256=csv_sha256, tools=tools,
     )
     m_path = manifest_path or (str(out_path) + ".manifest.json")
     with open(m_path, "w", encoding="utf-8") as fh:

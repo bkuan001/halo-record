@@ -73,7 +73,10 @@ def _cmd_export(args):
     except ValueError as e:
         print(e)
         return 2
-    return export(args.log, args.out, start=start, end=end,
+    tools = []
+    for value in (args.tool or []):
+        tools.extend(part for part in value.split(",") if part.strip())
+    return export(args.log, args.out, start=start, end=end, tools=tools or None,
                   manifest_path=args.manifest)
 
 
@@ -262,6 +265,11 @@ def main(argv=None):
                           help="inclusive end (YYYY-MM-DD covers the whole day)")
     p_export.add_argument("-o", "--out", default="evidence.csv",
                           help="CSV output path (default: evidence.csv)")
+    p_export.add_argument("--tool", action="append", default=None,
+                          help="only export actions using this tool; repeat or "
+                               "comma-separate for several (e.g. --tool email.send "
+                               "--tool db.query). The manifest records the filter, "
+                               "so the export discloses that it is a subset.")
     p_export.add_argument("--manifest", default=None,
                           help="manifest path (default: <out>.manifest.json)")
     p_export.set_defaults(func=_cmd_export)
