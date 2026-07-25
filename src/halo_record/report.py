@@ -343,9 +343,10 @@ async function liveCheckpoints(cfg, embedded){
       (comp.before ? "; " + comp.before + " checkpoint(s) precede the window" : "") +
       "." + note;
   } else if (comp.ok === null){
-    cel.className = "verdict neutral";
-    cel.innerHTML = "Not yet anchored — no independent witness exists for this report. " +
-      "Completeness rests on the vendor alone until Halo witnesses the chain." + note;
+    cel.className = "verdict open";
+    cel.innerHTML = "<b>Not yet anchored.</b> No independent witness exists for this report — " +
+      "completeness rests on the vendor alone until the chain is witnessed. " +
+      "Integrity is verified above; completeness is not." + note;
   } else if (comp.ok && WINDOW){
     cel.className = "verdict neutral";
     cel.innerHTML = "Consistent within window &mdash; " +
@@ -433,13 +434,29 @@ line-height:1.5;-webkit-font-smoothing:antialiased}
 .eyebrow{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--gold);font-weight:600}
 h1{font-family:"Instrument Serif",Georgia,serif;font-weight:400;font-size:46px;
 line-height:1.05;margin:10px 0 6px;letter-spacing:-.01em}
-.meta{color:var(--dim);font-size:14px;margin-bottom:28px}
+.meta{color:var(--dim);font-size:14px;margin-bottom:10px}
 .meta b{color:var(--ink);font-weight:600}
+/* "What period does this cover?" is the first question an assessor asks of an
+   evidence artifact, so the span the records actually cover gets its own line
+   instead of sitting mid-sentence in the metadata. */
+.period{display:inline-flex;align-items:baseline;gap:8px;flex-wrap:wrap;
+margin:0 0 26px;padding:8px 14px;border:1px solid var(--line);border-radius:10px;
+background:#fff;font-size:15px;color:var(--ink)}
+.period b{font-weight:600;font-variant-numeric:tabular-nums}
+.period-l{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim);
+font-weight:600}
+.period-tz{font-size:12px;color:var(--dim)}
 .verdict{border-radius:12px;padding:16px 20px;font-size:15px;font-weight:500;margin:0 0 28px;
 border:1px solid var(--line);background:#fff}
 .verdict.ok{background:var(--ok-bg);border-color:#cfe6d8;color:var(--ok)}
 .verdict.fail{background:var(--fail-bg);border-color:#eccdca;color:var(--fail)}
 .verdict.neutral{background:var(--neutral-bg);color:var(--dim)}
+/* An un-anchored report is integrity-only: nobody outside the operator has
+   attested it. That is the single most consequential limit on the page, so it
+   is styled as an open question rather than as neutral chrome — it should
+   read as unresolved, never as a passing state. */
+.verdict.open{background:var(--warn-bg);border-color:#e6d3ae;color:var(--warn)}
+.verdict.open b{color:var(--warn)}
 .note{font-size:13px;color:var(--dim);margin:-18px 0 30px}
 .cards{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:34px}
 .card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px 18px}
@@ -632,7 +649,9 @@ def render(records, checkpoints=None, *, witness_url=None, policy=None, window=N
 </head><body><div class="wrap">
 <div class="eyebrow">Halo Runtime Record</div>
 <h1>%(subject)s</h1>
-<div class="meta">%(agent_meta)s &middot; %(start)s &ndash; %(end)s &middot; <b>%(total)s</b> recorded actions</div>
+<div class="meta">%(agent_meta)s &middot; <b>%(total)s</b> recorded actions</div>
+<div class="period"><span class="period-l">Period covered</span>
+<b>%(start)s</b> &ndash; <b>%(end)s</b> <span class="period-tz">UTC</span></div>
 <div id="verdict" class="verdict neutral">Verifying hash chain&hellip;</div>
 <div id="completeness" class="verdict neutral">Checking completeness against the witness checkpoints&hellip;</div>
 %(window_block)s
