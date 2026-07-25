@@ -195,8 +195,12 @@ a person even after you delete your list.
 The log is also not the only copy. The same text is carried into the exported CSV
 you upload to a GRC platform, and into any Runtime Report you share with a
 counterparty — and report access is granted by email domain, which section 8
-explains is not an identity proof. There is no retention or expiry capability at
-all: records live as long as your storage keeps them.
+explains is not an identity proof. One record per tenant is your job, not the
+tool's: `halo report` renders whatever chain you point it at, so a file holding
+more than one tenant produces a single report carrying all of them, titled with
+just one. Route each tenant to its own chain and check that routing before sharing
+anything. There is no retention or expiry capability at all: records live as long
+as your storage keeps them.
 
 ---
 
