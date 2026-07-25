@@ -174,3 +174,106 @@ window — so an orphan is reported, not treated as tampering.
 **What you say to a reviewer:** "Over a complete chain, 'all parent links
 resolved' is a checkable property, not a claim you take on faith. On a windowed
 export, unresolved parents are expected and the verifier says so."
+
+---
+
+## 12. Personal data and erasure
+
+**If someone asks to be deleted — the short version.** Nothing can be removed from
+this log. If a person's details were written into it, they stay there permanently.
+The only workable approach is to keep personal data out of the log from the start:
+store a meaningless reference code, and keep the code-to-person list in an ordinary
+database you can delete from. Three things defeat that and you must check all three.
+Unstructured details like names and street addresses are never masked and land in
+the log as written. One field in every record normally holds a person's work login,
+usually an email address — check whether that person is one of your staff or one of
+your customers, because that decides whether any of this applies to you. And if the
+agent's inputs are things an outsider could guess, like an email address or an
+account number, the stored fingerprint of those inputs can still be matched back to
+a person even after you delete your list.
+
+The log is also not the only copy. The same text is carried into the exported CSV
+you upload to a GRC platform, and into any Runtime Report you share with a
+counterparty — and report access is granted by email domain, which section 8
+explains is not an identity proof. There is no retention or expiry capability at
+all: records live as long as your storage keeps them.
+
+---
+
+The chain is append-only and hash-chained. Removing or editing a record breaks
+verification for every record after it. That is the point of the design — and it
+means anything sealed into a record is, for practical purposes, permanent.
+
+**More than one field carries caller-supplied text.** `subject` is the obvious one,
+and it is meant for the tenant *organization* an action serves — not for a natural
+person. But it is not the only door. Everything in this table is sealed verbatim.
+The table is a starting point, not a closed inventory: any caller-supplied string
+can carry personal data, and only the summaries are scanned at all.
+
+| Field | How it goes wrong |
+|---|---|
+| `principal.human_id` / `creator_id` / `role_scope` | names the person the action ran on behalf of — teams put a work login here, which is usually an email address |
+| `action.authorization.approver` / `scope` / `decision` | the approving person's name or login, and values built from one |
+| `outcome.*` (keys other than `summary`) | passed through untouched and never scanned — a result field like `customer` or `address` seals a person's details permanently |
+| `session_id`, `parent_id` | free-form; often built by joining a user identifier to a date |
+| `agent.*`, `source.*`, `authority.*` | free-form labels — a laptop, an assistant, or a runbook named after a customer |
+| `action.tool` | a tool name built from the thing it acts on |
+| `threats[].type` / `.ref` | ticket references and notes copied from an upstream detector |
+| `data.*` | any key you add beyond `region` / `purpose` / `cross_region` |
+| `action.input.summary`, `outcome.summary` | redacted best-effort only — and per section 6 a **name or postal address has no reliable pattern, is not detected, and is not masked** |
+| `findings[].type` / `.sample` | masked fragments *when the scanner produced them* — a masked email keeps its full domain and an SSN keeps its last four. Findings you supply yourself are stored exactly as given, unmasked |
+
+Note that `summaries=False` drops the human-readable summaries but does **not**
+empty the record of payload-derived text: `findings[].sample` and `data.pii_types`
+are computed before summaries are dropped and survive.
+
+**The stored fingerprint can confirm a guess.** `action.input.hash` is an unsalted
+SHA-256 over the canonical tool arguments. Where those arguments come from a small
+or guessable set — an email address, a customer number — anyone who can guess a
+value can confirm it by hashing their guess and comparing. Deleting an external
+mapping does not sever that link, and the masked findings above narrow the guessing
+down further. Treat the input hash as pseudonymous data, not as a value that
+reveals nothing. There is no salted or keyed option today.
+
+**The pattern that works, and its actual scope:** put a stable pseudonymous
+identifier in the chain, keep the mapping to an individual in a system you control
+and can delete from, and keep personal data out of every field in the table above —
+not just `subject`. An erasure request is then satisfied by deleting the mapping.
+No library setting enforces this; it is a discipline in how you call the recorder.
+
+Two things this is not:
+
+- **It is not anonymization.** A pseudonymous identifier is still personal data
+  under most privacy regimes. This makes erasure *tractable*; it does not put the
+  data outside the regime, and halo-record makes no compliance claim.
+- **It is not a retention policy.** There is no built-in expiry or pruning today,
+  so retention is whatever your storage does. Dropping old records at anchored
+  checkpoints is possible in principle but is not implemented.
+
+Where a record must be kept because a regulation requires the log, that obligation
+covers keeping *the record*. It does not license keeping more identifying detail
+inside the record than the purpose needs.
+
+**What to ask the vendor** (this part is for the reviewer, not the engineer):
+
+1. *Which fields do you write personal data into?* Ask for the table above,
+   answered row by row, then ask to see twenty real records. "Only the subject
+   field" is not a sufficient answer.
+2. *Whose login goes in the `principal` field — your staff, or your customers?*
+   If it is customers, personal data is in every record by default.
+3. *Could an outsider guess your tool-call inputs?* Emails, account numbers or
+   anything from a small set stay matchable no matter what else has been deleted.
+   "They are random identifiers" is a good answer; "they are customer emails" is a
+   finding.
+4. *Where does the code-to-person list live, and can you demonstrate deleting from
+   it?* Ask to watch a deletion.
+5. *What is your retention period, given the tool provides none?* Any answer that
+   is not a specific period, applied automatically, is a finding.
+6. *Where else does this data go, and who can currently open a Runtime Report?*
+   Named systems and named recipients — access is by email domain, so ask whether
+   they can revoke one named person.
+7. *Can you answer an access request as well as a deletion one?* Ask them to
+   produce everything they hold on one individual, across every field above.
+
+A vendor who says "identifiers in the chain are pseudonymous" without addressing
+`principal`, the summaries, and the input fingerprint has not answered the question.

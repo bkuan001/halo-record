@@ -175,6 +175,36 @@ Anyone can run a witness. A witness you run yourself commits history to *you*; c
 
 A hosted, recognized witness is how this project will sustain itself. Early access: brian@briankuan.com.
 
+## Personal data in the chain
+
+The chain is append-only: anything sealed into a record stays there, because
+removing it would break verification for everything after it. Tool arguments are
+already handled — stored as a hash plus a redacted summary, never raw.
+
+Note the limit in that sentence: *redacted*, not removed. [LIMITS.md](LIMITS.md)
+section 6 is explicit that a name or a postal address has no reliable pattern, so
+neither is detected and neither is masked. And `subject` is not the only field that
+carries text you supply — `principal`, `approver`, `session_id`, `agent`,
+`authority`, `data` and the summaries all do.
+
+The pattern that works: put a stable pseudonymous id in the chain and hold the
+mapping to any individual in a system you can delete from. An erasure request is
+then satisfied by deleting the mapping. Keep `subject` pointing at the tenant
+organization, not a person:
+
+```python
+from halo_record import build
+
+build("tool_call", "privacy", subject={"id": "acme", "name": "Acme Corp"})
+```
+
+No setting enforces this — it is a discipline in how you call the recorder.
+It makes erasure tractable; it is not anonymization, and there is no built-in
+retention or pruning yet.
+[LIMITS.md section 12](LIMITS.md#12-personal-data-and-erasure) has the full field
+list, explains why the stored input fingerprint can confirm a guessable value even
+after the mapping is gone, and ends with questions a reviewer should ask.
+
 ## Where this sits in a compliance stack
 
 halo-record is an evidence layer, not a certification. It produces the artifact that assessment frameworks keep asking for in different words:
