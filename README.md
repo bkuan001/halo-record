@@ -181,7 +181,7 @@ The chain is append-only: anything sealed into a record stays there, because
 removing it would break verification for everything after it. Tool arguments are
 already handled — stored as a hash plus a redacted summary, never raw.
 
-Note the limit in that sentence: *redacted*, not removed. [LIMITS.md](LIMITS.md)
+Note the limit in that sentence: *redacted*, not removed. [LIMITS.md](https://github.com/bkuan001/halo-record/blob/main/LIMITS.md)
 section 6 is explicit that a name or a postal address has no reliable pattern, so
 neither is detected and neither is masked. And `subject` is not the only field that
 carries text you supply — `principal`, `approver`, `session_id`, `agent`,
@@ -201,7 +201,7 @@ build("tool_call", "privacy", subject={"id": "acme", "name": "Acme Corp"})
 No setting enforces this — it is a discipline in how you call the recorder.
 It makes erasure tractable; it is not anonymization, and there is no built-in
 retention or pruning yet.
-[LIMITS.md section 12](LIMITS.md#12-personal-data-and-erasure) has the full field
+[LIMITS.md section 12](https://github.com/bkuan001/halo-record/blob/main/LIMITS.md#12-personal-data-and-erasure) has the full field
 list, explains why the stored input fingerprint can confirm a guessable value even
 after the mapping is gone, and ends with questions a reviewer should ask.
 
@@ -211,13 +211,13 @@ halo-record is an evidence layer, not a certification. It produces the artifact 
 
 - **Security questionnaires and SOC 2 reviews:** answer the AI sections with a verifiable Runtime Report instead of screenshots and prose.
 - **AIUC-1:** produces the tamper-evident logging (E015.4) and full-execution-chain records with authorization events (E015.2) the standard's Accountability controls call for — continuous runtime evidence, not reconstructed at audit time.
-- **OWASP (GenAI Security Project):** the runtime evidence behind the agent-behavior risks in the OWASP Top 10 for Agentic Applications 2026 and the LLM Top 10 — goal hijack, tool misuse, identity and privilege abuse — recorded as what the agent actually did, with which tools and data. See [`OWASP.md`](OWASP.md).
-- **AARM (CSA):** produces the tamper-evident action receipt AARM specifies (R5/R6) — chained and independently witnessed. halo-record is the receipt layer; pair it with an enforcement gateway for a full AARM system. See [`AARM.md`](AARM.md).
-- **Agentic Trust Controls:** the runtime records behind the ATC's evidence controls — tamper-evident action logging (RBM-03) and authority attestation (AID-05) in one chained record, with the witness layer beyond both. See [`ATC.md`](ATC.md).
+- **OWASP (GenAI Security Project):** the runtime evidence behind the agent-behavior risks in the OWASP Top 10 for Agentic Applications 2026 and the LLM Top 10 — goal hijack, tool misuse, identity and privilege abuse — recorded as what the agent actually did, with which tools and data. See [`OWASP.md`](https://github.com/bkuan001/halo-record/blob/main/OWASP.md).
+- **AARM (CSA):** produces the tamper-evident action receipt AARM specifies (R5/R6) — chained and independently witnessed. halo-record is the receipt layer; pair it with an enforcement gateway for a full AARM system. See [`AARM.md`](https://github.com/bkuan001/halo-record/blob/main/AARM.md).
+- **Agentic Trust Controls:** the runtime records behind the ATC's evidence controls — tamper-evident action logging (RBM-03) and authority attestation (AID-05) in one chained record, with the witness layer beyond both. See [`ATC.md`](https://github.com/bkuan001/halo-record/blob/main/ATC.md).
 - **EU AI Act:** logging and record-keeping obligations for high-risk AI systems.
 - **ISO 42001 / NIST AI RMF:** the operational evidence behind management-system controls.
 
-None of this certifies anything by itself. It gives your assessor something verifiable to look at. The boundaries — what halo-record deliberately does not do, and what to say when a reviewer asks — are documented in [`LIMITS.md`](LIMITS.md).
+None of this certifies anything by itself. It gives your assessor something verifiable to look at. The boundaries — what halo-record deliberately does not do, and what to say when a reviewer asks — are documented in [`LIMITS.md`](https://github.com/bkuan001/halo-record/blob/main/LIMITS.md).
 
 ### Getting the evidence into your GRC platform
 
@@ -268,7 +268,7 @@ The same recorder ships for Node: [`halo-record-ts`](https://github.com/bkuan001
 
 ## Contributing
 
-Issues, discussions, and pull requests welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for the ground rules (short version: tests required, small PRs, schema changes get discussed first).
+Issues, discussions, and pull requests welcome — see [CONTRIBUTING.md](https://github.com/bkuan001/halo-record/blob/main/CONTRIBUTING.md) for the ground rules (short version: tests required, small PRs, schema changes get discussed first).
 
 ## License
 
