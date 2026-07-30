@@ -346,6 +346,7 @@ class Recorder:
         self.path = os.path.expanduser(path)
         self._lock = threading.Lock()
         self._last_hash = None
+        self._last_record_id = None
         self._last_authority_snapshot_id = None
         self._tail_loaded = False
         self._last_size = None
@@ -376,11 +377,13 @@ class Recorder:
         """Read the chain head (and last authority snapshot) from disk."""
         line = _read_last_line(self.path) if os.path.exists(self.path) else None
         self._last_hash = GENESIS_PREV
+        self._last_record_id = None
         self._last_authority_snapshot_id = None
         if line is not None:
             try:
                 rec = json.loads(line)
                 self._last_hash = rec.get("integrity", {}).get("hash") or GENESIS_PREV
+                self._last_record_id = rec.get("record_id")
                 authority = rec.get("authority")
                 if isinstance(authority, dict):
                     self._last_authority_snapshot_id = authority.get("snapshot_id")
@@ -399,6 +402,14 @@ class Recorder:
     def last_hash(self):
         with self._lock:
             return self._current_tail()[0]
+
+    def last_record_id(self):
+        """``record_id`` of the most recent record in the chain, or ``None`` on
+        an empty chain. Pass it as ``parent_id`` on the next record to link a
+        delegated action to the action that spawned it."""
+        with self._lock:
+            self._current_tail()
+            return self._last_record_id
 
     def last_authority_snapshot_id(self):
         with self._lock:
@@ -431,6 +442,7 @@ class Recorder:
                     fh.flush()
                     self._last_size = fh.tell()
                 self._last_hash = record["integrity"]["hash"]
+                self._last_record_id = record.get("record_id")
                 self._last_authority_snapshot_id = authority_snapshot_id
             finally:
                 self._release_flock(flock)

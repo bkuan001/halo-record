@@ -45,7 +45,22 @@ from halo import trace
 agent = trace(run_my_agent, profile="my-agent", log="audit.jsonl")   # wraps your entrypoint; records the run boundary to ./audit.jsonl — add record_call() or a framework adapter at each tool boundary to capture individual calls
 ```
 
-Without `log=`, records go to `~/.halo/my-agent.jsonl` (one chain per agent). Or use the adapter for what you already run (see the matrix below). Then render the report:
+Without `log=`, records go to `~/.halo/my-agent.jsonl` (one chain per agent). The wrapper seals the run boundary; the evidence lives in the per-call records. Capture those with a framework adapter (matrix below) — or explicitly, which also shows how delegation links:
+
+```python
+from halo import Recorder, record_call
+
+rec = Recorder("audit.jsonl")
+
+with record_call(rec, "crm.lookup", {"account": "acct-9"}) as call:            # one sealed record per tool call
+    call.result = crm.lookup("acct-9")
+
+with record_call(rec, "payments.refund", {"amount": 120},
+                 parent_id=rec.last_record_id()) as call:                      # child links to the action that spawned it
+    call.result = payments.refund(120)
+```
+
+Then render the report:
 
 ```
 halo report audit.jsonl -o report.html    # one chain -> self-verifying HTML

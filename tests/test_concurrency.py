@@ -54,6 +54,28 @@ class TestConcurrentAppend(unittest.TestCase):
             r2.append(build("tool_call", "security", tool="b"))
             self.assertTrue(verify_log(path, out=lambda *a, **k: None))
 
+    def test_last_record_id_tracks_the_tail(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "chain.jsonl")
+            r1 = Recorder(path)
+            self.assertIsNone(r1.last_record_id())  # empty chain
+
+            appended = r1.append(build("tool_call", "security", tool="parent"))
+            self.assertEqual(r1.last_record_id(), appended["record_id"])
+
+            # the id links delegation: child carries parent_id = last_record_id
+            child = r1.append(build("tool_call", "security", tool="child",
+                                    parent_id=r1.last_record_id()))
+            self.assertEqual(child["parent_id"], appended["record_id"])
+
+            # a fresh instance (hook-style process) reads the id from disk
+            r2 = Recorder(path)
+            self.assertEqual(r2.last_record_id(), child["record_id"])
+
+            # and an append by another instance invalidates a stale cache
+            r2.append(build("tool_call", "security", tool="sibling"))
+            self.assertEqual(r1.last_record_id(), r2.last_record_id())
+
     def test_interleaved_instances_do_not_fork_the_chain(self):
         # Two Recorder instances on the same file model two hook processes:
         # each caches its own head, so an append by one must invalidate the
