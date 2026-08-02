@@ -7,6 +7,7 @@ and never store raw secrets.
 
 import json
 import os
+import sys
 import threading
 import uuid
 from datetime import datetime, timezone
@@ -120,6 +121,36 @@ def _norm_threats(threats):
     return out or None
 
 
+VERIFICATION_STATUSES = {"allowed", "blocked", "modified", "unverified"}
+_VERIFICATION_KEYS = ("verifier", "policy_ref", "checked_at")
+
+
+def _norm_verification(verification):
+    """Normalize an ingested verification claim into schema shape.
+
+    The block is INGESTED from an upstream verification/policy gate — Halo
+    seals what the gate said at the moment of the action, it does not
+    adjudicate it. A block whose ``status`` is not one of the schema's enum
+    values is dropped rather than sealed, so a malformed claim never poisons
+    the chain; an absent block means no verification claim was made.
+    """
+    if not isinstance(verification, dict):
+        return None
+    if verification.get("status") not in VERIFICATION_STATUSES:
+        # A supplied-but-invalid claim usually means the integration is
+        # mis-wired; dropping it silently would hide that, so say so on stderr.
+        sys.stderr.write(
+            "halo-record: verification block dropped — status %r is not one "
+            "of allowed | blocked | modified | unverified; the record seals "
+            "with no verification claim\n" % (verification.get("status"),))
+        return None
+    out = {"status": verification["status"]}
+    for k in _VERIFICATION_KEYS:
+        if verification.get(k) not in (None, ""):
+            out[k] = str(verification[k])
+    return out
+
+
 # Which redaction finding types are personal data (vs. secrets/credentials).
 # ``data.pii_types`` is DERIVED from what the deterministic scanner already
 # found — no separate detector, no model judgement. This is the scanner's set
@@ -182,7 +213,8 @@ def build(action_type, category, tool=None, tool_input=None, *,
           session_id="local", agent=None, scope=None, decision="allowed",
           approver=None, findings=None, outcome=None, ts=None,
           subject=None, source=None, authority=None, summaries=True,
-          principal=None, parent_id=None, threats=None, data=None):
+          principal=None, parent_id=None, threats=None, data=None,
+          verification=None):
     """Construct a v0.1 record (without integrity.hash filled in).
 
     ``tool_input`` is hashed (canonical) and, by default, a redacted summary is
@@ -208,7 +240,12 @@ def build(action_type, category, tool=None, tool_input=None, *,
     ``purpose`` str; a boolean ``cross_region`` is coerced to 0/1);
     ``data.pii_types`` is filled automatically from the deterministic scanner's
     named personal-data categories (email, ssn, credit_card, phone, iban), which
-    is not comprehensive PII coverage — see LIMITS.md.
+    is not comprehensive PII coverage — see LIMITS.md. ``verification`` records
+    what an upstream verification/policy gate said about this action at the
+    moment it ran (``status`` of allowed | blocked | modified | unverified,
+    plus optional ``verifier`` / ``policy_ref`` / ``checked_at``) — sealed
+    as supplied, the reporting layer's claim, never adjudicated by Halo; an
+    absent block means no verification claim was made.
     """
     if action_type not in ACTION_TYPES:
         raise ValueError("action.type must be one of %s" % sorted(ACTION_TYPES))
@@ -283,6 +320,9 @@ def build(action_type, category, tool=None, tool_input=None, *,
     threats = _norm_threats(threats)
     if threats is not None:
         record["threats"] = threats
+    verification = _norm_verification(verification)
+    if verification is not None:
+        record["verification"] = verification
     # data.pii_types is derived from the scanner's personal-data findings and
     # merged with any caller-supplied request-context (region/purpose/...).
     data_block = _norm_data(data)

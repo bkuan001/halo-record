@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "halo-record"
-version = "0.2.29"
-description = "Open, tamper-evident runtime records for AI agents: the Halo Runtime Record format, with a dependency-free conformance verifier."
+version = "0.2.30"
+description = "Open, tamper-evident runtime evidence for AI agents — hash-chained Runtime Records, dependency-free, verifiable by anyone."
 readme = "README.md"
 requires-python = ">=3.8"
 license = { text = "Apache-2.0" }

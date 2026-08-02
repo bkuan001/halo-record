@@ -153,6 +153,7 @@ tamper-evident *after the fact* — no one can rewrite who the agent said it act
 for without breaking the chain. But the declaration itself is not bound to an
 authenticated session or IdP token: the record attests "the agent asserted this
 principal / this authorization decision," not "an identity provider proved it."
+The optional `verification` block is the same kind of statement — see §11.
 
 **What you say to a reviewer:** "Attribution is as strong as the integration
 that supplies it, sealed so it cannot be altered later. Binding it to an
@@ -162,7 +163,29 @@ corroborating evidence for who acted, not cryptographic proof of authorization."
 
 ---
 
-## 11. Delegation links are asserted; verification reports their resolution
+## 11. Verification status is the gate's report, not Halo's finding
+
+The optional `verification` block records what an upstream verification or
+policy gate said about the action at the moment it ran, as supplied by the
+operator's integration code — the same trust posture as `principal` and the
+`agent` block (§5, §10). Sealing makes the claim tamper-evident after the
+fact: no one can rewrite what the gate was said to have decided without
+breaking the chain. But nothing in Halo ran the check, so the seal does not
+prove the check occurred, that the verdict was correct, or that a `blocked`
+action did not execute. And `policy_ref` is only as strong as its resolution:
+a content hash of a retained ruleset can be produced and compared; an
+unresolvable label cannot.
+
+**What you say to a reviewer:** "`verification.status` is the named gate's own
+report of its decision, written by the operator's integration and sealed so it
+cannot be altered afterward. Halo records it; nothing in Halo confirms it.
+Treat it as corroborating evidence that a control was operating — reliance
+requires producing the ruleset matching `policy_ref` and independent evidence
+the verifier was deployed as claimed."
+
+---
+
+## 12. Delegation links are asserted; verification reports their resolution
 
 `parent_id` records which action caused this one (sub-agent / delegation
 chains). `halo verify` checks referential integrity: for a complete chain it
@@ -177,7 +200,7 @@ export, unresolved parents are expected and the verifier says so."
 
 ---
 
-## 12. Personal data and erasure
+## 13. Personal data and erasure
 
 **If someone asks to be deleted — the short version.** Nothing can be removed from
 this log. If a person's details were written into it, they stay there permanently.

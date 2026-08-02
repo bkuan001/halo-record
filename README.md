@@ -69,6 +69,38 @@ halo serve ./records --port 8721          # all tenants, gated per customer
 
 The quickstart ends when you are looking at your own agent's Runtime Report in a browser. If you got a JSONL file and no report, something is wrong: open an issue.
 
+### The verification block
+
+If a guardrail or policy layer checked the action, its verdict can ride on the record — an optional block recording what the gate decided, sealed into the hash chain like every other field:
+
+```python
+from halo_record import build
+
+build("tool_call", "security", tool="payments.refund",
+      verification={"status": "allowed", "verifier": "gate/1.2",
+                    "policy_ref": "sha256:1f3a...",
+                    "checked_at": "2026-08-01T12:00:00Z"})
+```
+
+which seals into the record as:
+
+```json
+"verification": {"status": "allowed", "verifier": "gate/1.2", "policy_ref": "sha256:1f3a...", "checked_at": "2026-08-01T12:00:00Z"}
+```
+
+`record_call(...)` accepts the same `verification=` keyword. `status` is required within the block; `verifier`, `policy_ref`, and `checked_at` are optional. What each status means:
+
+| Status | What the gate reports | Did the action execute? |
+|---|---|---|
+| `allowed` | it permitted the action | yes — the action proceeded |
+| `blocked` | it denied the action | determined by the integration, not by this field — a record may still carry an outcome, and a block does not by itself prove non-execution |
+| `modified` | it altered the action before execution — `action.input` describes the action **as executed**, post-modification | yes, in the altered form |
+| `unverified` | it ran (or was consulted) but made no determination — distinct from an absent block, which means no verification claim was made at all | yes — the action proceeded without a verdict |
+
+The block is supplied by the operator's integration code and records what it reports the gate said — the same trust posture as `principal` (see [LIMITS](https://github.com/bkuan001/halo-record/blob/main/LIMITS.md#11-verification-status-is-the-gates-report-not-halos-finding)). Sealing proves the status was not edited after the fact; it does not prove the check occurred, that the verdict was correct, or that a blocked action did not execute. This is not independent verification.
+
+For `policy_ref` to be usable as evidence, use a content hash of the ruleset and retain the ruleset artifact — an unresolvable label makes the field decorative.
+
 ## Connect to what you already run
 
 | Captured at the boundary | Ingested from existing telemetry |
@@ -216,7 +248,7 @@ build("tool_call", "privacy", subject={"id": "acme", "name": "Acme Corp"})
 No setting enforces this — it is a discipline in how you call the recorder.
 It makes erasure tractable; it is not anonymization, and there is no built-in
 retention or pruning yet.
-[LIMITS.md section 12](https://github.com/bkuan001/halo-record/blob/main/LIMITS.md#12-personal-data-and-erasure) has the full field
+[LIMITS.md section 13](https://github.com/bkuan001/halo-record/blob/main/LIMITS.md#13-personal-data-and-erasure) has the full field
 list, explains why the stored input fingerprint can confirm a guessable value even
 after the mapping is gone, and ends with questions a reviewer should ask.
 

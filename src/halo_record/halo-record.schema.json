@@ -155,6 +155,17 @@
         }
       }
     },
+    "verification": {
+      "type": "object",
+      "description": "What the verification/policy gate said about this action at the moment it ran, recorded as supplied by the reporting layer. Any guardrail or policy layer can populate it. Optional: an absent block means no verification claim was made.",
+      "required": ["status"],
+      "properties": {
+        "status": { "type": "string", "enum": ["allowed", "blocked", "modified", "unverified"] },
+        "verifier": { "type": "string", "description": "Identifier of the layer that produced the status, e.g. name/version." },
+        "policy_ref": { "type": "string", "description": "Hash or identifier of the policy/ruleset consulted." },
+        "checked_at": { "type": "string", "description": "RFC 3339 UTC timestamp of the check." }
+      }
+    },
     "data": {
       "type": "object",
       "properties": {

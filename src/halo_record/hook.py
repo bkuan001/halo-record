@@ -155,6 +155,7 @@ def record_event(event, recorder, *, subject=None, authority=None, summaries=Tru
         parent_id=event.get("parent_id"),
         threats=event.get("threats"),
         data=event.get("data"),
+        verification=event.get("verification"),
     )
     recorder.append(record)
     return record
