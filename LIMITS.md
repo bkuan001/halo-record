@@ -142,6 +142,29 @@ distributed recording requires coordination this library does not provide.
 Multi-agent *attribution* is supported (records carry the acting agent);
 concurrent multi-process *writing* to one chain is not.
 
+What unserialized concurrent appends look like in practice: two processes read
+the same chain head and both write, forking the chain at that record (two
+records claiming the same predecessor). Verification then names the affected
+records (`prev_hash` / `hash` mismatches) — the damage is detectable,
+localized, and permanent for those records. From the chain alone, a fork from
+a write race and a deliberate edit present identically: verification reports
+the break, not its cause.
+
+Both packages' `Recorder` classes serialize their own appends across
+processes, each with a sidecar lock held over the read-head-then-append
+sequence: the Python package takes a POSIX `flock` on a `<chain>.lock` file
+(on platforms without `flock`, appends are serialized per-process only); the
+TypeScript package takes a `<chain>.lock.d` lock directory (atomic `mkdir`,
+all platforms). Writers that share a `Recorder` path are covered — including
+`halo hook`, which appends through `Recorder`. The two packages' lock
+mechanisms do not interoperate: writers in both languages sharing one chain
+should write per-process chains instead. Anything that writes the chain file
+directly — a hand-rolled hook, a log shipper, parallel workers — must hold an
+equivalent exclusive lock across the read-head-then-append sequence (e.g.
+`flock` on the chain's `.lock` sidecar, the same lock the Python `Recorder`
+takes), or write to per-process chains (one file per worker, each
+independently verifiable).
+
 ---
 
 ## 10. Principal and authorization are declared, not externally attested

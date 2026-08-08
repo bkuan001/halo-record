@@ -171,6 +171,8 @@ halo report ~/.halo/audit.jsonl -o report.html
 
 Any agent runtime that exposes a post-action hook can feed the same command — the hook reads one event as JSON on stdin and appends one record.
 
+One chain, one writer at a time. A chain is a linked list: two writers that read the same head and both append will fork it (two records claiming the same predecessor), and verification will name the affected records. `Recorder` serializes its own appends with a sidecar lock (POSIX `flock` here; a lock directory in the TypeScript package), and `halo hook` appends through `Recorder`, so the hook setup above is covered. Anything that writes the chain file directly — a hand-rolled hook, parallel workers, a log shipper — must hold an equivalent exclusive lock across the read-head-then-append sequence, or write to per-process chains. [LIMITS.md section 9](https://github.com/bkuan001/halo-record/blob/main/LIMITS.md#9-single-writer-chains) covers this in full, including the cross-language boundary.
+
 ## When recording fails
 
 The two integration styles fail in opposite directions, on purpose — pick the one whose failure you can live with:
