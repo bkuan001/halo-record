@@ -13,6 +13,7 @@ It renders exactly one chain — i.e. one ``subject``/customer — so a report i
 safe to share with that customer and no other (segmentation by construction).
 """
 
+import ast
 import html
 import json
 import os
@@ -67,6 +68,28 @@ def _agent_meta(agents):
 
 def _fmt_ts(ts):
     return (ts or "").replace("T", " ").replace("+00:00", "Z")[:19]
+
+
+def chain_breaks(records):
+    """Indices of records whose sealed hash or predecessor link does not hold.
+
+    Operates on a list rather than a file so a *window* can be verified on its
+    own terms: each record's hash is recomputed against the predecessor it
+    declares, and consecutive records must link. A window legitimately starts
+    mid-chain, so the first record's `prev_hash` is taken as its anchor and is
+    not compared to genesis — anchoring the window to the wider chain is a
+    separate claim, made by the witness, not by this function.
+    """
+    from .canon import compute_hash
+    bad = []
+    for i, r in enumerate(records):
+        integ = r.get("integrity") or {}
+        declared_prev = integ.get("prev_hash")
+        if integ.get("hash") != compute_hash(r, declared_prev):
+            bad.append(i)
+        elif i and declared_prev != ((records[i - 1].get("integrity") or {}).get("hash")):
+            bad.append(i)
+    return bad
 
 
 def _summary_stats(records):
@@ -144,6 +167,60 @@ def _provenance(records):
     return panel, True, n_cap, n_ing
 
 
+_PLAIN_VERB = {
+    "tool_call": "Ran", "network": "Fetched", "read": "Read",
+    "write": "Wrote", "agent_message": "Messaged",
+}
+
+# The field in a tool's arguments that a reader actually wants to see first.
+_PLAIN_KEYS = ("command", "file_path", "url", "query", "description", "path",
+               "pattern", "prompt", "to", "summary", "task_id")
+
+
+def _plain(r):
+    """One line a non-engineer can read: what this action did, in words.
+
+    The recorded summary is a serialized argument blob — precise, and unreadable
+    at a glance. This picks the argument that carries the meaning (the command,
+    the file, the URL) and states it as a sentence. It is a *view* of the record,
+    never a replacement: the full summary and its hash stay on the record.
+    """
+    action = r.get("action") or {}
+    tool = action.get("tool") or action.get("type") or "action"
+    summary = (action.get("input") or {}).get("summary") or ""
+    detail = ""
+    if summary.startswith("{"):
+        try:
+            parsed = ast.literal_eval(summary)
+        except Exception:
+            parsed = None
+        if isinstance(parsed, dict):
+            for key in _PLAIN_KEYS:
+                if parsed.get(key):
+                    detail = str(parsed[key])
+                    break
+            if not detail:
+                first = next(iter(parsed.values()), "")
+                detail = str(first)
+        else:
+            detail = summary
+    else:
+        detail = summary
+    detail = " ".join(detail.split())
+    verb = _PLAIN_VERB.get(action.get("type"), "Ran")
+    if tool in ("Write", "Edit", "NotebookEdit"):
+        verb = "Edited" if tool == "Edit" else "Wrote file"
+    elif tool in ("WebFetch", "WebSearch"):
+        verb = "Searched the web for" if tool == "WebSearch" else "Fetched"
+    elif tool == "Bash":
+        verb = "Ran the shell command"
+    elif tool == "Agent":
+        verb = "Started a helper agent to"
+    elif tool == "Read":
+        verb = "Read the file"
+    return ("%s %s" % (verb, detail)).strip()
+
+
 def _row(r, show_agent=False):
     action = r.get("action", {})
     auth = action.get("authorization") or {}
@@ -172,9 +249,31 @@ def _row(r, show_agent=False):
     a = r.get("agent") or {}
     agent_cell = ('<td class="mono">%s</td>' % _esc(a.get("name") or a.get("id") or "—")
                   if show_agent else "")
+    # Filter/sort keys ride on the row itself so the table stays searchable
+    # without re-parsing the embedded JSON. `data-text` is the haystack for
+    # free-text search: everything a reader would plausibly search for.
+    haystack = " ".join(str(x) for x in (
+        r.get("ts"), action.get("tool"), action.get("type"), auth.get("scope"),
+        auth.get("decision"), status, sev, summary,
+        (r.get("agent") or {}).get("name"), short_hash,
+    ) if x).lower()
+    plain = _plain(r)
+    row_attrs = (
+        ' data-ts="%s" data-tool="%s" data-type="%s" data-sev="%s"'
+        ' data-status="%s" data-flags="%d" data-rid="%s" data-text="%s"'
+    ) % (
+        _esc(r.get("ts") or ""),
+        _esc(action.get("tool") or "—"),
+        _esc(action.get("type") or "—"),
+        _esc(sev),
+        _esc(status),
+        len(findings),
+        _esc(r.get("record_id") or ""),
+        _esc((haystack + " " + plain.lower())),
+    )
     return (
-        "<tr>"
-        '<td class="mono dim">%s</td>'
+        '<tr%s tabindex="0" class="rowclick" title="Click for the full record">'
+        '<td class="mono dim ts-cell">%s</td>'
         "%s"
         '<td class="mono">%s</td>'
         '<td>%s</td>'
@@ -187,6 +286,7 @@ def _row(r, show_agent=False):
         '<td class="mono dim">%s</td>'
         "</tr>"
     ) % (
+        row_attrs,
         _esc(_fmt_ts(r.get("ts"))),
         agent_cell,
         _esc(action.get("tool") or "—"),
@@ -198,7 +298,7 @@ def _row(r, show_agent=False):
         "ok" if status == "ok" else ("warn" if status == "error" else "neutral"),
         _esc(status),
         finding_cell,
-        _esc(summary[:90]),
+        _esc(plain[:110]),
         _esc(short_hash),
     )
 
@@ -391,33 +491,306 @@ _PAGINATE_JS = r"""
   var sentinel = document.getElementById("more-sentinel");
   if (!tbody || !tpl || !wrap || !sentinel) return;
   var BATCH = 100;
-  function remaining(){ return tpl.content.querySelectorAll("tr").length; }
-  function shown(){ return tbody.querySelectorAll("tr").length; }
-  function update(){
-    if (!counter) return;
-    var left = remaining();
-    counter.textContent = "Showing " + shown() + " of " + (shown() + left) +
-      " actions, newest first" + (left ? " — scroll the table for more" : "");
+
+  /* One array owns every row; the table body is a rendered view of the
+     filtered+sorted subset. Rows never go back into the template. */
+  var ALL = [];
+  Array.prototype.push.apply(ALL, tbody.querySelectorAll("tr"));
+  Array.prototype.push.apply(ALL, tpl.content.querySelectorAll("tr"));
+  ALL = ALL.filter(function(r){ return r.hasAttribute("data-ts"); });
+  if (!ALL.length) return;
+  tpl.remove();
+
+  var view = ALL.slice();     // current filtered+sorted set
+  var drawn = 0;              // how many of `view` are in the DOM
+
+  /* --- local time -------------------------------------------------------
+     Records are sealed in UTC. A reader investigating "what happened at 3pm"
+     means their own 3pm, so the displayed time follows the viewer's clock by
+     default, with UTC one click away. The underlying record is untouched. */
+  var localMode = true;
+  var TZ = "";
+  try {
+    TZ = Intl.DateTimeFormat().resolvedOptions().timeZone || "";
+  } catch (e) { TZ = ""; }
+  function pad(n){ return (n < 10 ? "0" : "") + n; }
+  function stamp(iso){
+    if (!localMode) return String(iso).replace("T", " ").replace("+00:00", "Z").slice(0, 19);
+    var d = new Date(iso);
+    if (isNaN(d)) return String(iso).slice(0, 19);
+    return d.getFullYear() + "-" + pad(d.getMonth()+1) + "-" + pad(d.getDate()) + " " +
+           pad(d.getHours()) + ":" + pad(d.getMinutes()) + ":" + pad(d.getSeconds());
   }
-  var io = null;
-  function loadMore(){
-    var rows = tpl.content.querySelectorAll("tr");
-    for (var i = 0; i < BATCH && i < rows.length; i++) tbody.appendChild(rows[i]);
-    if (!remaining() && io) io.disconnect();
+  function paintTimes(){
+    for (var i = 0; i < ALL.length; i++){
+      var cell = ALL[i].querySelector(".ts-cell");
+      if (cell) cell.textContent = stamp(ALL[i].getAttribute("data-ts"));
+    }
+    var th = document.getElementById("th-time");
+    if (th) th.firstChild.textContent = localMode
+      ? ("Time (" + (TZ || "local") + ")") : "Time (UTC)";
+    var btn = document.getElementById("tz-toggle");
+    if (btn) btn.textContent = localMode ? "Show UTC" : "Show local time";
+  }
+
+  /* --- filtering -------------------------------------------------------- */
+  var q = document.getElementById("f-q");
+  var fTool = document.getElementById("f-tool");
+  var fType = document.getElementById("f-type");
+  var fSev = document.getElementById("f-sev");
+  var fFrom = document.getElementById("f-from");
+  var fTo = document.getElementById("f-to");
+  var fFlags = document.getElementById("f-flags");
+  var fReset = document.getElementById("f-reset");
+
+  function fillOptions(sel, attr){
+    if (!sel) return;
+    var seen = {}, vals = [];
+    for (var i = 0; i < ALL.length; i++){
+      var v = ALL[i].getAttribute(attr);
+      if (v && !seen[v]){ seen[v] = 1; vals.push(v); }
+    }
+    vals.sort();
+    for (var j = 0; j < vals.length; j++){
+      var o = document.createElement("option");
+      o.value = vals[j]; o.textContent = vals[j];
+      sel.appendChild(o);
+    }
+  }
+  fillOptions(fTool, "data-tool");
+  fillOptions(fType, "data-type");
+
+  /* Datetime-local inputs are read in the same frame as the displayed time,
+     so a range typed against local timestamps selects what the reader sees. */
+  function bound(input){
+    if (!input || !input.value) return null;
+    var d = localMode ? new Date(input.value) : new Date(input.value + "Z");
+    return isNaN(d) ? null : d.getTime();
+  }
+  function matches(row){
+    if (q && q.value.trim()){
+      var terms = q.value.toLowerCase().split(/\s+/);
+      var hay = row.getAttribute("data-text") || "";
+      for (var i = 0; i < terms.length; i++)
+        if (terms[i] && hay.indexOf(terms[i]) === -1) return false;
+    }
+    if (fTool && fTool.value && row.getAttribute("data-tool") !== fTool.value) return false;
+    if (fType && fType.value && row.getAttribute("data-type") !== fType.value) return false;
+    if (fSev && fSev.value && row.getAttribute("data-sev") !== fSev.value) return false;
+    if (fFlags && fFlags.checked && row.getAttribute("data-flags") === "0") return false;
+    var lo = bound(fFrom), hi = bound(fTo);
+    if (lo !== null || hi !== null){
+      var t = new Date(row.getAttribute("data-ts")).getTime();
+      if (isNaN(t)) return false;
+      if (lo !== null && t < lo) return false;
+      if (hi !== null && t > hi) return false;
+    }
+    return true;
+  }
+
+  /* --- sorting ---------------------------------------------------------- */
+  var sortKey = "data-ts", sortDir = -1;   // newest first, as rendered
+  function cmp(a, b){
+    var av = a.getAttribute(sortKey) || "", bv = b.getAttribute(sortKey) || "";
+    if (sortKey === "data-flags"){ av = +av; bv = +bv; }
+    if (sortKey === "data-sev"){
+      var rank = {INFO:0, LOW:1, MEDIUM:2, HIGH:3, CRITICAL:4};
+      av = rank[av] === undefined ? -1 : rank[av];
+      bv = rank[bv] === undefined ? -1 : rank[bv];
+    }
+    if (av < bv) return -sortDir;
+    if (av > bv) return sortDir;
+    return 0;
+  }
+
+  function render(){
+    tbody.textContent = "";
+    drawn = 0;
+    draw();
+    if (wrap) wrap.scrollTop = 0;
+  }
+  function draw(){
+    var frag = document.createDocumentFragment();
+    var end = Math.min(drawn + BATCH, view.length);
+    for (var i = drawn; i < end; i++) frag.appendChild(view[i]);
+    tbody.appendChild(frag);
+    drawn = end;
     update();
   }
+  function update(){
+    if (!counter) return;
+    var filtered = view.length !== ALL.length;
+    counter.textContent = "Showing " + drawn + " of " + view.length + " actions" +
+      (filtered ? " (filtered from " + ALL.length + ")" : "") +
+      (drawn < view.length ? " — scroll the table for more" : "");
+  }
+  function apply(){
+    view = ALL.filter(matches);
+    view.sort(cmp);
+    render();
+  }
+
+  var heads = document.querySelectorAll("th[data-sort]");
+  for (var h = 0; h < heads.length; h++){
+    (function(th){
+      th.addEventListener("click", function(){
+        var key = th.getAttribute("data-sort");
+        if (sortKey === key) sortDir = -sortDir;
+        else { sortKey = key; sortDir = (key === "data-ts") ? -1 : 1; }
+        for (var k = 0; k < heads.length; k++) heads[k].removeAttribute("data-active");
+        th.setAttribute("data-active", sortDir > 0 ? "asc" : "desc");
+        apply();
+      });
+    })(heads[h]);
+  }
+
+  var inputs = [q, fTool, fType, fSev, fFrom, fTo, fFlags];
+  for (var n = 0; n < inputs.length; n++){
+    if (!inputs[n]) continue;
+    inputs[n].addEventListener(inputs[n] === q ? "input" : "change", apply);
+  }
+  if (fReset) fReset.addEventListener("click", function(){
+    if (q) q.value = "";
+    if (fTool) fTool.value = "";
+    if (fType) fType.value = "";
+    if (fSev) fSev.value = "";
+    if (fFrom) fFrom.value = "";
+    if (fTo) fTo.value = "";
+    if (fFlags) fFlags.checked = false;
+    apply();
+  });
+  var tz = document.getElementById("tz-toggle");
+  if (tz) tz.addEventListener("click", function(){
+    localMode = !localMode;
+    paintTimes();
+    apply();
+  });
+
   if ("IntersectionObserver" in window){
-    io = new IntersectionObserver(function(entries){
+    var io = new IntersectionObserver(function(entries){
       for (var i = 0; i < entries.length; i++)
-        if (entries[i].isIntersecting){ loadMore(); break; }
+        if (entries[i].isIntersecting && drawn < view.length){ draw(); break; }
     }, {root: wrap, rootMargin: "600px"});
     io.observe(sentinel);
   } else {
     wrap.addEventListener("scroll", function(){
-      if (wrap.scrollTop + wrap.clientHeight > wrap.scrollHeight - 600) loadMore();
+      if (drawn < view.length &&
+          wrap.scrollTop + wrap.clientHeight > wrap.scrollHeight - 600) draw();
     });
   }
-  update();
+
+  /* --- record detail ----------------------------------------------------
+     A row is a summary; the record is the evidence. Clicking a row opens the
+     whole sealed record — every field, the findings that matched, and the
+     hash linkage a reader can check by hand against the JSONL. */
+  var RECORDS = [];
+  try {
+    RECORDS = JSON.parse(document.getElementById("records").textContent) || [];
+  } catch (e) { RECORDS = []; }
+  var byId = {};
+  for (var ri = 0; ri < RECORDS.length; ri++){
+    var rid = RECORDS[ri].record_id;
+    if (rid) byId[rid] = ri;
+  }
+  var panel = document.getElementById("detail");
+  var panelBody = document.getElementById("detail-body");
+  var panelClose = document.getElementById("detail-close");
+
+  function esc(s){
+    return String(s === undefined || s === null ? "" : s)
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+  function field(label, value, mono){
+    if (value === undefined || value === null || value === "") return "";
+    return '<div class="d-row"><div class="d-k">' + esc(label) + '</div>' +
+           '<div class="d-v' + (mono ? " mono" : "") + '">' + esc(value) + '</div></div>';
+  }
+  function openDetail(rid){
+    var idx = byId[rid];
+    if (idx === undefined || !panel || !panelBody) return;
+    var r = RECORDS[idx];
+    var a = r.action || {}, auth = a.authorization || {}, o = r.outcome || {},
+        integ = r.integrity || {}, inp = a.input || {}, f = r.findings || [];
+    var prev = idx > 0 ? RECORDS[idx - 1] : null;
+    var linkOk = prev ? ((prev.integrity || {}).hash === integ.prev_hash) : null;
+
+    var h = "";
+    h += '<div class="d-plain">' + esc(document.querySelector('tr[data-rid="' +
+         rid.replace(/"/g, "") + '"] td:nth-last-child(2)').textContent) + "</div>";
+    h += '<div class="d-sec">When</div>';
+    h += field("Recorded at", stamp(r.ts) + (localMode ? " (your time)" : " (UTC)"));
+    h += field("Sealed timestamp", r.ts, true);
+    h += '<div class="d-sec">What ran</div>';
+    h += field("Tool", a.tool);
+    h += field("Action type", a.type);
+    h += field("Category", a.category);
+    h += field("Agent", (r.agent || {}).name || (r.agent || {}).id);
+    h += field("Session", r.session_id, true);
+    h += '<div class="d-sec">Arguments (as recorded)</div>';
+    h += '<pre class="d-pre">' + esc(inp.summary || "(none recorded)") + "</pre>";
+    h += field("Argument hash", inp.hash, true);
+    h += '<div class="d-sec">Permission</div>';
+    h += field("Scope", auth.scope);
+    h += field("Decision", auth.decision);
+    h += field("Approver", auth.approver);
+    h += '<div class="d-sec">Result</div>';
+    h += field("Status", o.status);
+    if (o.summary){ h += '<pre class="d-pre">' + esc(o.summary) + "</pre>"; }
+    h += field("Result hash", o.hash, true);
+    h += '<div class="d-sec">Flags (' + f.length + ")</div>";
+    if (!f.length){
+      h += '<div class="d-note">No redaction pattern matched. That is not a ' +
+           "guarantee no sensitive data is present — unstructured personal data " +
+           "has no pattern to match.</div>";
+    } else {
+      for (var i = 0; i < f.length; i++){
+        h += '<div class="d-row"><div class="d-k">' + esc(f[i].type || "?") +
+             '</div><div class="d-v">' + esc(f[i].severity || "") +
+             (f[i].sample ? ' &middot; <span class="mono">' + esc(f[i].sample) + "</span>" : "") +
+             "</div></div>";
+      }
+      h += '<div class="d-note">A flag marks a pattern the redactor matched and ' +
+           "masked in the stored summary. The sample above is already masked.</div>";
+    }
+    h += '<div class="d-sec">Chain position</div>';
+    h += field("Record id", r.record_id, true);
+    h += field("This record's hash", integ.hash, true);
+    h += field("Points back to", integ.prev_hash, true);
+    if (linkOk !== null){
+      h += '<div class="d-note' + (linkOk ? " ok" : " bad") + '">' +
+           (linkOk
+             ? "✓ Links correctly to the record before it in this file."
+             : "✗ Does not match the previous record's hash in this file.") +
+           "</div>";
+    } else {
+      h += '<div class="d-note">First record in this file — its predecessor is ' +
+           "outside the exported window.</div>";
+    }
+    panelBody.innerHTML = h;
+    panel.classList.add("open");
+    panel.setAttribute("aria-hidden", "false");
+  }
+  function closeDetail(){
+    if (!panel) return;
+    panel.classList.remove("open");
+    panel.setAttribute("aria-hidden", "true");
+  }
+  tbody.addEventListener("click", function(ev){
+    var tr = ev.target.closest("tr[data-rid]");
+    if (tr) openDetail(tr.getAttribute("data-rid"));
+  });
+  tbody.addEventListener("keydown", function(ev){
+    if (ev.key !== "Enter" && ev.key !== " ") return;
+    var tr = ev.target.closest("tr[data-rid]");
+    if (tr){ ev.preventDefault(); openDetail(tr.getAttribute("data-rid")); }
+  });
+  if (panelClose) panelClose.addEventListener("click", closeDetail);
+  document.addEventListener("keydown", function(ev){
+    if (ev.key === "Escape") closeDetail();
+  });
+
+  paintTimes();
+  apply();
 })();
 """
 
@@ -473,6 +846,56 @@ td{padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:top}
 td:first-child{white-space:nowrap}
 tbody tr:last-child td{border-bottom:none}
 .rowcount{font-size:12px;color:var(--dim);margin:-6px 0 10px}
+/* An assessor's first move on a large record is to narrow it: by time, by tool,
+   by what got flagged. The controls sit above the table so the narrowing is
+   visible in any screenshot of the result. */
+.filters{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:0 0 12px}
+.filters input[type=search],.filters select,.filters input[type=datetime-local]{
+font:inherit;font-size:13px;color:var(--ink);background:#fff;
+border:1px solid var(--line);border-radius:8px;padding:6px 9px}
+.filters .f-grow{flex:1 1 260px;min-width:200px}
+.filters input[type=search]:focus,.filters select:focus,
+.filters input[type=datetime-local]:focus,.f-btn:focus-visible{
+outline:2px solid var(--gold);outline-offset:1px}
+.f-lab,.f-check{display:inline-flex;align-items:center;gap:6px;
+font-size:12px;color:var(--dim)}
+.f-btn{font:inherit;font-size:12px;color:var(--ink);background:#fff;cursor:pointer;
+border:1px solid var(--line);border-radius:8px;padding:6px 11px}
+.f-btn:hover{background:var(--gold-soft);border-color:var(--gold)}
+th[data-sort]{cursor:pointer;user-select:none;white-space:nowrap}
+th[data-sort]:hover{color:var(--gold)}
+th[data-sort]::after{content:"\2195";opacity:.3;margin-left:5px;font-size:11px}
+th[data-active=asc]::after{content:"\2191";opacity:1;color:var(--gold)}
+th[data-active=desc]::after{content:"\2193";opacity:1;color:var(--gold)}
+@media print{.filters{display:none}}
+tr.rowclick{cursor:pointer}
+tr.rowclick:hover td{background:var(--gold-soft)}
+tr.rowclick:focus-visible{outline:2px solid var(--gold);outline-offset:-2px}
+/* The row answers "what happened"; the drawer answers "show me the record".
+   It slides over rather than expanding inline so the reader keeps their place
+   in the table. */
+.detail{position:fixed;top:0;right:0;width:min(560px,92vw);height:100%;
+background:#fff;border-left:1px solid var(--line);box-shadow:-8px 0 28px rgba(26,23,20,.12);
+padding:22px 24px 40px;overflow:auto;transform:translateX(101%);
+transition:transform .18s ease;z-index:40}
+.detail.open{transform:translateX(0)}
+.detail-head{display:flex;align-items:center;justify-content:space-between;
+gap:12px;margin-bottom:14px}
+.detail-title{font-family:"Instrument Serif",Georgia,serif;font-size:24px}
+.d-plain{font-size:15px;line-height:1.45;background:var(--gold-soft);
+border:1px solid #eadfc0;border-radius:10px;padding:12px 14px;margin-bottom:16px}
+.d-sec{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--gold);
+font-weight:600;margin:18px 0 8px;padding-bottom:5px;border-bottom:1px solid var(--line)}
+.d-row{display:flex;gap:12px;padding:5px 0;font-size:13px;align-items:baseline}
+.d-k{flex:0 0 150px;color:var(--dim)}
+.d-v{flex:1 1 auto;word-break:break-word}
+.d-pre{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;
+background:var(--bg);border:1px solid var(--line);border-radius:8px;
+padding:10px 12px;white-space:pre-wrap;word-break:break-word;max-height:240px;overflow:auto}
+.d-note{font-size:12px;color:var(--dim);margin-top:8px;line-height:1.5}
+.d-note.ok{color:var(--ok)}
+.d-note.bad{color:var(--fail)}
+@media print{.detail{display:none}}
 #more-sentinel{height:1px}
 .mono{font-family:"SF Mono",ui-monospace,Menlo,monospace;font-size:12px}
 .dim{color:var(--dim)}
@@ -627,16 +1050,31 @@ def render(records, checkpoints=None, *, witness_url=None, policy=None, window=N
                 window["first"], window["last"], window["total"])
         else:
             span = "<b>0</b> of the chain's <b>%s</b> records fall in this window" % window["total"]
+        n_outside = window.get("outside_breaks") or 0
+        if n_outside:
+            # Disclosed, not hidden: the window's own integrity is what this
+            # report attests, and the reader is told plainly what lies outside it.
+            outside_note = (
+                ' Outside this window the chain carries <b>%d</b> sequence '
+                'break(s)%s; those records are not part of this report and are '
+                'not covered by its verdict.'
+                % (n_outside,
+                   (" (%s to %s)" % (_esc(_fmt_ts(window.get("outside_first_ts"))),
+                                     _esc(_fmt_ts(window.get("outside_last_ts")))))
+                   if window.get("outside_first_ts") else ""))
+        else:
+            outside_note = (" The rest of the chain verified at generation "
+                            '<span class="mono">(head %s&hellip;)</span>.'
+                            % _esc((window["chain_head"] or "")[:16]))
         window_block = (
             '<div class="verdict neutral">Date-windowed report &mdash; showing %s%s. '
             'Window integrity verifies in your browser against its anchor '
-            '<span class="mono">%s&hellip;</span>; the full chain verified at generation '
-            '<span class="mono">(head %s&hellip;)</span>. Records outside the window are '
+            '<span class="mono">%s&hellip;</span>.%s Records outside the window are '
             'not embedded in this page.</div>'
             % (span,
                (" (%s)" % _esc(bounds)) if bounds else "",
                _esc((window["anchor"] or GENESIS_PREV)[:16]),
-               _esc((window["chain_head"] or "")[:16])))
+               outside_note))
     else:
         verify_js = _VERIFY_JS % {"genesis": GENESIS_PREV, "window_json": "null"}
         window_block = ""
@@ -667,17 +1105,40 @@ def render(records, checkpoints=None, *, witness_url=None, policy=None, window=N
 <div class="scopes">%(scope_pills)s</div>
 %(provenance_block)s
 <h2>Activity</h2>
+<div class="filters" id="filters">
+  <input type="search" id="f-q" class="f-grow" placeholder="Search time, tool, scope, summary, hash&hellip;" aria-label="Search actions">
+  <select id="f-tool" aria-label="Filter by tool"><option value="">All tools</option></select>
+  <select id="f-type" aria-label="Filter by action type"><option value="">All types</option></select>
+  <select id="f-sev" aria-label="Filter by severity">
+    <option value="">Any severity</option>
+    <option value="INFO">INFO</option><option value="LOW">LOW</option>
+    <option value="MEDIUM">MEDIUM</option><option value="HIGH">HIGH</option>
+    <option value="CRITICAL">CRITICAL</option>
+  </select>
+  <label class="f-lab">From <input type="datetime-local" id="f-from" step="1" aria-label="From time"></label>
+  <label class="f-lab">To <input type="datetime-local" id="f-to" step="1" aria-label="To time"></label>
+  <label class="f-check"><input type="checkbox" id="f-flags"> Flagged only</label>
+  <button type="button" id="tz-toggle" class="f-btn">Show UTC</button>
+  <button type="button" id="f-reset" class="f-btn">Reset</button>
+</div>
 %(rowcount)s
 %(noscript)s
 <div class="tablewrap" id="tablewrap">
 <table>
-<thead><tr><th>Time (UTC)</th>%(agent_th)s<th>Tool</th><th>Type</th><th>Source</th><th>Scope</th><th>Decision</th><th>Outcome</th><th>Findings</th><th>Summary</th><th>Hash</th></tr></thead>
+<thead><tr><th id="th-time" data-sort="data-ts" data-active="desc">Time (UTC)</th>%(agent_th)s<th data-sort="data-tool">Tool</th><th data-sort="data-type">Type</th><th>Source</th><th>Scope</th><th>Decision</th><th data-sort="data-status">Outcome</th><th data-sort="data-flags">Findings</th><th>Summary</th><th>Hash</th></tr></thead>
 <tbody id="activity-body">
 %(rows)s
 </tbody></table>
 <div id="more-sentinel"></div>
 </div>
 <template id="more-rows">%(more_rows)s</template>
+<aside id="detail" class="detail" aria-hidden="true" aria-label="Record detail">
+  <div class="detail-head">
+    <div class="detail-title">Record</div>
+    <button type="button" id="detail-close" class="f-btn" aria-label="Close record detail">Close</button>
+  </div>
+  <div id="detail-body"></div>
+</aside>
 <footer>Generated by <a href="https://github.com/bkuan001/halo-record">halo-record</a> &middot; format <a href="https://github.com/bkuan001/halo-record/blob/main/src/halo_record/halo-record.schema.json">Halo Runtime Record v0.1</a></footer>
 </div>
 <script id="records" type="application/json">%(records_json)s</script>
@@ -746,12 +1207,6 @@ def write_report(log_path, out_path=None, witness_log=None, witness_url=None,
         policy = load_policy(policy_path)
     window = None
     if start is not None or end is not None:
-        from .verify import verify_log
-        silent = lambda *a, **k: None  # noqa: E731
-        if not verify_log(log_path, out=silent):
-            raise ValueError(
-                "%s fails verification; refusing to render a windowed report "
-                "from an unverifiable chain" % log_path)
         from .export import in_window
         total = len(records)
         chain_head = (records[-1].get("integrity") or {}).get("hash", "") if records else ""
@@ -762,8 +1217,25 @@ def write_report(log_path, out_path=None, witness_log=None, witness_url=None,
             anchor = (win_records[0].get("integrity") or {}).get("prev_hash", "")
         else:
             first, last, win_records, anchor = -1, -1, [], ""
+
+        # What the window claims is what the window must prove. A break
+        # elsewhere in the chain is disclosed on the report rather than
+        # withholding the window: the reader can see both facts and judge.
+        # A break *inside* the requested window is still a refusal — that
+        # report would assert an integrity it does not have.
+        win_breaks = chain_breaks(win_records)
+        if win_breaks:
+            raise ValueError(
+                "%s: the requested window fails verification at record(s) %s; "
+                "refusing to render a report that would claim otherwise"
+                % (log_path, ", ".join(str(first + 1 + n) for n in win_breaks[:5])))
+        outside = [n for n in chain_breaks(records) if not (first <= n <= last)]
+
         window = {"first": first + 1, "last": last + 1, "total": total,
                   "anchor": anchor, "chain_head": chain_head,
+                  "outside_breaks": len(outside),
+                  "outside_first_ts": (records[outside[0]].get("ts") if outside else None),
+                  "outside_last_ts": (records[outside[-1]].get("ts") if outside else None),
                   "from": start.isoformat() if start else None,
                   "to": end.isoformat() if end else None}
         records = win_records
