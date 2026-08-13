@@ -71,6 +71,7 @@ def verify_log(path, schema=None, out=print):
     ok = True
     chain_ok = True           # hash-chain/sequence integrity, distinct from schema
     prev_hash = GENESIS_PREV
+    chain_broken_at = None    # first record whose break makes everything after it unprovable
     seen_ids = set()          # record_ids seen so far, to resolve parent links
     parent_links = 0          # records that declare a parent_id
     orphan_links = 0          # parent_ids not found earlier in this chain
@@ -89,19 +90,26 @@ def verify_log(path, schema=None, out=print):
         integ = record.get("integrity", {})
         declared_prev = integ.get("prev_hash")
         declared_hash = integ.get("hash")
-
-        if declared_prev != prev_hash:
-            out("record %d: chain: prev_hash %s does not match expected %s"
-                % (n, declared_prev, prev_hash))
-            ok = False
-            chain_ok = False
-
         recomputed = compute_hash(record, prev_hash)
-        if declared_hash != recomputed:
-            out("record %d: chain: hash %s does not match recomputed %s"
-                % (n, declared_hash, recomputed))
+
+        # After the first break, a per-record check here is uninformative (see
+        # the summary line below) -- LIMITS.md section 9 already covers why.
+        if chain_broken_at is None:
+            if declared_prev != prev_hash:
+                out("record %d: chain: prev_hash %s does not match expected %s"
+                    % (n, declared_prev, prev_hash))
+                ok = False
+                chain_ok = False
+                chain_broken_at = n
+
+            if declared_hash != recomputed:
+                out("record %d: chain: hash %s does not match recomputed %s"
+                    % (n, declared_hash, recomputed))
+                ok = False
+                chain_ok = False
+                chain_broken_at = n
+        else:
             ok = False
-            chain_ok = False
 
         # Delegation referential integrity: a parent_id should point at a record
         # that appeared earlier in this chain. An orphan is surfaced but does not
@@ -118,7 +126,13 @@ def verify_log(path, schema=None, out=print):
         if record_id:
             seen_ids.add(record_id)
 
-        prev_hash = declared_hash if declared_hash else recomputed
+        prev_hash = recomputed  # never the record's own declared_hash
+
+    if chain_broken_at is not None and chain_broken_at < len(lines):
+        out("chain: record %d onward is not verifiable relative to the true "
+            "chain (the break at record %d means nothing built on it can be "
+            "proven intact or shown to be further tampered — see LIMITS.md "
+            "section 9)." % (chain_broken_at + 1, chain_broken_at))
 
     if parent_links:
         if orphan_links:
