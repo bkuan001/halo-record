@@ -143,8 +143,9 @@ class ChainTest(unittest.TestCase):
 
         self.assertFalse(ok)
         chain_lines = [ln for ln in lines if ln.startswith("record") and ": chain:" in ln]
+        unverifiable_lines = [ln for ln in lines if "onward is not verifiable" in ln]
         self.assertEqual(len(chain_lines), 1)
-        self.assertTrue(any("onward is not verifiable" in ln for ln in lines))
+        self.assertEqual(len(unverifiable_lines), 1)
 
 
 if __name__ == "__main__":

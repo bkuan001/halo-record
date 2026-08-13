@@ -144,11 +144,14 @@ concurrent multi-process *writing* to one chain is not.
 
 What unserialized concurrent appends look like in practice: two processes read
 the same chain head and both write, forking the chain at that record (two
-records claiming the same predecessor). Verification then names the affected
-records (`prev_hash` / `hash` mismatches) — the damage is detectable,
-localized, and permanent for those records. From the chain alone, a fork from
-a write race and a deliberate edit present identically: verification reports
-the break, not its cause.
+records claiming the same predecessor). Verification names the first affected
+record (`prev_hash` / `hash` mismatch) and reports everything after it, once,
+as a tail that can no longer be proven to descend from the pre-break chain —
+the damage is detectable and permanent, and the verifier does not resume from
+a record's self-declared hash to grade later records individually. A later
+span can still be evaluated on its own terms with a windowed report. From the
+chain alone, a fork from a write race and a deliberate edit present
+identically: verification reports the break, not its cause.
 
 Both packages' `Recorder` classes serialize their own appends across
 processes, each with a sidecar lock held over the read-head-then-append
