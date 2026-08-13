@@ -108,6 +108,44 @@ class ChainTest(unittest.TestCase):
                 fh.write(json.dumps(r, separators=(",", ":")) + "\n")
         self.assertFalse(verify_log(self.log, out=_silent))
 
+    def test_record_after_a_stale_hash_break_is_reported_unverifiable(self):
+        rec = Recorder(self.log)
+        rec.append(build("tool_call", "security", tool="a"))
+        rec.append(build("tool_call", "security", tool="b"))
+        rec.append(build("tool_call", "security", tool="c"))
+        recs = self._records()
+        recs[1]["action"]["tool"] = "malicious-action-injected"  # hash left stale
+        with open(self.log, "w") as fh:
+            for r in recs:
+                fh.write(json.dumps(r, separators=(",", ":")) + "\n")
+
+        lines = []
+        ok = verify_log(self.log, out=lines.append)
+
+        self.assertFalse(ok)
+        joined = "\n".join(lines)
+        self.assertIn("record 2", joined)
+        self.assertNotIn("record 3: chain", joined)
+        self.assertIn("record 3 onward is not verifiable", joined)
+
+    def test_one_old_break_does_not_cascade_into_a_report_per_later_record(self):
+        rec = Recorder(self.log)
+        for i in range(50):
+            rec.append(build("tool_call", "security", tool="t%d" % i))
+        recs = self._records()
+        recs[1]["action"]["tool"] = "malicious-action-injected"
+        with open(self.log, "w") as fh:
+            for r in recs:
+                fh.write(json.dumps(r, separators=(",", ":")) + "\n")
+
+        lines = []
+        ok = verify_log(self.log, out=lines.append)
+
+        self.assertFalse(ok)
+        chain_lines = [ln for ln in lines if ln.startswith("record") and ": chain:" in ln]
+        self.assertEqual(len(chain_lines), 1)
+        self.assertTrue(any("onward is not verifiable" in ln for ln in lines))
+
 
 if __name__ == "__main__":
     unittest.main()
