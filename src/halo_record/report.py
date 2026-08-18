@@ -187,6 +187,11 @@ def _plain(r):
     """
     action = r.get("action") or {}
     tool = action.get("tool") or action.get("type") or "action"
+    # An outcome summary is already a human sentence — prefer it outright over
+    # reconstructing one from the input arguments.
+    outcome_summary = (r.get("outcome") or {}).get("summary") or ""
+    if outcome_summary and not outcome_summary.startswith("{"):
+        return " ".join(outcome_summary.split())
     summary = (action.get("input") or {}).get("summary") or ""
     detail = ""
     if summary.startswith("{"):
@@ -199,15 +204,18 @@ def _plain(r):
                 if parsed.get(key):
                     detail = str(parsed[key])
                     break
-            if not detail:
-                first = next(iter(parsed.values()), "")
-                detail = str(first)
+            # No meaningful argument found: name the tool rather than echoing
+            # an arbitrary value (the first dict value is often the tenant id).
         else:
             detail = summary
     else:
         detail = summary
     detail = " ".join(detail.split())
+    if not detail:
+        return "Ran %s" % tool
     verb = _PLAIN_VERB.get(action.get("type"), "Ran")
+    if action.get("type") == "network" and not str(tool).lower().startswith(("http", "web", "fetch")):
+        verb = "Ran"  # "Fetched" is only honest for actual fetch-shaped tools
     if tool in ("Write", "Edit", "NotebookEdit"):
         verb = "Edited" if tool == "Edit" else "Wrote file"
     elif tool in ("WebFetch", "WebSearch"):
@@ -254,7 +262,7 @@ def _row(r, show_agent=False):
     # free-text search: everything a reader would plausibly search for.
     haystack = " ".join(str(x) for x in (
         r.get("ts"), action.get("tool"), action.get("type"), auth.get("scope"),
-        auth.get("decision"), status, sev, summary,
+        auth.get("decision"), status, sev, summary, outcome.get("summary"),
         (r.get("agent") or {}).get("name"), short_hash,
     ) if x).lower()
     plain = _plain(r)
@@ -407,6 +415,7 @@ async function liveCheckpoints(cfg, embedded){
       return;
     }
     const res = await verify(records);
+    window.__haloVerify = res;  // the drawer's chain-position note reads this
     if (res.ok && WINDOW){
       el.className = "verdict ok";
       el.innerHTML = "&#10003; Verified in your browser — records " + WINDOW.first +
@@ -756,10 +765,22 @@ _PAGINATE_JS = r"""
     h += field("Record id", r.record_id, true);
     h += field("This record's hash", integ.hash, true);
     h += field("Points back to", integ.prev_hash, true);
-    if (linkOk !== null){
+    // The declared-linkage check below compares this record's prev_hash to the
+    // PREVIOUS record's DECLARED hash — file order only. The cryptographic
+    // verdict belongs to the page-level verification; if that failed at or
+    // before this record, the declared linkage means nothing and must not
+    // render as a green check.
+    var pageVerify = window.__haloVerify;
+    var brokenHere = pageVerify && pageVerify.ok === false &&
+                     typeof pageVerify.at === "number" && (idx + 1) >= pageVerify.at;
+    if (brokenHere){
+      h += '<div class="d-note bad">✗ Chain verification failed at record ' +
+           pageVerify.at + " — this record's position cannot be verified " +
+           "(declared links after a break prove nothing; see the banner).</div>";
+    } else if (linkOk !== null){
       h += '<div class="d-note' + (linkOk ? " ok" : " bad") + '">' +
            (linkOk
-             ? "✓ Links correctly to the record before it in this file."
+             ? "✓ prev_hash matches the preceding record's declared hash (file order — the cryptographic verdict is the banner above)."
              : "✗ Does not match the previous record's hash in this file.") +
            "</div>";
     } else {

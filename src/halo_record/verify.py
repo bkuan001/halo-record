@@ -132,7 +132,7 @@ def verify_log(path, schema=None, out=print):
         out("chain: record %d onward is not verifiable relative to the true "
             "chain (the break at record %d means nothing built on it can be "
             "proven intact or shown to be further tampered — see LIMITS.md "
-            "section 9)." % (chain_broken_at + 1, chain_broken_at))
+            "section 9: https://github.com/bkuan001/halo-record/blob/main/LIMITS.md)." % (chain_broken_at + 1, chain_broken_at))
 
     if parent_links:
         if orphan_links:
