@@ -150,3 +150,39 @@ class ChainTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class OversizedIntParityTest(unittest.TestCase):
+    """Integers beyond JS Number.MAX_SAFE_INTEGER (2**53-1) must be preserved as
+    strings by the recorder so the in-browser (JS) verifier and the Python
+    verifier compute the SAME canonical bytes. Otherwise a legitimately
+    recorded chain would spuriously fail the reader's self-verification."""
+
+    def test_oversized_int_in_data_preserved_as_string(self):
+        rec = build("read", "privacy", tool="t",
+                    tool_input={"v": "x"},
+                    data={"ts_ns": 1704067200000000000})
+        self.assertEqual(rec["data"]["ts_ns"], "1704067200000000000")
+        self.assertIsInstance(rec["data"]["ts_ns"], str)
+
+    def test_oversized_integer_valued_float_preserved_as_string(self):
+        rec = build("read", "privacy", tool="t",
+                    tool_input={"v": "x"},
+                    data={"ts_ns": 1e21})
+        self.assertEqual(rec["data"]["ts_ns"], "1000000000000000000000")
+
+    def test_small_int_untouched(self):
+        rec = build("read", "privacy", tool="t",
+                    tool_input={"v": "x"},
+                    data={"n": 42})
+        self.assertIs(rec["data"]["n"], 42)
+
+    def test_chain_with_oversized_int_verifies(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "c.jsonl")
+            rec = Recorder(path)
+            rec.append(build("tool_call", "security", tool="db.query",
+                             tool_input={"q": "1"},
+                             data={"ts_ns": 1704067200000000000}))
+            self.assertTrue(verify_log(path, out=_silent))

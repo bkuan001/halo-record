@@ -167,16 +167,35 @@ def _pii_types_from_findings(findings):
     return types or None
 
 
+# The largest integer exactly representable in BOTH the Python recorder and
+# the JavaScript in-browser verifier. Python ints are arbitrary precision, but
+# JS numbers above this (beyond Number.MAX_SAFE_INTEGER) lose exactness, so the
+# same integer would be hashed by each side over different canonical bytes.
+_MAX_INTEGER_HASH_EXACT = (1 << 53) - 1
+
+
 def _canon_safe(value):
     """Recursively make a value safe for RFC 8785 canonicalization, which permits
     only integer-valued numbers. A non-integer float is preserved as a string
-    instead of crashing the recorder when the record is hashed. A no-op on any
-    value that was already canonicalizable, so it never changes an existing hash.
-    Instrumentation must never take down the tool it is recording."""
+    instead of crashing the recorder when the record is hashed. An integer whose
+    magnitude exceeds ``2**53 - 1`` (JS ``Number.MAX_SAFE_INTEGER``) is also
+    preserved as a string: JS cannot represent such integers exactly, so the
+    in-browser verifier would round it and recompute different canonical bytes
+    than the Python recorder produced, spuriously failing the report's
+    self-verification. A no-op on any value that was already canonicalizable, so
+    it never changes an existing hash. Instrumentation must never take down the
+    tool it is recording."""
     if isinstance(value, bool):
         return value
+    if isinstance(value, int):
+        return str(value) if abs(value) > _MAX_INTEGER_HASH_EXACT else value
     if isinstance(value, float):
-        return int(value) if value.is_integer() else str(value)
+        if not value.is_integer():
+            return str(value)
+        as_int = int(value)
+        # An integer-valued float (e.g. 1e21) beyond JS exact-integer range must
+        # also be preserved as a string, or the in-browser verifier would round it.
+        return str(as_int) if abs(as_int) > _MAX_INTEGER_HASH_EXACT else value
     if isinstance(value, dict):
         return {k: _canon_safe(v) for k, v in value.items()}
     if isinstance(value, (list, tuple)):
