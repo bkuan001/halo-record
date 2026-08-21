@@ -125,6 +125,59 @@ class TestProvenanceFields(unittest.TestCase):
             rec.append(build("read", "privacy", tool="t", outcome={"status": "ok", "n": 1.5}))
             self.assertTrue(verify_log(path, out=lambda *a, **k: None))
 
+    def test_oversized_int_in_data_preserved_as_string(self):
+        # integers beyond 2**53-1 round in float64-based JSON parsers (every
+        # browser), so the recorder stores them as exact decimal strings and
+        # every reader recomputes the same canonical bytes
+        r = build("tool_call", "security", tool="t",
+                  data={"ts_ns": 1704067200000000001, "request_id": 2**53 + 1})
+        self.assertEqual(r["data"]["ts_ns"], "1704067200000000001")
+        self.assertEqual(r["data"]["request_id"], "9007199254740993")
+        self.assertIsInstance(r["data"]["ts_ns"], str)
+
+    def test_oversized_negative_int_preserved_as_string(self):
+        r = build("tool_call", "security", tool="t",
+                  data={"delta": -(2**53 + 100)})
+        self.assertEqual(r["data"]["delta"], str(-(2**53 + 100)))
+
+    def test_boundary_and_small_ints_untouched(self):
+        # ±(2**53-1) are exact in every reader; they (and ordinary ints) keep
+        # their type so existing record hashes are unchanged
+        r = build("tool_call", "security", tool="t",
+                  data={"max": 2**53 - 1, "min": -(2**53 - 1), "n": 42})
+        self.assertEqual(r["data"]["max"], 2**53 - 1)
+        self.assertEqual(r["data"]["min"], -(2**53 - 1))
+        self.assertEqual(r["data"]["n"], 42)
+        self.assertIsInstance(r["data"]["max"], int)
+
+    def test_oversized_integer_valued_float_preserved_as_string(self):
+        # 1e21 is integer-valued, so the float path used to emit a bare
+        # oversized integer literal — same reader-rounding failure, second door
+        r = build("tool_call", "security", tool="t", data={"big": 1e21})
+        self.assertEqual(r["data"]["big"], "1000000000000000000000")
+
+    def test_oversized_values_in_outcome_preserved_as_strings(self):
+        # outcome is normalized separately before the final canon-safe pass;
+        # pin the oversized handling on this path too
+        r = build("tool_call", "security", tool="t",
+                  outcome={"status": "ok", "request_id": 2**53 + 1,
+                           "bytes": 1e21})
+        self.assertEqual(r["outcome"]["request_id"], "9007199254740993")
+        self.assertEqual(r["outcome"]["bytes"], "1000000000000000000000")
+
+    def test_chain_with_oversized_values_verifies(self):
+        # an untampered chain carrying oversized numbers must self-verify
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "c.jsonl")
+            rec = Recorder(path)
+            rec.append(build("tool_call", "security", tool="db.query",
+                             tool_input={"q": "1"},
+                             data={"ts_ns": 1704067200000000001}))
+            rec.append(build("tool_call", "security", tool="db.query",
+                             tool_input={"q": "2"},
+                             outcome={"status": "ok", "n": 2**53 + 7}))
+            self.assertTrue(verify_log(path, out=lambda *a, **k: None))
+
     def test_wrong_typed_data_keys_do_not_poison_chain(self):
         from halo_record.verify import validate_record
         for bad in ({"cross_region": "yes"}, {"cross_region": 3.7},

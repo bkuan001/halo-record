@@ -167,16 +167,36 @@ def _pii_types_from_findings(findings):
     return types or None
 
 
+# The largest integer IEEE-754 float64 represents exactly (2**53 - 1). JSON
+# readers that parse numbers into float64 (every browser, Node, and most JS
+# tooling) silently round integers beyond this, so a record hashed over the
+# exact literal would fail re-verification in those readers.
+_MAX_EXACT_JSON_INT = 2**53 - 1
+
+
 def _canon_safe(value):
     """Recursively make a value safe for RFC 8785 canonicalization, which permits
     only integer-valued numbers. A non-integer float is preserved as a string
-    instead of crashing the recorder when the record is hashed. A no-op on any
-    value that was already canonicalizable, so it never changes an existing hash.
+    instead of crashing the recorder when the record is hashed, and an integer
+    whose magnitude exceeds ``_MAX_EXACT_JSON_INT`` is preserved as a string so
+    every JSON reader recomputes the same canonical bytes the recorder hashed
+    (float64-based parsers round larger integers, which would make an untampered
+    chain fail self-verification). A no-op on any value that was already
+    canonicalizable everywhere, so it never changes the hash of such records.
     Instrumentation must never take down the tool it is recording."""
     if isinstance(value, bool):
         return value
+    if isinstance(value, int):
+        if -_MAX_EXACT_JSON_INT <= value <= _MAX_EXACT_JSON_INT:
+            return value
+        return str(value)
     if isinstance(value, float):
-        return int(value) if value.is_integer() else str(value)
+        if value.is_integer():
+            as_int = int(value)
+            if -_MAX_EXACT_JSON_INT <= as_int <= _MAX_EXACT_JSON_INT:
+                return as_int
+            return str(as_int)
+        return str(value)
     if isinstance(value, dict):
         return {k: _canon_safe(v) for k, v in value.items()}
     if isinstance(value, (list, tuple)):
