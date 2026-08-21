@@ -161,9 +161,14 @@ class TestProvenanceFields(unittest.TestCase):
         # pin the oversized handling on this path too
         r = build("tool_call", "security", tool="t",
                   outcome={"status": "ok", "request_id": 2**53 + 1,
-                           "bytes": 1e21})
+                           "bytes": 1e21, "delta": -(2**53 + 100),
+                           "max": 2**53 - 1, "min": -(2**53 - 1)})
         self.assertEqual(r["outcome"]["request_id"], "9007199254740993")
         self.assertEqual(r["outcome"]["bytes"], "1000000000000000000000")
+        self.assertEqual(r["outcome"]["delta"], str(-(2**53 + 100)))
+        self.assertEqual(r["outcome"]["max"], 2**53 - 1)
+        self.assertEqual(r["outcome"]["min"], -(2**53 - 1))
+        self.assertIsInstance(r["outcome"]["max"], int)
 
     def test_chain_with_oversized_values_verifies(self):
         # an untampered chain carrying oversized numbers must self-verify
