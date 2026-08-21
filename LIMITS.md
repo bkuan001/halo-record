@@ -330,3 +330,34 @@ inside the record than the purpose needs.
 
 A vendor who says "identifiers in the chain are pseudonymous" without addressing
 `principal`, the summaries, and the input fingerprint has not answered the question.
+
+## 14. Numeric values are canonicalized to a lossy common form
+
+The record format's RFC 8785 subset permits only integer-valued numbers, and
+JSON readers that parse numbers into IEEE-754 float64 (every browser, Node, and
+most tooling) silently round integers beyond ±(2⁵³−1). So at record-build time
+the recorder normalizes numbers to a form every reader recomputes identically:
+non-integer floats and integers beyond ±(2⁵³−1) are stored as their exact
+decimal strings; integers within that range stay numbers. In the TypeScript
+package, BigInt values follow the same rule (kept as numbers while exact in
+every reader, exact decimal strings beyond). Note the input-side boundary:
+"exact" preservation applies to inputs that carry exact values — Python ints
+and JavaScript BigInts. A plain JavaScript `number` beyond ±(2⁵³−1) has
+already been rounded by the language before the recorder sees it; the stored
+string is exact for the value received. Pass BigInt when full precision
+matters.
+
+Two consequences to know before relying on a record's `data`/`outcome` values:
+
+- **The original type is not preserved.** A caller-supplied float `0.5` is
+  stored as the string `"0.5"`; an integer `9007199254740993` and the literal
+  string `"9007199254740993"` produce byte-identical records and therefore
+  identical hashes. Relative to an established chain head (section 9), the
+  chain is tamper-evident for the canonical bytes; it does not prove what
+  JSON type the caller originally passed.
+- **If type fidelity matters for your evidence, encode it explicitly** — for
+  example, record `{"score_millis": 500}` instead of `{"score": 0.5}`, or wrap
+  values as `{"type": "int", "value": "9007199254740993"}` in your payload.
+
+This trade was chosen so that an untampered chain verifies identically in every
+reader, and so that no caller-supplied number can crash the recorder mid-run.
