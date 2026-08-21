@@ -1,0 +1,47 @@
+reviews:
+  profile: assertive
+  request_changes_workflow: false
+  high_level_summary: true
+  path_instructions:
+    - path: "src/halo_record/canon.py"
+      instructions: >
+        Canonicalization and hashing code is security-critical. Verify RFC 8785
+        conformance, numeric edge cases (non-integer floats, integers beyond
+        2^53-1, booleans, negative values), and that no change can alter the
+        canonical bytes of a previously valid record. Flag any divergence from
+        the TypeScript implementation (bkuan001/halo-record-ts src/canon.ts).
+    - path: "src/halo_record/record.py"
+      instructions: >
+        Record construction feeds the hash chain. Verify hash stability for
+        existing records, that caller-supplied values can never crash the
+        recorder (instrumentation must never take down the host tool), and
+        behavioral parity with the TypeScript implementation. Flag any change
+        that could alter the canonical bytes of a previously valid record.
+    - path: "src/halo_record/verify.py"
+      instructions: >
+        Verification logic must never trust attacker-writable fields: the
+        chain anchor is always recomputed, never a record's self-declared
+        hash. Flag any change that weakens tamper detection, grades records
+        after a break individually, or relaxes schema validation.
+    - path: "src/halo_record/redact.py"
+      instructions: >
+        Redaction must be fail-closed: verify no secret or PII pattern can
+        survive into a stored record, and that pattern changes do not narrow
+        existing coverage.
+    - path: "src/halo_record/halo-record.schema.json"
+      instructions: >
+        The schema must remain byte-identical to the TypeScript repository's
+        halo-record.schema.json. Flag any change here as requiring the same
+        change there.
+    - path: "tests/**"
+      instructions: >
+        Changes touching canonicalization, hashing, or verification should
+        carry regression tests covering both the data and outcome paths,
+        negative values, and boundary values.
+    - path: "*.md"
+      instructions: >
+        Documentation claims must match actual code behavior; flag any stated
+        guarantee the code does not enforce. Integrity claims should be scoped
+        (tamper-evident relative to an established head, not absolute).
+chat:
+  auto_reply: true
