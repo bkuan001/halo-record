@@ -414,7 +414,13 @@ class Recorder:
     def _acquire_flock(self):
         if fcntl is None:
             return None
-        fh = open(self.path + ".lock", "ab")
+        try:
+            fh = open(self.path + ".lock", "ab")
+        except OSError as e:
+            raise OSError(
+                e.errno,
+                "cannot open chain for append (lock sidecar %s.lock): %s"
+                % (self.path, e.strerror)) from e
         fcntl.flock(fh, fcntl.LOCK_EX)
         return fh
 

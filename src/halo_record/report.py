@@ -23,7 +23,16 @@ from .canon import GENESIS_PREV
 
 def _load(path):
     with open(path, "r", encoding="utf-8") as fh:
-        return [json.loads(ln) for ln in fh.read().splitlines() if ln.strip()]
+        lines = [ln for ln in fh.read().splitlines() if ln.strip()]
+    records = []
+    for n, ln in enumerate(lines, start=1):
+        try:
+            records.append(json.loads(ln))
+        except json.JSONDecodeError as e:
+            raise ValueError(
+                "record %d is not valid JSON (%s) — run `halo verify %s` for "
+                "the full picture" % (n, e, path)) from e
+    return records
 
 
 def _subject_label(records):
@@ -458,24 +467,28 @@ async function liveCheckpoints(cfg, embedded){
       "Integrity is verified above; completeness is not." + note;
   } else if (comp.ok && WINDOW){
     cel.className = "verdict neutral";
-    cel.innerHTML = "Consistent within window &mdash; " +
+    cel.innerHTML = (src.live
+        ? "Consistent within window &mdash; "
+        : "Self-attested &mdash; the checkpoint was supplied with this report by its operator, so treat completeness as self-attested until a witness outside the operator confirms it. Within the window it is consistent: ") +
       witness + " confirmed " + comp.inWin +
       " checkpoint(s) inside this window" +
       (comp.beyond ? "; chain continues beyond the window (witnessed to record " + comp.latest + ")" : "") +
       (comp.before ? "; " + comp.before + " earlier checkpoint(s) precede it" : "") +
-      ". No witnessed record in this window has been dropped or altered. " +
+      ". No witnessed record in this window has been dropped or altered." +
       (src.live
-        ? "Whether this counts as independent verification depends on who operates the witness at " + (cfg.witnessUrl || "the configured URL") + " &mdash; treat it as self-attested unless that party is outside the operator's control."
-        : "The snapshot was supplied with this report by its operator &mdash; treat completeness as self-attested until a witness outside the operator confirms it.") + note;
+        ? " Whether this counts as independent verification depends on who operates the witness at " + String(cfg.witnessUrl || "the configured URL").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;") + " &mdash; treat it as self-attested unless that party is outside the operator's control."
+        : "") + note;
   } else if (comp.ok){
     cel.className = "verdict neutral";
-    cel.innerHTML = "Consistent &mdash; " +
+    cel.innerHTML = (src.live
+        ? "Consistent &mdash; "
+        : "Self-attested &mdash; the checkpoint was supplied with this report by its operator, so treat completeness as self-attested until a witness outside the operator confirms it. Against that checkpoint the chain is consistent: ") +
       witness + " confirmed " + comp.witnessed +
       " checkpoint(s) up to record " + comp.latest +
-      ". No record the notary saw has been dropped or altered. " +
+      ". No record the notary saw has been dropped or altered." +
       (src.live
-        ? "Whether this counts as independent verification depends on who operates the witness at " + (cfg.witnessUrl || "the configured URL") + " &mdash; treat it as self-attested unless that party is outside the operator's control."
-        : "The snapshot was supplied with this report by its operator &mdash; treat completeness as self-attested until a witness outside the operator confirms it.") + note;
+        ? " Whether this counts as independent verification depends on who operates the witness at " + String(cfg.witnessUrl || "the configured URL").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;") + " &mdash; treat it as self-attested unless that party is outside the operator's control."
+        : "") + note;
   } else {
     cel.className = "verdict fail";
     cel.innerHTML = "&#10007; INCOMPLETE &mdash; conflicts with " + witness + " (" +

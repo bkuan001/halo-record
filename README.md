@@ -15,7 +15,7 @@ You are being asked to put a recorder inside your agent. You should not take tha
 - **Zero runtime dependencies.** Standard library only. `pip install halo-record` installs exactly one package.
 - **No network calls**, except two opt-in ones — the witness (receives only a record count and a chain fingerprint) and the RFC 3161 timestamp (sends only a checkpoint's state hash to a Timestamp Authority). Both are off unless you invoke them; record contents never leave your infrastructure.
 - **Full payloads never enter a record.** Arguments are hashed and stored only as a short redacted summary — the complete raw value is never written, though a summary can carry fragments of it. Redaction is best-effort (regex over common secret and PII formats plus an entropy catch-all): treat it as defense-in-depth, not a guarantee.
-- **Small enough to audit.** ~5,300 lines of Python. Read all of it in an afternoon.
+- **Small enough to audit.** ~5,300 lines of Python (code lines, not counting blanks and comments). Read all of it in an afternoon.
 - **Apache-2.0.**
 
 ## 60-second demo
@@ -33,7 +33,7 @@ pip install halo-record
 halo demo --serve
 ```
 
-Either one scaffolds a fictional support-agent vendor with two customers, witnesses the chains, serves their gated Runtime Reports, and opens the operator console in your browser. Then try the tamper test: delete a line from one of the `.jsonl` files and reload. The report catches it.
+Either one scaffolds a fictional support-agent vendor with two customers, witnesses the chains (with a local witness file standing in for one outside the operator — see [LIMITS.md §1](https://github.com/bkuan001/halo-record/blob/main/LIMITS.md)), serves their gated Runtime Reports, and opens the operator console in your browser. Then try the tamper test: delete a line from one of the `.jsonl` files and reload. The report catches it.
 
 ## Record your own agent
 
@@ -269,7 +269,7 @@ record_model_call(rec, provider="anthropic", model="claude-sonnet-4-6",
 halo-record is an evidence layer, not a certification. It produces the artifact that assessment frameworks keep asking for in different words. One scope note that governs every bullet below: these are integrity claims about the record; completeness against the operator requires an external witness holding checkpoints ([LIMITS.md §1](https://github.com/bkuan001/halo-record/blob/main/LIMITS.md)).
 
 - **Security questionnaires and SOC 2 reviews:** answer the AI sections with a verifiable Runtime Report instead of screenshots and prose.
-- **AIUC-1:** produces the tamper-evident logging (E015.4) and execution-chain records with authorization events (E015.2 — with a stated gap: reasoning traces are not captured) that the standard's Accountability controls call for. Once the chain is anchored to a witness, that's a continuous record rather than one reconstructed at audit time. A control-by-control evidence mapping, including what's deliberately out of scope, is in [`AIUC.md`](https://github.com/bkuan001/halo-record/blob/main/AIUC.md).
+- **AIUC-1:** produces the tamper-evident logging (E015.4) and execution-chain records with authorization events (E015.2 — with a stated gap: reasoning traces are not captured) that the standard's Accountability controls call for. Once the chain is anchored to a witness the relying party has reason to trust — a witness the operator runs itself does not provide this — that's a continuously witnessed chain rather than one reconstructed at audit time (what entered the chain is still bounded by the capture surface). A control-by-control evidence mapping, including what's deliberately out of scope, is in [`AIUC.md`](https://github.com/bkuan001/halo-record/blob/main/AIUC.md).
 - **OWASP Top 10 for Agentic Applications 2026:** eight of the ten threats map to deterministic policy rules over the record, two are marked out of scope with reasons, and the pack ships runnable. An approximate community mapping, not an official OWASP artifact. See [`OWASP.md`](https://github.com/bkuan001/halo-record/blob/main/OWASP.md).
 - **AARM (CSA):** produces the tamper-evident action receipt AARM specifies — R5, and the sealing half of R6 (identity is sealed into the hash, not cryptographically authenticated). halo-record is the receipt layer; pair it with an enforcement gateway for a full AARM system. See [`AARM.md`](https://github.com/bkuan001/halo-record/blob/main/AARM.md).
 - **Agentic Trust Controls:** the runtime records behind the ATC's evidence controls — tamper-evident action logging (RBM-03) and the record half of authority attestation (AID-05; the enforcement half belongs to the gate) in one chained record. See [`ATC.md`](https://github.com/bkuan001/halo-record/blob/main/ATC.md).

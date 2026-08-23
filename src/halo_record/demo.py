@@ -23,7 +23,6 @@ artifact: a buyer with real exposure deciding whether to expand.
 
 import datetime
 import os
-import tempfile
 
 from .anchor import Notary
 from .record import TenantRecorder, build
@@ -115,14 +114,25 @@ def scaffold(directory):
 
 def main(directory=None, *, serve=False, host="127.0.0.1", port=8721, verify=False,
          open_browser=True):
-    created = directory is None
-    directory = os.path.expanduser(directory) if directory else tempfile.mkdtemp(prefix="halo-demo-")
+    if directory:
+        directory = os.path.expanduser(directory)
+    else:
+        # Default to a visible directory in the cwd so the tamper-test files
+        # are where the user is standing (a temp-dir path is easy to lose once
+        # --serve holds the terminal). Each run scaffolds fresh: pick the first
+        # unused name rather than re-scaffolding on top of a previous demo.
+        directory = os.path.abspath("halo-demo")
+        n = 2
+        while os.path.exists(directory) and (
+                not os.path.isdir(directory) or os.listdir(directory)):
+            directory = os.path.abspath("halo-demo-%d" % n)
+            n += 1
     if not os.path.isdir(directory):
         os.makedirs(directory, exist_ok=True)
     witness, grants, counts = scaffold(directory)
     secret = load_secret(directory)
 
-    print("Halo demo scaffolded in %s%s" % (directory, " (temp)" if created else ""))
+    print("Halo demo scaffolded in %s" % directory)
     print("  scenario: %s in a scoped pilot for %d prospect(s) (security review to clear rollout)"
           % (AGENT["name"], len(counts)))
     for chain, n in counts.items():

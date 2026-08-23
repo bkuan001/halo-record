@@ -23,7 +23,7 @@ Coverage marks: **✅ shipped policy rule** · **🟡 template rule** (rename to
 | ASI09 | Human-Agent Trust Exploitation | **out of scope** — a human/organizational risk outside what a record policy can assert | ❌ |
 | ASI10 | Rogue Agents | `purpose-declared` (deviation is detectable only if purpose is declared) + `agent-attributed` | ✅ |
 
-**Cross-cutting (traceability floor the rest of the list assumes):** `actions-traceable` (ASI cross-cutting / Agentic T8 Repudiation & Untraceability — every action timestamped, attributable, non-repudiable); `no-secret-disclosure` and `pii-egress-controlled` (LLM02 Sensitive Information Disclosure; the former also supports ASI03 credential hygiene).
+**Cross-cutting (traceability floor the rest of the list assumes):** `actions-traceable` (ASI cross-cutting / Agentic T8 Repudiation & Untraceability — every recorded action timestamped, attributable, and tamper-evidently sealed — identity values are integration-supplied, so this is attribution, not non-repudiation; see LIMITS.md §5/§10); `no-secret-disclosure` and `pii-egress-controlled` (LLM02 Sensitive Information Disclosure; the former also supports ASI03 credential hygiene).
 
 The rules above ship as [`examples/policies/owasp-starter.json`](examples/policies/owasp-starter.json) — run `halo policy <chain.jsonl> owasp-starter.json`. This is an **approximate, community-oriented mapping, not an official OWASP artifact**; corrections welcome.
 

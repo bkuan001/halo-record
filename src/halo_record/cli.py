@@ -61,7 +61,12 @@ def _cmd_sample(args):
 
 
 def _cmd_hash(args):
-    print(input_hash(json.loads(args.json)))
+    try:
+        value = json.loads(args.json)
+    except json.JSONDecodeError as e:
+        print("not valid JSON: %s" % e)
+        return 2
+    print(input_hash(value))
     return 0
 
 
@@ -368,7 +373,8 @@ def main(argv=None):
         help="scaffold a believable two-customer vendor runtime (record -> witness "
              "-> grant -> gated report) and print the links; --serve to go live")
     p_demo.add_argument("dir", nargs="?",
-                        help="target dir (default: a fresh temp dir)")
+                        help="target dir (default: ./halo-demo, or the first "
+                             "unused halo-demo-N)")
     p_demo.add_argument("--serve", action="store_true",
                         help="boot the gated server after scaffolding")
     p_demo.add_argument("--host", default="127.0.0.1", help="bind host (default: 127.0.0.1)")

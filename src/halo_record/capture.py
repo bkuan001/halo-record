@@ -27,6 +27,8 @@ from .session import current_recorder, current_agent
 
 
 def _extract_text(obj, depth=0):
+    if obj is None:
+        return ""
     if depth > 6:
         return ""
     if isinstance(obj, str):

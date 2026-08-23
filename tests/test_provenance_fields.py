@@ -265,6 +265,13 @@ class TestRecordModelCall(unittest.TestCase):
         self.assertIn("'zdr': True", r["action"]["input"]["summary"])
         self.assertEqual(r["outcome"]["status"], "ok")
 
+    def test_model_call_without_response_has_no_none_summary(self):
+        # A None response must not surface as the literal string "None" in the
+        # outcome summary (it renders verbatim in the Runtime Report).
+        rec, path = self._chain()
+        r = record_model_call(rec, provider="anthropic", model="m-1")
+        self.assertNotIn("summary", r.get("outcome", {}))
+
     def test_model_call_error_outcome_and_chain_verifies(self):
         rec, path = self._chain()
         record_model_call(rec, provider="openai", model="m-2",
