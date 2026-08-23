@@ -148,7 +148,7 @@ def verify_log(path, schema=None, out=print):
         out("OK: 0 records — an empty chain; nothing to attest.")
     elif ok:
         out("OK: %d record(s) valid, hash chain intact — tamper-evident relative to the verified head." % len(lines))
-        out("note: this is integrity, not completeness — a self-held chain cannot show records dropped from the tail; an external witness (halo anchor --check) is what attests nothing was dropped.")
+        out("note: this is integrity, not completeness — a self-held chain cannot show records that were removed and the chain re-sealed, anywhere in it; an external witness (halo anchor --check) is what attests nothing was dropped.")
     elif not chain_ok:
         out("FAIL: log did not verify — sequence integrity gap detected (see above).")
     else:

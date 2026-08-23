@@ -144,7 +144,8 @@ def main(directory=None, *, serve=False, host="127.0.0.1", port=8721, verify=Fal
     print("  5. Drop a line from %s/acme-corp.jsonl and reload -> completeness goes RED,"
           % directory)
     print("     even though the (shortened) hash chain still verifies. That gap is")
-    print("     the part only an independent witness catches.")
+    print("     the part only a witness outside the operator catches — this demo's")
+    print("     witness file is local, standing in for one.")
     print("  6. `halo viewers %s` -> every reviewer who opened a report." % directory)
 
     if serve:

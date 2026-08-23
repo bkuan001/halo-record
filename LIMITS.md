@@ -10,13 +10,21 @@ does not, and what to say when an assessor asks.
 
 The hash chain proves no record was edited, reordered, or truncated *relative
 to a head you already know*. It cannot prove the operator never wrote a record
-in the first place, or did not delete recent records and re-seal a shorter
-chain before anyone saw it.
+in the first place, or did not remove records — from the tail or from anywhere
+in the chain — and re-seal the remainder before anyone saw it. A re-sealed
+chain verifies clean; only a checkpoint captured before the re-seal exposes it.
 
 **What closes it:** a witness outside the operator's control holding periodic
 checkpoints (a record count and a head hash). The witness protocol ships in
 this repo (`halo witness-serve`, `halo anchor`); a hosted, recognized witness
 is the piece still being built.
+
+Checkpoints are unsigned. A checkpoint file presented to you *by the operator*
+proves nothing — it can be rewritten in a few lines to match any re-sealed
+chain. The closure only holds when you fetch the checkpoint from the witness
+yourself, or hold your own copy captured earlier. Signed witness receipts are
+deliberately outside the zero-dependency core; until they exist, treat any
+relayed checkpoint as the operator's assertion.
 
 For *time* specifically, `halo anchor --timestamp` attaches an external RFC 3161
 timestamp to a checkpoint: a Timestamp Authority the operator does not control

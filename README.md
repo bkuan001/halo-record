@@ -1,8 +1,8 @@
 # halo-record
 
-Tamper-evident **audit trails for AI agents** — records your customers can verify without trusting you.
+Tamper-evident **audit trails for AI agents** — hash-chained Runtime Records, rendered as a Runtime Report your customers can check themselves.
 
-Every action your agent takes (tool calls, model calls, data access, approvals) becomes one record in an append-structured, hash-chained log. Any party holding a checkpoint of the chain can verify the records behind it were never altered, without trusting whoever produced them. When a customer's security team asks "what did your agent do with our data?", you hand them a link instead of a paragraph. Security reviews already ask AI questions next to the SOC 2 checklist — and increasingly those questions come from ISO 42001, the EU AI Act's record-keeping articles, and customers' own questionnaires. Today a written assurance still passes. The bet behind this project is that it won't for long.
+Every action your agent takes (tool calls, model calls, data access, approvals) becomes one **Runtime Record** in an append-only, hash-chained log; the **Runtime Report** is that chain rendered as a self-verifying HTML page. Any party holding a checkpoint of the chain can verify the records behind it were never altered, without trusting whoever produced them — that checkpoint is the load-bearing piece: the chain alone is tamper-evident against everyone except the party operating the recorder ([LIMITS.md §1](https://github.com/bkuan001/halo-record/blob/main/LIMITS.md)). When a customer's security team asks "what did your agent do with our data?", you hand them a link instead of a paragraph. Security reviews already ask AI questions next to the SOC 2 checklist — and increasingly those questions come from ISO 42001, the EU AI Act's record-keeping articles, and customers' own questionnaires. Today a written assurance still passes. The bet behind this project is that it won't for long.
 
 The record format is open and free to implement. This package is the reference implementation: recorder, verifier, witness client, and report server.
 
@@ -15,7 +15,7 @@ You are being asked to put a recorder inside your agent. You should not take tha
 - **Zero runtime dependencies.** Standard library only. `pip install halo-record` installs exactly one package.
 - **No network calls**, except two opt-in ones — the witness (receives only a record count and a chain fingerprint) and the RFC 3161 timestamp (sends only a checkpoint's state hash to a Timestamp Authority). Both are off unless you invoke them; record contents never leave your infrastructure.
 - **Full payloads never enter a record.** Arguments are hashed and stored only as a short redacted summary — the complete raw value is never written, though a summary can carry fragments of it. Redaction is best-effort (regex over common secret and PII formats plus an entropy catch-all): treat it as defense-in-depth, not a guarantee.
-- **Small enough to audit.** ~4,800 lines of Python. Read all of it in an afternoon.
+- **Small enough to audit.** ~5,300 lines of Python. Read all of it in an afternoon.
 - **Apache-2.0.**
 
 ## 60-second demo
@@ -254,17 +254,26 @@ retention or pruning yet.
 list, explains why the stored input fingerprint can confirm a guessable value even
 after the mapping is gone, and ends with questions a reviewer should ask.
 
+Record a model call (the buyer's first question: "which model saw my data?"):
+
+```python
+from halo_record import record_model_call
+
+record_model_call(rec, provider="anthropic", model="claude-sonnet-4-6",
+                  zdr=True, purpose="draft support reply",
+                  subject="acme")   # tool=model.generate, scope=model:anthropic
+```
+
 ## Where this sits in a compliance stack
 
-halo-record is an evidence layer, not a certification. It produces the artifact that assessment frameworks keep asking for in different words:
+halo-record is an evidence layer, not a certification. It produces the artifact that assessment frameworks keep asking for in different words. One scope note that governs every bullet below: these are integrity claims about the record; completeness against the operator requires an external witness holding checkpoints ([LIMITS.md §1](https://github.com/bkuan001/halo-record/blob/main/LIMITS.md)).
 
 - **Security questionnaires and SOC 2 reviews:** answer the AI sections with a verifiable Runtime Report instead of screenshots and prose.
-- **AIUC-1:** produces the tamper-evident logging (E015.4) and full-execution-chain records with authorization events (E015.2) the standard's Accountability controls call for — a continuous record, not one reconstructed at audit time. A control-by-control evidence mapping, including what's deliberately out of scope, is in [`AIUC.md`](https://github.com/bkuan001/halo-record/blob/main/AIUC.md).
-- **OWASP (GenAI Security Project):** the audit trail behind the agent-behavior risks in the OWASP Top 10 for Agentic Applications 2026 and the LLM Top 10 — goal hijack, tool misuse, identity and privilege abuse — recorded as what the agent actually did, with which tools and data. See [`OWASP.md`](https://github.com/bkuan001/halo-record/blob/main/OWASP.md).
-- **AARM (CSA):** produces the tamper-evident action receipt AARM specifies (R5/R6) — chained and independently witnessed. halo-record is the receipt layer; pair it with an enforcement gateway for a full AARM system. See [`AARM.md`](https://github.com/bkuan001/halo-record/blob/main/AARM.md).
-- **Agentic Trust Controls:** the runtime records behind the ATC's evidence controls — tamper-evident action logging (RBM-03) and authority attestation (AID-05) in one chained record, with the witness layer beyond both. See [`ATC.md`](https://github.com/bkuan001/halo-record/blob/main/ATC.md).
-- **EU AI Act:** logging and record-keeping obligations for high-risk AI systems.
-- **ISO 42001 / NIST AI RMF:** the operational evidence behind management-system controls.
+- **AIUC-1:** produces the tamper-evident logging (E015.4) and execution-chain records with authorization events (E015.2 — with a stated gap: reasoning traces are not captured) that the standard's Accountability controls call for. Once the chain is anchored to a witness, that's a continuous record rather than one reconstructed at audit time. A control-by-control evidence mapping, including what's deliberately out of scope, is in [`AIUC.md`](https://github.com/bkuan001/halo-record/blob/main/AIUC.md).
+- **OWASP Top 10 for Agentic Applications 2026:** eight of the ten threats map to deterministic policy rules over the record, two are marked out of scope with reasons, and the pack ships runnable. An approximate community mapping, not an official OWASP artifact. See [`OWASP.md`](https://github.com/bkuan001/halo-record/blob/main/OWASP.md).
+- **AARM (CSA):** produces the tamper-evident action receipt AARM specifies — R5, and the sealing half of R6 (identity is sealed into the hash, not cryptographically authenticated). halo-record is the receipt layer; pair it with an enforcement gateway for a full AARM system. See [`AARM.md`](https://github.com/bkuan001/halo-record/blob/main/AARM.md).
+- **Agentic Trust Controls:** the runtime records behind the ATC's evidence controls — tamper-evident action logging (RBM-03) and the record half of authority attestation (AID-05; the enforcement half belongs to the gate) in one chained record. See [`ATC.md`](https://github.com/bkuan001/halo-record/blob/main/ATC.md).
+- **EU AI Act / ISO 42001 / NIST AI RMF:** the record-keeping and logging obligations these frameworks describe are the same artifact class; no control-by-control mapping is published here yet.
 
 None of this certifies anything by itself. It gives your assessor something verifiable to look at. The boundaries — what halo-record deliberately does not do, and what to say when a reviewer asks — are documented in [`LIMITS.md`](https://github.com/bkuan001/halo-record/blob/main/LIMITS.md).
 

@@ -4,7 +4,7 @@
 HTML file (no build step, no external JS) that:
 
   * presents what the agent did — every recorded action, its authorization,
-    scope, and outcome — as a procurement-facing trust report, and
+    scope, and outcome — as a procurement-facing Runtime Report, and
   * re-verifies the hash chain in the *viewer's own browser* (SHA-256 over
     RFC 8785 canonical JSON, mirroring the Python verifier), so the reader
     confirms tamper-evidence themselves without trusting any server.
@@ -1049,7 +1049,9 @@ def render(records, checkpoints=None, *, witness_url=None, policy=None, window=N
     if anchored:
         integrity_note = ("This report re-computes its own SHA-256 / RFC 8785 hash chain in your "
                           "browser (integrity) and checks it against the witness checkpoints it "
-                          "was anchored to (completeness) — neither is something you take on trust.")
+                          "was anchored to (completeness). Whether completeness counts as independently "
+                          "verified depends on who operates the witness — confirm that before "
+                          "relying on it.")
     else:
         integrity_note = ("This report re-computes its own SHA-256 / RFC 8785 hash chain in your "
                           "browser (integrity) — you don't take that on trust. Completeness — that "
@@ -1103,10 +1105,10 @@ def render(records, checkpoints=None, *, witness_url=None, policy=None, window=N
     return """<!doctype html>
 <html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>%(subject)s — Runtime Record</title>
+<title>%(subject)s — Runtime Report</title>
 <style>%(style)s</style>
 </head><body><div class="wrap">
-<div class="eyebrow">Halo Runtime Record</div>
+<div class="eyebrow">Halo Runtime Report</div>
 <h1>%(subject)s</h1>
 <div class="meta">%(agent_meta)s &middot; <b>%(total)s</b> recorded actions</div>
 <div class="period"><span class="period-l">Period covered</span>

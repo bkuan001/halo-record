@@ -11,10 +11,10 @@ Public API:
     verify_log("audit.jsonl")   # -> True if schema + hash chain are intact
 """
 
-__version__ = "0.2.35"
+__version__ = "0.2.36"
 
 from .canon import canon, compute_hash, input_hash, GENESIS_PREV
-from .capture import record, record_call, derive_outcome
+from .capture import record, record_call, record_model_call, derive_outcome
 from .record import Recorder, TenantRecorder, build, SCHEMA_VERSION
 from .redact import scan, redact_text, redact_sample
 from .verify import verify_log, validate_record, load_schema
@@ -37,6 +37,7 @@ __all__ = [
     "reset_recorder",
     "record",
     "record_call",
+    "record_model_call",
     "derive_outcome",
     "verify_log",
     "validate_record",

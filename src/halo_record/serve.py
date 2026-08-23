@@ -135,7 +135,7 @@ def _console_payload(directory, secret, witness_log):
 def _index_html(directory, secret, witness_log, authed):
     if not authed:
         return ("""<!doctype html><meta charset="utf-8"><title>Halo Runtime Reports</title>
-<style>%s</style><div class="wrap"><div class="eyebrow">Halo Runtime Record</div>
+<style>%s</style><div class="wrap"><div class="eyebrow">Halo Runtime Report</div>
 <h1>Runtime Reports</h1><p class="meta">Each customer has a private link to their own
 report. Ask the operator for yours.</p></div>""" % _STYLE)
 
@@ -164,7 +164,7 @@ report. Ask the operator for yours.</p></div>""" % _STYLE)
     body = "\n".join(rows) or '<tr><td colspan="6" class="dim">No chains yet.</td></tr>'
     return """<!doctype html><meta charset="utf-8"><title>Operator console</title>
 <style>%(style)s</style><div class="wrap">
-<div class="eyebrow">Halo Runtime Record &middot; operator console</div>
+<div class="eyebrow">Halo &middot; operator console</div>
 <h1>Runtime Reports</h1>
 <p class="meta">%(n)s chain(s) in <b>%(dir)s</b>. Each row's link is private to that customer.</p>
 <table><thead><tr><th>Customer</th><th>Chain</th><th>Actions</th><th>Integrity</th>
@@ -186,7 +186,7 @@ border-radius:10px;margin:14px 0;font-family:inherit}
 background:var(--gold);border:none;border-radius:10px;cursor:pointer}
 .gate .verdict{text-align:left;margin:0 0 14px}</style>
 <div class="wrap"><div class="gate">
-<div class="eyebrow">Halo Runtime Record</div>
+<div class="eyebrow">Halo Runtime Report</div>
 <h1>%(subj)s</h1>
 <p class="meta">This runtime report was shared with you. Enter your work email to view it.</p>
 %(hint)s%(err)s
@@ -212,7 +212,7 @@ border-radius:10px;margin:14px 0;font-family:inherit}
 background:var(--gold);border:none;border-radius:10px;cursor:pointer}
 .gate .verdict{text-align:left;margin:0 0 14px}</style>
 <div class="wrap"><div class="gate">
-<div class="eyebrow">Halo Runtime Record</div>
+<div class="eyebrow">Halo Runtime Report</div>
 <h1>%(subj)s</h1>
 <p class="meta">We sent a 6-digit code to <b>%(email)s</b>. Enter it to confirm this is your address.</p>
 %(err)s

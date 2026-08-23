@@ -183,3 +183,44 @@ def record(recorder=None, *, category="security", action_type="tool_call",
         return wrapper
 
     return decorator
+
+
+def record_model_call(recorder=None, *, provider, model, zdr=None, purpose=None,
+                      messages=None, response=None, error=None, agent=None,
+                      session_id="local", subject=None, source=None,
+                      summaries=True):
+    """Record one model call — provider, model, and retention terms, per call.
+
+    The buyer's first question is "which model saw my data, and under what
+    retention terms?" This appends the record that answers it:
+    ``tool=model.generate``, ``scope=model:<provider>``, with ``zdr`` (zero
+    data retention), ``purpose``, and ``messages`` (a count, never content)
+    sealed into the input. Mirrors the TypeScript package's
+    ``recordModelCall``; the two produce chain-compatible records.
+
+        record_model_call(rec, provider="anthropic", model="claude-sonnet-4-6",
+                          zdr=True, purpose="draft support reply",
+                          subject="acme")
+    """
+    recorder = recorder or current_recorder()
+    if recorder is None:
+        raise RuntimeError(
+            "no recorder: pass one to record_model_call(...) or wrap the agent "
+            "with halo_record.trace(...) to bind an active recorder")
+    tool_input = {"provider": provider, "model": model}
+    if zdr is not None:
+        tool_input["zdr"] = bool(zdr)
+    if purpose:
+        tool_input["purpose"] = purpose
+    if messages is not None:
+        tool_input["messages"] = messages
+    rec = build(
+        "tool_call", "privacy", tool="model.generate", tool_input=tool_input,
+        session_id=session_id, agent=agent or current_agent(),
+        scope="model:" + provider, decision="allowed",
+        outcome=derive_outcome(response, error=error),
+        subject=subject, summaries=summaries,
+        source=source or "recorder",
+    )
+    recorder.append(rec)
+    return rec

@@ -282,14 +282,15 @@ def main(argv=None):
 
     p_report = sub.add_parser(
         "report",
-        help="render one tenant's JSONL chain as a self-verifying HTML trust report")
+        help="render one tenant's JSONL chain as a self-verifying HTML Runtime Report")
     p_report.add_argument("log", help="path to the .jsonl log (one subject/chain)")
     p_report.add_argument("-o", "--out", help="output .html path (default: alongside the log)")
     p_report.add_argument("-w", "--witness",
                           help="local notary witness log to embed a completeness verdict")
     p_report.add_argument("--witness-url",
-                          help="hosted Halo witness URL the report fetches live (completeness "
-                               "checked against a party the vendor doesn't control)")
+                          help="witness URL the report fetches live for its completeness check — "
+                               "independence depends on who operates that witness; confirm it "
+                               "is a party the vendor doesn't control")
     p_report.add_argument("--policy",
                           help="policy JSON file to corroborate the chain against; adds a "
                                "deterministic verdict (vendor / buyer / framework rules) to the report")

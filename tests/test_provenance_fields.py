@@ -8,7 +8,7 @@ import os
 import tempfile
 import unittest
 
-from halo_record import Recorder, build
+from halo_record import Recorder, build, record_model_call
 from halo_record.canon import compute_hash
 from halo_record.export import export, _row
 from halo_record.verify import verify_log
@@ -247,6 +247,45 @@ class TestProvenanceFields(unittest.TestCase):
                 header = next(csv.reader(fh))
             for col in ("parent_id", "principal", "threats", "pii_types"):
                 self.assertIn(col, header)
+
+
+class TestRecordModelCall(unittest.TestCase):
+    def _chain(self):
+        d = tempfile.mkdtemp()
+        return Recorder(os.path.join(d, "m.jsonl")), os.path.join(d, "m.jsonl")
+
+    def test_model_call_shape_matches_ts_semantics(self):
+        rec, path = self._chain()
+        r = record_model_call(rec, provider="anthropic", model="m-1",
+                              zdr=True, purpose="draft reply", messages=4,
+                              response={"status": "ok", "summary": "drafted"})
+        self.assertEqual(r["action"]["tool"], "model.generate")
+        self.assertEqual(r["action"]["category"], "privacy")
+        self.assertEqual(r["action"]["authorization"]["scope"], "model:anthropic")
+        self.assertIn("'zdr': True", r["action"]["input"]["summary"])
+        self.assertEqual(r["outcome"]["status"], "ok")
+
+    def test_model_call_error_outcome_and_chain_verifies(self):
+        rec, path = self._chain()
+        record_model_call(rec, provider="openai", model="m-2",
+                          error=RuntimeError("rate limited"))
+        record_model_call(rec, provider="openai", model="m-2",
+                          response={"status": "ok"})
+        import json as _json
+        with open(path) as fh:
+            first = _json.loads(fh.readline())
+        self.assertEqual(first["outcome"]["status"], "error")
+        self.assertTrue(verify_log(path, out=lambda *a, **k: None))
+
+    def test_model_call_requires_recorder(self):
+        with self.assertRaises(RuntimeError):
+            record_model_call(None, provider="anthropic", model="m-3")
+
+    def test_model_call_optional_fields_omitted(self):
+        rec, path = self._chain()
+        r = record_model_call(rec, provider="anthropic", model="m-4")
+        self.assertNotIn("zdr", r["action"]["input"]["summary"])
+        self.assertNotIn("purpose", r["action"]["input"]["summary"])
 
 
 if __name__ == "__main__":
