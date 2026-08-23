@@ -58,7 +58,7 @@ def _is_error(span):
 
 def is_genai_span(span):
     """Only ingest spans that are actually GenAI tool/LLM calls — skip the rest
-    of an app's trace so the record is agent runtime evidence, not noise."""
+    of an app's trace so the record captures agent behavior, not noise."""
     attrs = _attrs(span)
     return bool(attrs.get(_TOOL_NAME) or attrs.get(_OP_NAME) or attrs.get(_SYSTEM))
 
