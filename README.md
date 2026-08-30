@@ -40,15 +40,17 @@ Either one scaffolds a fictional support-agent vendor with two customers, witnes
 One line at the boundary:
 
 ```python
-from halo import trace
+from halo_record import trace
 
 agent = trace(run_my_agent, profile="my-agent", log="audit.jsonl")   # wraps your entrypoint; records the run boundary to ./audit.jsonl — add record_call() or a framework adapter at each tool boundary to capture individual calls
 ```
 
+A `from halo import ...` convenience shim also ships — but the `halo` name on PyPI belongs to an unrelated terminal-spinner package, and if that package is installed it wins the import. `halo_record` is unambiguous, so the examples use it.
+
 Without `log=`, records go to `~/.halo/my-agent.jsonl` (one chain per agent). The wrapper seals the run boundary; the evidence lives in the per-call records. Capture those with a framework adapter (matrix below) — or explicitly, which also shows how delegation links:
 
 ```python
-from halo import Recorder, record_call
+from halo_record import Recorder, record_call
 
 rec = Recorder("audit.jsonl")
 
@@ -105,7 +107,7 @@ For `policy_ref` to be usable as evidence, use a content hash of the ruleset and
 
 | Captured at the boundary | Ingested from existing telemetry |
 |---|---|
-| Native recorder (`from halo import trace`) | OpenTelemetry GenAI spans |
+| Native recorder (`from halo_record import trace`) | OpenTelemetry GenAI spans |
 | MCP interceptor | LiteLLM callbacks |
 | LangChain / LangGraph callback | Langfuse export |
 | OpenAI Agents SDK hooks | Any gateway / reverse-proxy log |
@@ -121,6 +123,22 @@ from halo_record.integrations.langchain import HaloCallbackHandler
 
 recorder = Recorder("audit.jsonl")
 result = my_chain.invoke(inputs, config={"callbacks": [HaloCallbackHandler(recorder)]})   # every tool call becomes a record
+```
+
+For MCP, one call wraps the client session — and then *any* MCP-using agent emits records for every tool call, regardless of which framework drives it:
+
+```python
+from halo_record.integrations.mcp import instrument_client_session
+
+instrument_client_session(session, Recorder("audit.jsonl"), server="stripe")   # every session.call_tool() is now recorded
+```
+
+For gateway or proxy logs (Cloudflare AI Gateway, Portkey, nginx in front of the model), map a log row into the chain — honestly tagged as ingested, not boundary-captured:
+
+```python
+from halo_record.integrations.gateway import record_log
+
+record_log(Recorder("audit.jsonl"), {"tool": "gen_ai:gpt-4o", "model": "gpt-4o", "status": 200, "subject": "acme-corp"})
 ```
 
 Anything that emits OpenTelemetry GenAI spans (CrewAI, LlamaIndex, and most agent frameworks with OTel instrumentation) lands in the chain through the OTel adapter, and the [TypeScript package](https://github.com/bkuan001/halo-record-ts) ships native adapters for the Vercel AI SDK and the JS agent ecosystem. Missing an adapter for your stack? Open an issue. Most adapters are about a hundred lines.
