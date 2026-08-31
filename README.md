@@ -4,6 +4,8 @@ Tamper-evident **audit trails for AI agents** — hash-chained Runtime Records, 
 
 Every action your agent takes (tool calls, model calls, data access, approvals) becomes one **Runtime Record** in an append-only, hash-chained log; the **Runtime Report** is that chain rendered as a self-verifying HTML page. Any party holding a checkpoint of the chain can verify the records behind it were never altered, without trusting whoever produced them — that checkpoint is the load-bearing piece: the chain alone is tamper-evident against everyone except the party operating the recorder ([LIMITS.md §1](https://github.com/bkuan001/halo-record/blob/main/LIMITS.md)). When a customer's security team asks "what did your agent do with our data?", you hand them a link instead of a paragraph. Security reviews already ask AI questions next to the SOC 2 checklist — and increasingly those questions come from ISO 42001, the EU AI Act's record-keeping articles, and customers' own questionnaires. Today a written assurance still passes. The bet behind this project is that it won't for long.
 
+**Featured in [Help Net Security](https://www.helpnetsecurity.com/2026/08/31/halo-record-open-source-ai-agent-audit-trail/)** (August 2026).
+
 The record format is open and free to implement. This package is the reference implementation: recorder, verifier, witness client, and report server.
 
 > **Using halo-record, or thinking about it?** Tell me who you are and what for → [Who's using halo-record?](https://github.com/bkuan001/halo-record/discussions/7)
