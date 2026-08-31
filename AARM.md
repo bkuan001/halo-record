@@ -3,7 +3,7 @@
 - **Not an affiliation.** halo-record is an independent open-source project. It is not associated with, endorsed by, or certified under AARM, the Cloud Security Alliance, or Vanta. Requirement names and IDs below reference AARM's published specification.
 - **Not a conformance claim.** Whether any receipt satisfies any AARM requirement in any deployment is a determination for the party relying on it. This maps what the record *contains*, not what a reviewer will *accept*.
 
-[AARM](https://aarm.dev) (Autonomous Action Runtime Management) is an open specification — authored at Vanta, donated to the Cloud Security Alliance — that defines a system category for securing AI-agent actions at runtime: intercept an action, evaluate it against policy, enforce a decision, and **record a tamper-evident receipt** of what happened.
+[AARM](https://aarm.dev) (Autonomous Action Runtime Management) is an open specification — a Cloud Security Alliance Powered Project authored by Herman Errico — that defines a system category for securing AI-agent actions at runtime: intercept an action, evaluate it against policy, decide on it, and **record a tamper-evident receipt** of what happened.
 
 halo-record implements the **receipt** half of that spec. It is record-only by design — it does not intercept or enforce — so it is not a complete AARM system on its own. It is the evidence layer: pair it with a policy/enforcement gateway for a full AARM deployment, and halo-record produces the receipts that gateway is required to emit.
 
@@ -14,7 +14,7 @@ AARM's **R5** ("tamper-evident action receipt") requires each receipt to include
 | AARM receipt requirement | halo-record field |
 |---|---|
 | Original action (R5) | `action` — `type`, `category`, `tool`, `input.summary` + `input.hash` |
-| The decision (R5) | `action.authorization.decision` — `allowed` / `denied` / `human_approved` |
+| The decision (R5) | `action.authorization.decision` — `allowed` / `denied` / `human_approved` (AARM R4 defines five decision values — ALLOW, DENY, MODIFY, STEP_UP, DEFER; this enum covers a subset) |
 | Timestamp (R5) | `ts` — RFC 3339 UTC |
 | Policy context used in evaluation (R5) | `framework_tags`, `action.authorization.scope`, `findings`, `threats` |
 | Verifiable against modification (R5) | `integrity` — SHA-256 over the RFC 8785 canonical form |
