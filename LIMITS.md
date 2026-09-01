@@ -105,6 +105,10 @@ provider-specific patterns plus an entropy catch-all — defense in depth, not a
 proof. A novel secret format can land in a summary. If you find a path that
 does, that is a vulnerability report we want (see SECURITY.md).
 
+The `authority` block is exempt from the redaction pass entirely: it is stored
+exactly as the producer supplies it, and the hashes-and-refs convention is not
+checked by any code path.
+
 The same bound applies to `data.pii_types`: it is derived from the scanner's
 *named* personal-data categories (email, ssn, credit_card, phone, iban), so it
 is a floor, not a census. Within a category the coverage is by shape: cards and
