@@ -898,9 +898,9 @@ border:1px solid var(--line);border-radius:8px;padding:6px 11px}
 .f-btn:hover{background:var(--gold-soft);border-color:var(--gold)}
 th[data-sort]{cursor:pointer;user-select:none;white-space:nowrap}
 th[data-sort]:hover{color:var(--gold)}
-th[data-sort]::after{content:"\2195";opacity:.3;margin-left:5px;font-size:11px}
-th[data-active=asc]::after{content:"\2191";opacity:1;color:var(--gold)}
-th[data-active=desc]::after{content:"\2193";opacity:1;color:var(--gold)}
+th[data-sort]::after{content:"\\2195";opacity:.3;margin-left:5px;font-size:11px}
+th[data-active=asc]::after{content:"\\2191";opacity:1;color:var(--gold)}
+th[data-active=desc]::after{content:"\\2193";opacity:1;color:var(--gold)}
 @media print{.filters{display:none}}
 tr.rowclick{cursor:pointer}
 tr.rowclick:hover td{background:var(--gold-soft)}
