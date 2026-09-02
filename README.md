@@ -15,8 +15,8 @@ The record format is open and free to implement. This package is the reference i
 You are being asked to put a recorder inside your agent. You should not take that on faith:
 
 - **Zero runtime dependencies.** Standard library only. `pip install halo-record` installs exactly one package.
-- **No network calls**, except three opt-in ones — anchoring to a witness (sends a record count, a chain fingerprint, and the subject id), reading a witness's checkpoints back (sends the subject id), and the RFC 3161 timestamp (sends only a checkpoint's state hash to a Timestamp Authority). All are off unless you invoke them; record contents never leave your infrastructure.
-- **Full payloads never enter a record.** Arguments are hashed and stored only as a short redacted summary — the complete raw value is never written, though a summary can carry fragments of it. Redaction is best-effort (regex over common secret and PII formats plus an entropy catch-all): treat it as defense-in-depth, not a guarantee.
+- **No network calls**, except three opt-in ones — anchoring to a witness (sends the subject id, a record count, and two chain fingerprints — the head and the chain root), reading a witness's checkpoints back (sends the subject id), and the RFC 3161 timestamp (sends only a checkpoint's state hash to a Timestamp Authority). All are off unless you invoke them; record contents never leave your infrastructure.
+- **Raw tool arguments never enter a record.** Arguments are hashed and stored only as a short redacted summary — the complete raw value is never written, though a summary can carry fragments of it. Redaction is best-effort (regex over common secret and PII formats plus an entropy catch-all): treat it as defense-in-depth, not a guarantee. Outcome fields you supply beyond `summary` seal as given (LIMITS §13).
 - **Small enough to audit.** ~5,300 lines of Python (code lines, not counting blanks and comments). Read all of it in an afternoon.
 - **Apache-2.0.**
 - **The paperwork is first-class.** [LIMITS.md](https://github.com/bkuan001/halo-record/blob/main/LIMITS.md) (what the chain can't prove), [PRIVACY.md](https://github.com/bkuan001/halo-record/blob/main/PRIVACY.md) (what records contain and what leaves your machine), [RETENTION.md](https://github.com/bkuan001/halo-record/blob/main/RETENTION.md) (operating under a retention policy), and [REVIEWERS.md](https://github.com/bkuan001/halo-record/blob/main/REVIEWERS.md) — the four-command independent check plus a citation format for review findings.
@@ -192,7 +192,21 @@ If you need the report to answer "under what rules did this run happen?", set `H
 HALO_AUTHORITY_FILE=./authority.json halo hook
 ```
 
-The snapshot is sealed into the same hash chain as the action records. A good default is one session-level snapshot at start, plus a new snapshot when rules, Skills, hooks, MCP tool registries, or compaction policy change. To keep long sessions lean, consecutive records with the same `authority.snapshot_id` are compacted after the first full snapshot: later records keep only `{"snapshot_id": "...", "same_as_previous": true}`. The pointer stays hash-chained, but the bulky refs/omissions/stale-if block is not repeated on every action. Then, the usual:
+The snapshot is sealed into the same hash chain as the action records. A good default is one session-level snapshot at start, plus a new snapshot when rules, Skills, hooks, MCP tool registries, or compaction policy change. To keep long sessions lean, consecutive records with the same `authority.snapshot_id` are compacted after the first full snapshot: later records keep only `{"snapshot_id": "...", "same_as_previous": true}`. The pointer stays hash-chained, but the bulky refs/omissions/stale-if block is not repeated on every action. (Compaction is per recorder process: hook-style capture spawning one process per tool call re-stores the full body whenever the previous full snapshot isn't the tail record, so short-lived processes trade chain size for the reuse guard.)
+
+SDK users attach the same block directly — `build(..., authority={...})` or `record_call(..., authority={...})`; hash-only capture is the same surface (`summaries=False` on any of them):
+
+```python
+from halo_record import Recorder, record_call
+
+rec = Recorder("audit.jsonl")
+with record_call(rec, "crm.lookup", {"account": "acct-9"},
+                 authority={"snapshot_id": "auth_1", "rules_hash": "sha256:..."},
+                 summaries=False) as call:              # hash-only: no summaries, no excerpts
+    call.result = crm.lookup("acct-9")
+```
+
+Then, the usual:
 
 ```
 halo verify ~/.halo/audit.jsonl
@@ -218,7 +232,7 @@ Be precise about what each layer proves — because they are different claims, a
 
 A self-held chain proves **integrity relative to an established head**: given a chain head someone already holds, any edit, reordering, or deletion in the records behind it becomes detectable. By itself — before anyone outside the operator has seen a head — a chain proves internal consistency, not history: an operator could drop a record and re-seal, and the new file would verify. The chain becomes **historically committed** the moment its head leaves the operator's control.
 
-That is the witness: a party outside the operator holding periodic fingerprints of the chain (a count and a head hash, nothing else). Checkpoints make rewriting committed history detectable, and a missed checkpoint is itself a visible event:
+That is the witness: a party outside the operator holding periodic checkpoints of the chain — the subject id, a record count, and two chain fingerprints (the head and the chain root); the exact payload, and nothing else. Checkpoints make rewriting committed history detectable, and a missed checkpoint is itself a visible event:
 
 ```
 halo anchor audit.jsonl witness.jsonl           # anchor a checkpoint to a local witness

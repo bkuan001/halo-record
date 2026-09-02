@@ -1,6 +1,6 @@
 # Retention
 
-Guidance for operating halo-record chains under a retention policy — the shape of AIUC-1 E015.3's ask (retention policies, access controls, sanitation practices), stated the way this project states everything: what exists, what doesn't, and what to do about the gap. No compliance claim is made here; your framework mapping is your auditor's call.
+Guidance for operating halo-record chains under a retention policy — the shape of AIUC-1 E015.3's ask (retention policies, access controls, sanitation practices), stated the way this project states everything: what exists, what doesn't, and what to do about the gap. No compliance claim is made here; your framework mapping is your auditor's call. Scope note: this page covers the chain files themselves — derived copies (CSV exports, manifests, shared report HTML) are separate artifacts your retention policy must reach on its own.
 
 ## What exists today
 
@@ -10,7 +10,7 @@ Guidance for operating halo-record chains under a retention policy — the shape
 
 ## What does not exist today
 
-- **No `halo prune`, no retention enforcement.** Deleting old records is an operator action on files, and it interacts with tamper-evidence: removal inside an established chain breaks verification visibly (that is the product working), so naive log rotation will destroy your own evidence value. Plan retention *with* the chain, not against it.
+- **No `halo prune`, no retention enforcement.** Deleting old records is an operator action on files, and it interacts with tamper-evidence: removal inside an established chain breaks verification visibly (that is the product working) — though a chain truncated and re-sealed before anyone outside holds its head still verifies (LIMITS §1) — so naive log rotation will destroy your own evidence value. Plan retention *with* the chain, not against it.
 
 ## The pattern that works: prune at checkpoint boundaries
 
@@ -23,7 +23,7 @@ Two practical rules fall out:
 
 ## Personal data and erasure
 
-Anything sealed into a record stays sealed — so field discipline at write time *is* the retention policy for personal data. Arguments are hashed and summarized, but operator-supplied identity fields (`subject`, `principal`, `approver`, `agent`, `session_id`, `authority`, `data`) seal verbatim. Use pseudonymous identifiers in those fields and keep the mapping outside the chain in a deletable store; erasure then destroys the mapping while the chain and its verification stay intact. The deletion-vs-tamper-evidence interplay is stated plainly in [PRIVACY.md](PRIVACY.md) and [LIMITS.md](LIMITS.md) §1.
+Anything sealed into a record stays sealed — so field discipline at write time *is* the retention policy for personal data. Arguments are hashed and summarized, but operator-supplied fields seal verbatim — `subject`, `principal`, `approver`, `agent`, `session_id`, `authority`, `data`, and non-`summary` `outcome` keys among them; LIMITS §13's table is the fuller inventory and is a starting point, not a closed list. Use pseudonymous identifiers in those fields and keep the mapping outside the chain in a deletable store; erasure then destroys the mapping while the chain and its verification stay intact. The deletion-vs-tamper-evidence interplay is stated plainly in [PRIVACY.md](PRIVACY.md) and [LIMITS.md](LIMITS.md) §1.
 
 ## Mapping vocabulary
 

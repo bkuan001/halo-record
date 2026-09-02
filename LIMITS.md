@@ -15,7 +15,7 @@ in the chain — and re-seal the remainder before anyone saw it. A re-sealed
 chain verifies clean; only a checkpoint captured before the re-seal exposes it.
 
 **What closes it:** a witness outside the operator's control holding periodic
-checkpoints (a record count and a head hash). The witness protocol ships in
+checkpoints — the subject id, a record count, and two chain fingerprints (the head and the chain root). The witness protocol ships in
 this repo (`halo witness-serve`, `halo anchor`); a hosted, recognized witness
 is the piece still being built.
 
@@ -102,7 +102,9 @@ SPIFFE/SPIRE-class systems) outside this library's scope.
 
 Raw tool arguments are hashed, never stored. The summary layer is scrubbed by
 provider-specific patterns plus an entropy catch-all — defense in depth, not a
-proof. A novel secret format can land in a summary. If you find a path that
+proof. A novel secret format can land in a summary. Masks hide the credential,
+not always its context: the connection-string mask removes the password only,
+so a DSN's username and internal hostname survive into the summary. If you find a path that
 does, that is a vulnerability report we want (see SECURITY.md).
 
 The `authority` block gets a narrower pass than summaries: known secret formats

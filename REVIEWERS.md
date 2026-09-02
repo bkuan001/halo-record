@@ -34,13 +34,15 @@ For a checkpoint's RFC 3161 timestamp, validate the TSA signature with a standar
 One line, so findings are reproducible:
 
 ```
-halo-record vX.Y.Z · <chain file> (N records, head <first-8-of-hash>) · verified <ISO date> by <you> · integrity PASS · completeness <COMPLETE n=… | UNWITNESSED> via <witness operator or "operator-run">
+halo-record produced v?.?.? / verified with vX.Y.Z · <chain file> (N records, head <first-8-of-hash>) · verified <ISO date> by <you> · integrity PASS · completeness <COMPLETE n=<checkpoints matched> | UNWITNESSED> via <witness operator or "operator-run">
 ```
+
+`n` counts the witness checkpoints that matched the presented chain. Cite both versions where they differ — the producing version governs what was recorded, the verifying version governs how it was checked. Keep the full head hash in the workpaper body; the first eight characters are a citation convenience, not the retained value. Where a checkpoint carries an RFC 3161 timestamp, append the `openssl ts -verify` outcome to the line.
 
 Example:
 
 ```
-halo-record v0.2.41 · acme.jsonl (1,284 records, head 3f9c2a1d) · verified 2026-09-02 by J. Reviewer · integrity PASS · completeness COMPLETE n=3 via witness.example.com
+halo-record produced v0.2.40 / verified with v0.2.42 · acme.jsonl (1,284 records, head 3f9c2a1d) · verified 2026-09-02 by J. Reviewer · integrity PASS · completeness COMPLETE n=3 via witness.example.com · TSA Verification: OK
 ```
 
 The version matters (behavior is versioned), the head matters (it pins which chain you saw), and the witness operator matters (it's the independence of the completeness verdict).

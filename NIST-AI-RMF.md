@@ -2,14 +2,14 @@
 
 Where halo-record's output sits against the NIST AI RMF — stated conservatively: the RMF is a voluntary framework organized around four functions (GOVERN, MAP, MEASURE, MANAGE), not a control checklist, so what a record format contributes is *evidence for the activities the functions describe*, not satisfaction of anything.
 
-**Not affiliated with NIST. Not a conformity claim** — the RMF has no certification to claim against.
+**Not affiliated with NIST. Not a conformity claim** — the RMF has no certification to claim against. *Last reviewed 2026-09-02, against AI RMF 1.0's four functions.*
 
 ## Why the RMF shows up in reviews at all
 
 Two practical routes, both live:
 
 1. **Contracts and questionnaires** cite it as the shared vocabulary for "show me your AI risk program."
-2. **Statute**: Texas's TRAIGA (in force since January 1, 2026) gives organisations following the NIST AI RMF a statutory safe-harbor posture — which quietly converts a voluntary framework into a legal defense, and a legal defense into an evidence question: defenses need documentation sufficiently detailed to support them.
+2. **Statute**: Texas's TRAIGA (in force since January 1, 2026) gives organisations following the NIST AI RMF a statutory defense — commonly described as a safe harbor; confirm the precise mechanism with counsel before relying on the label — which quietly converts a voluntary framework into a legal posture, and a legal posture into an evidence question: defenses need documentation sufficiently detailed to support them.
 
 ## What halo-record produces against the functions
 
