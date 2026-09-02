@@ -288,9 +288,11 @@ can carry personal data, and only the summaries are scanned at all.
 | `action.input.summary`, `outcome.summary` | redacted best-effort only — and per section 6 a **name or postal address has no reliable pattern, is not detected, and is not masked** |
 | `findings[].type` / `.sample` | masked fragments *when the scanner produced them* — a masked email keeps its full domain and an SSN keeps its last four. Findings you supply yourself are stored exactly as given, unmasked |
 
-Note that `summaries=False` drops the human-readable summaries but does **not**
-empty the record of payload-derived text: `findings[].sample` and `data.pii_types`
-are computed before summaries are dropped and survive.
+Note what `summaries=False` does and does not empty: human-readable summaries and
+`findings[].sample` excerpts are both dropped (from scanner findings and findings
+you supply alike), but `data.pii_types` (detected type names) survives, and other
+fields you supply yourself — custom `outcome` keys, the `authority` block, any
+non-`sample` keys on your own findings — are stored as given even then.
 
 **The stored fingerprint can confirm a guess.** `action.input.hash` is an unsalted
 SHA-256 over the canonical tool arguments. Where those arguments come from a small
