@@ -7,6 +7,7 @@ and never store raw secrets.
 
 import json
 import os
+import re
 import sys
 import threading
 import uuid
@@ -17,8 +18,8 @@ try:  # POSIX inter-process append lock; on other platforms appends are
 except ImportError:  # pragma: no cover
     fcntl = None
 
-from .canon import GENESIS_PREV, compute_hash, input_hash
-from .redact import redact_text, scan, top_severity
+from .canon import GENESIS_PREV, canon, compute_hash, input_hash, sha256_hex
+from .redact import mask_known_secrets, redact_text, scan, top_severity
 
 SCHEMA_VERSION = "0.1"
 
@@ -229,6 +230,49 @@ def _norm_data(data):
     return out
 
 
+_OUTCOME_HASH_RE = re.compile(r"(?:sha256:)?[0-9a-fA-F]{16,64}")
+
+
+def _sanitize_authority(authority):
+    """Copy an authority block, masking any value that matches a named secret
+    pattern (API keys, tokens, private-key blocks, connection strings, ...).
+    The high-entropy catch-all is deliberately NOT applied: legitimate authority
+    values are hashes and refs, which look exactly like entropy. Free-form text
+    is not detected — the block's privacy remains a producer convention beyond
+    these named formats (LIMITS section 6)."""
+    def walk(v):
+        if isinstance(v, dict):
+            out = {}
+            for k, x in v.items():
+                mk = mask_known_secrets(k) if isinstance(k, str) else k
+                if mk != k:
+                    print("halo-record: masked a known secret format used as an "
+                          "authority KEY — keys should be names, never credentials",
+                          file=sys.stderr)
+                while mk in out:          # masked-key collision: keep both, distinctly
+                    mk = mk + "~"
+                out[mk] = walk(x)
+            return out
+        if isinstance(v, (list, tuple)):
+            return [walk(x) for x in v]
+        if isinstance(v, str):
+            masked = mask_known_secrets(v)
+            if masked != v:
+                print("halo-record: masked a known secret format inside the "
+                      "authority block — authority values should be hashes and "
+                      "refs, never raw credentials", file=sys.stderr)
+                return masked
+        return v
+    return walk(dict(authority))
+
+
+def _authority_content_hash(authority):
+    """Content identity of a full authority body (excluding the compaction
+    marker), for guarding snapshot_id reuse."""
+    body = {k: v for k, v in authority.items() if k != "same_as_previous"}
+    return sha256_hex(canon(_canon_safe(body)))
+
+
 def build(action_type, category, tool=None, tool_input=None, *,
           session_id="local", agent=None, scope=None, decision="allowed",
           approver=None, findings=None, outcome=None, ts=None,
@@ -244,11 +288,13 @@ def build(action_type, category, tool=None, tool_input=None, *,
     ``subject`` (a str id or ``{"id", "name"}`` dict) tags the record with the
     tenant/customer it belongs to — the segmentation key. ``authority`` may carry
     a privacy-safe snapshot of the rules/tooling context that governed the run
-    (hashes and refs, not raw prompts or private policy text). ``summaries=False``
-    drops every human-readable summary and every finding excerpt, leaving
-    hashes plus finding types/severities. Fields you supply yourself — custom
-    ``outcome`` keys, the ``authority`` block — are stored as given even then,
-    so keep them payload-free if the record must stay hash-only.
+    (hashes and refs, not raw prompts or private policy text; known secret
+    formats are masked at seal time, free-form text is not detected). ``summaries=False``
+    drops every human-readable summary, every finding excerpt, and any custom
+    ``outcome`` keys (only the schema's non-text outcome fields survive),
+    leaving hashes plus finding types/severities. The ``authority`` block is
+    still stored (after known-secret masking) — keep it to hashes and refs if
+    the record must stay hash-only.
 
     ``principal`` records the identities on whose behalf the action ran
     (``human_id`` / ``creator_id`` / ``service_account`` / ``role_scope``);
@@ -298,7 +344,16 @@ def build(action_type, category, tool=None, tool_input=None, *,
         if "summary" in outcome and outcome["summary"] is not None:
             outcome_summary_raw = str(outcome["summary"])
         if not summaries:
-            outcome.pop("summary", None)
+            # Hash-only records keep only the schema's non-text outcome fields —
+            # and only when their values have the schema's shape, so payload text
+            # cannot ride into a hash-only record under those key names.
+            kept = {}
+            if outcome.get("status") in ("ok", "error", "denied"):
+                kept["status"] = outcome["status"]
+            h = outcome.get("hash")
+            if isinstance(h, str) and _OUTCOME_HASH_RE.fullmatch(h):
+                kept["hash"] = h
+            outcome = kept
         elif outcome_summary_raw is not None:
             outcome["summary"] = redact_text(outcome_summary_raw)[:200]
 
@@ -344,7 +399,7 @@ def build(action_type, category, tool=None, tool_input=None, *,
     if source is not None:
         record["source"] = source
     if authority is not None:
-        record["authority"] = dict(authority)
+        record["authority"] = _sanitize_authority(authority)
     threats = _norm_threats(threats)
     if threats is not None:
         record["threats"] = threats
@@ -416,6 +471,7 @@ class Recorder:
         self._last_hash = None
         self._last_record_id = None
         self._last_authority_snapshot_id = None
+        self._last_authority_hash = None
         self._tail_loaded = False
         self._last_size = None
 
@@ -453,6 +509,12 @@ class Recorder:
         self._last_hash = GENESIS_PREV
         self._last_record_id = None
         self._last_authority_snapshot_id = None
+        # The last full authority body's content hash, when the tail carries one.
+        # A compacted tail (same_as_previous) leaves this None: the previous full
+        # body is further back than the one-line tail read, so across a process
+        # restart the snapshot_id is trusted — the reuse guard is strongest where
+        # the hazard lives, inside a single producing process.
+        self._last_authority_hash = None
         if line is not None:
             try:
                 rec = json.loads(line)
@@ -461,6 +523,8 @@ class Recorder:
                 authority = rec.get("authority")
                 if isinstance(authority, dict):
                     self._last_authority_snapshot_id = authority.get("snapshot_id")
+                    if not authority.get("same_as_previous"):
+                        self._last_authority_hash = _authority_content_hash(authority)
             except Exception:
                 pass
         self._last_size = self._size()
@@ -471,7 +535,8 @@ class Recorder:
         process has appended since this instance last looked."""
         if not self._tail_loaded or self._size() != self._last_size:
             self._refresh_tail()
-        return self._last_hash, self._last_authority_snapshot_id
+        return (self._last_hash, self._last_authority_snapshot_id,
+                self._last_authority_hash)
 
     def last_hash(self):
         with self._lock:
@@ -490,24 +555,40 @@ class Recorder:
             return self._current_tail()[1]
 
     @staticmethod
-    def _dedupe_authority(record, previous_snapshot_id):
+    def _dedupe_authority(record, previous_snapshot_id, previous_authority_hash):
+        """Compact a repeated authority block — but only when the CONTENT also
+        matches the previous full snapshot. A reused snapshot_id over changed
+        authority state is stored in full (and said loudly): silently collapsing
+        it would misattribute the run to rules that were no longer in effect."""
         authority = record.get("authority")
         if not isinstance(authority, dict):
-            return None
+            return None, None
         snapshot_id = authority.get("snapshot_id")
+        content_hash = _authority_content_hash(authority)
         if snapshot_id and snapshot_id == previous_snapshot_id:
-            record["authority"] = {
-                "snapshot_id": snapshot_id,
-                "same_as_previous": True,
-            }
-        return snapshot_id
+            if content_hash == previous_authority_hash:
+                record["authority"] = {
+                    "snapshot_id": snapshot_id,
+                    "same_as_previous": True,
+                }
+                return snapshot_id, previous_authority_hash
+            if previous_authority_hash is None:
+                # Fresh process over a compacted tail: the previous full body is
+                # unknown, so store this one in full rather than trust the id.
+                return snapshot_id, content_hash
+            print("halo-record: authority snapshot_id %r reused with changed "
+                  "content — storing the full snapshot; a snapshot_id must stay "
+                  "stable only while the underlying authority is unchanged"
+                  % snapshot_id, file=sys.stderr)
+        return snapshot_id, content_hash
 
     def append(self, record):
         with self._lock:
             flock = self._acquire_flock()
             try:
-                prev, prev_snapshot_id = self._current_tail()
-                authority_snapshot_id = self._dedupe_authority(record, prev_snapshot_id)
+                prev, prev_snapshot_id, prev_authority_hash = self._current_tail()
+                authority_snapshot_id, authority_hash = self._dedupe_authority(
+                    record, prev_snapshot_id, prev_authority_hash)
                 record.setdefault("integrity", {})
                 record["integrity"]["prev_hash"] = prev
                 record["integrity"]["hash"] = compute_hash(record, prev)
@@ -518,6 +599,7 @@ class Recorder:
                 self._last_hash = record["integrity"]["hash"]
                 self._last_record_id = record.get("record_id")
                 self._last_authority_snapshot_id = authority_snapshot_id
+                self._last_authority_hash = authority_hash
             finally:
                 self._release_flock(flock)
         return record

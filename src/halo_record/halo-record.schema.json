@@ -41,7 +41,7 @@
     },
     "authority": {
       "type": "object",
-      "description": "Snapshot of the effective rules, skills, tool registry, and context state that governed this run/action. Intended contents are hashes, refs, capabilities, and stale-if invalidators — not raw prompts, private policy text, secrets, or full tool schemas. This is a producer convention: the library stores this block as supplied and does not enforce or redact it (see LIMITS §6).",
+      "description": "Snapshot of the effective rules, skills, tool registry, and context state that governed this run/action. Intended contents are hashes, refs, capabilities, and stale-if invalidators — not raw prompts, private policy text, secrets, or full tool schemas. Known secret formats (API keys, tokens, private-key blocks, connection strings) are masked at seal time; the high-entropy catch-all is deliberately not applied, so hashes and refs pass through untouched — and free-form text is not detected, so beyond those named formats the block's privacy remains a producer convention (see LIMITS §6).",
       "properties": {
         "snapshot_id": { "type": "string", "description": "Stable id for this authority snapshot, e.g. auth_2026_07_08T1100Z. Consecutive records sharing a snapshot_id are compacted; reuse an id only while the underlying authority is unchanged." },
         "same_as_previous": { "type": "boolean", "description": "When true, this record is governed by the same snapshot_id as the immediately previous record; the full snapshot is intentionally not repeated." },

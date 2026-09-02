@@ -148,6 +148,14 @@ def _apply_patterns(text):
     return out
 
 
+def mask_known_secrets(text):
+    """Mask only the named secret/PII patterns in ``text`` — no high-entropy
+    catch-all. For fields whose legitimate values ARE high-entropy (authority
+    hashes and refs), where the catch-all would mangle the very thing the field
+    exists to carry."""
+    return _apply_patterns(str(text))
+
+
 def redact_text(text):
     # Patterns first, then sweep the residual for high-entropy tokens the
     # patterns did not cover (running on the residual avoids re-masking "****").
