@@ -27,14 +27,18 @@ PATTERNS = [
     ("gcp_api_key",  "CRITICAL", re.compile(r'AIza[0-9A-Za-z_\-]{35}')),
     ("stripe_key",   "CRITICAL", re.compile(r'(?:sk|rk|pk)_(?:live|test)_[0-9a-zA-Z]{16,}')),
     ("github_token", "CRITICAL", re.compile(r'(?:gh[opsu]_[A-Za-z0-9]{36}|github_pat_[A-Za-z0-9_]{22,})')),
-    ("private_key",  "CRITICAL", re.compile(r'-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----')),
+    # Matches the whole PEM block when the footer is present (so the key body is
+    # masked, not just the header line). When the block is truncated, consumes
+    # the base64-shaped body lines that follow the header, so a partial key
+    # still cannot leak through the mask.
+    ("private_key",  "CRITICAL", re.compile(r'-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----(?:[\s\S]*?-----END (?:RSA |EC |OPENSSH )?PRIVATE KEY-----|(?:\n[A-Za-z0-9+/=]+(?![^\n]))*)')),
     ("db_conn",      "CRITICAL", re.compile(r'(?:postgres|mysql|mongodb(?:\+srv)?|redis)://[^\s"\'<>]+')),
     ("jwt",          "HIGH",     re.compile(r'eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}')),
     ("credit_card",  "HIGH",     re.compile(r'\b(?:4[0-9]{3}|5[1-5][0-9]{2}|3[47][0-9]{2}|6(?:011|5[0-9]{2}))(?:[ -]?[0-9]){9,13}\b')),
     ("ssn",          "HIGH",     re.compile(r'\b\d{3}[- ]\d{2}[- ]\d{4}\b')),
     ("bearer_token", "HIGH",     re.compile(r'Bearer\s+[a-zA-Z0-9\-_\.]{20,}')),
     ("email",        "MEDIUM",   re.compile(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b')),
-    ("ip_internal",  "MEDIUM",   re.compile(r'\b(10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3})\b')),
+    ("ip_internal",  "MEDIUM",   re.compile(r'\b(10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(?:1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3})\b')),
     ("phone",        "MEDIUM",   re.compile(r'\b(?:\+?1[-.\s])?\(?\d{3}\)?[-.\s]\d{3}[-.\s]\d{4}\b')),
     ("iban",         "HIGH",     re.compile(r'\b[A-Z]{2}[0-9]{2}(?:[ ]?[A-Z0-9]){11,30}\b')),
 ]
@@ -88,7 +92,10 @@ def redact_sample(ftype, value):
     if ftype == "bearer_token":
         return "Bearer ****"
     if ftype == "private_key":
-        return "-----BEGIN PRIVATE KEY----- ****"
+        # Deliberately header-free: a mask that echoed the PEM header would trip
+        # secret scanners on every artifact that contains it, and re-redaction
+        # would not be idempotent.
+        return "[PRIVATE KEY REDACTED]"
     if ftype == "jwt":
         return "eyJ****"
     if ftype in ("api_key", "gcp_api_key", "stripe_key", "github_token"):
