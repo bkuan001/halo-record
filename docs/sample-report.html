@@ -1,0 +1,697 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Acme Corp — Runtime Report</title>
+<style>
+:root{--ink:#1a1714;--dim:#8a7f74;--line:#ece5db;--bg:#fbf8f3;--gold:#b8860b;
+--gold-soft:#f3e9cf;--ok:#2f7d4f;--ok-bg:#e6f1ea;--warn:#9a5b00;--warn-bg:#f7ecd9;
+--fail:#a3302a;--fail-bg:#f6e3e1;--neutral-bg:#eee8df;}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);
+font-family:"Instrument Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+line-height:1.5;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1020px;margin:0 auto;padding:56px 28px 80px}
+.eyebrow{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--gold);font-weight:600}
+h1{font-family:"Instrument Serif",Georgia,serif;font-weight:400;font-size:46px;
+line-height:1.05;margin:10px 0 6px;letter-spacing:-.01em}
+.meta{color:var(--dim);font-size:14px;margin-bottom:10px}
+.meta b{color:var(--ink);font-weight:600}
+/* "What period does this cover?" is the first question an assessor asks of an
+   evidence artifact, so the span the records actually cover gets its own line
+   instead of sitting mid-sentence in the metadata. */
+.period{display:inline-flex;align-items:baseline;gap:8px;flex-wrap:wrap;
+margin:0 0 26px;padding:8px 14px;border:1px solid var(--line);border-radius:10px;
+background:#fff;font-size:15px;color:var(--ink)}
+.period b{font-weight:600;font-variant-numeric:tabular-nums}
+.period-l{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim);
+font-weight:600}
+.period-tz{font-size:12px;color:var(--dim)}
+.verdict{border-radius:12px;padding:16px 20px;font-size:15px;font-weight:500;margin:0 0 28px;
+border:1px solid var(--line);background:#fff}
+.verdict.ok{background:var(--ok-bg);border-color:#cfe6d8;color:var(--ok)}
+.verdict.fail{background:var(--fail-bg);border-color:#eccdca;color:var(--fail)}
+.verdict.neutral{background:var(--neutral-bg);color:var(--dim)}
+/* An un-anchored report is integrity-only: nobody outside the operator has
+   attested it. That is the single most consequential limit on the page, so it
+   is styled as an open question rather than as neutral chrome — it should
+   read as unresolved, never as a passing state. */
+.verdict.open{background:var(--warn-bg);border-color:#e6d3ae;color:var(--warn)}
+.verdict.open b{color:var(--warn)}
+.note{font-size:13px;color:var(--dim);margin:-18px 0 30px}
+.cards{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:34px}
+.card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px 18px}
+.card .n{font-family:"Instrument Serif",Georgia,serif;font-size:32px;line-height:1}
+.card .l{font-size:12px;color:var(--dim);text-transform:uppercase;letter-spacing:.08em;margin-top:6px}
+h2{font-family:"Instrument Serif",Georgia,serif;font-weight:400;font-size:24px;margin:0 0 14px}
+.tablewrap{max-height:72vh;overflow:auto;background:#fff;border:1px solid var(--line);
+border-radius:12px;margin-bottom:8px}
+table{width:100%;min-width:960px;border-collapse:separate;border-spacing:0;font-size:13px;background:#fff}
+th{text-align:left;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--dim);
+font-weight:600;padding:11px 12px;border-bottom:1px solid var(--line);background:#fdfbf7;
+position:sticky;top:0;z-index:2}
+td{padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+td:first-child{white-space:nowrap}
+tbody tr:last-child td{border-bottom:none}
+.rowcount{font-size:12px;color:var(--dim);margin:-6px 0 10px}
+/* An assessor's first move on a large record is to narrow it: by time, by tool,
+   by what got flagged. The controls sit above the table so the narrowing is
+   visible in any screenshot of the result. */
+.filters{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:0 0 12px}
+.filters input[type=search],.filters select,.filters input[type=datetime-local]{
+font:inherit;font-size:13px;color:var(--ink);background:#fff;
+border:1px solid var(--line);border-radius:8px;padding:6px 9px}
+.filters .f-grow{flex:1 1 260px;min-width:200px}
+.filters input[type=search]:focus,.filters select:focus,
+.filters input[type=datetime-local]:focus,.f-btn:focus-visible{
+outline:2px solid var(--gold);outline-offset:1px}
+.f-lab,.f-check{display:inline-flex;align-items:center;gap:6px;
+font-size:12px;color:var(--dim)}
+.f-btn{font:inherit;font-size:12px;color:var(--ink);background:#fff;cursor:pointer;
+border:1px solid var(--line);border-radius:8px;padding:6px 11px}
+.f-btn:hover{background:var(--gold-soft);border-color:var(--gold)}
+th[data-sort]{cursor:pointer;user-select:none;white-space:nowrap}
+th[data-sort]:hover{color:var(--gold)}
+th[data-sort]::after{content:"\2195";opacity:.3;margin-left:5px;font-size:11px}
+th[data-active=asc]::after{content:"\2191";opacity:1;color:var(--gold)}
+th[data-active=desc]::after{content:"\2193";opacity:1;color:var(--gold)}
+@media print{.filters{display:none}}
+tr.rowclick{cursor:pointer}
+tr.rowclick:hover td{background:var(--gold-soft)}
+tr.rowclick:focus-visible{outline:2px solid var(--gold);outline-offset:-2px}
+/* The row answers "what happened"; the drawer answers "show me the record".
+   It slides over rather than expanding inline so the reader keeps their place
+   in the table. */
+.detail{position:fixed;top:0;right:0;width:min(560px,92vw);height:100%;
+background:#fff;border-left:1px solid var(--line);box-shadow:-8px 0 28px rgba(26,23,20,.12);
+padding:22px 24px 40px;overflow:auto;transform:translateX(101%);
+transition:transform .18s ease;z-index:40}
+.detail.open{transform:translateX(0)}
+.detail-head{display:flex;align-items:center;justify-content:space-between;
+gap:12px;margin-bottom:14px}
+.detail-title{font-family:"Instrument Serif",Georgia,serif;font-size:24px}
+.d-plain{font-size:15px;line-height:1.45;background:var(--gold-soft);
+border:1px solid #eadfc0;border-radius:10px;padding:12px 14px;margin-bottom:16px}
+.d-sec{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--gold);
+font-weight:600;margin:18px 0 8px;padding-bottom:5px;border-bottom:1px solid var(--line)}
+.d-row{display:flex;gap:12px;padding:5px 0;font-size:13px;align-items:baseline}
+.d-k{flex:0 0 150px;color:var(--dim)}
+.d-v{flex:1 1 auto;word-break:break-word}
+.d-pre{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;
+background:var(--bg);border:1px solid var(--line);border-radius:8px;
+padding:10px 12px;white-space:pre-wrap;word-break:break-word;max-height:240px;overflow:auto}
+.d-note{font-size:12px;color:var(--dim);margin-top:8px;line-height:1.5}
+.d-note.ok{color:var(--ok)}
+.d-note.bad{color:var(--fail)}
+@media print{.detail{display:none}}
+#more-sentinel{height:1px}
+.mono{font-family:"SF Mono",ui-monospace,Menlo,monospace;font-size:12px}
+.dim{color:var(--dim)}
+.trunc{max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pill{display:inline-block;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:600;
+background:var(--neutral-bg);color:var(--ink)}
+.pill.ok{background:var(--ok-bg);color:var(--ok)}
+.pill.warn{background:var(--warn-bg);color:var(--warn)}
+.pill.neutral{background:var(--neutral-bg);color:var(--dim)}
+.pill.cap{background:var(--gold-soft);color:#7a5a04}
+.pill.ing{background:var(--neutral-bg);color:var(--dim)}
+.scopes{margin:2px 0 34px;display:flex;flex-wrap:wrap;gap:8px}
+.scopes .pill{background:var(--gold-soft);color:#7a5a04}
+@media print{.tablewrap{max-height:none;overflow:visible}}
+.provgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px;margin-bottom:14px}
+.prov{display:flex;align-items:center;gap:10px;background:#fff;border:1px solid var(--line);
+border-radius:10px;padding:11px 14px}
+.prov .pill{flex:none}
+.prov-via{font-size:13px;font-weight:500;color:var(--ink);flex:1;min-width:0}
+.prov-n{font-size:12px;color:var(--dim);white-space:nowrap;margin-left:8px}
+.prov-note{margin:0 0 30px}
+footer{margin-top:42px;color:var(--dim);font-size:12px;text-align:center}
+footer a{color:var(--gold);text-decoration:none}
+@media(max-width:720px){.cards{grid-template-columns:repeat(2,1fr)}h1{font-size:36px}}
+</style>
+</head><body><div class="wrap">
+<div class="eyebrow">Halo Runtime Report</div>
+<h1>Acme Corp</h1>
+<div class="meta">Agent <b>Globex Support Agent</b> &middot; <b>6</b> recorded actions</div>
+<div class="period"><span class="period-l">Period covered</span>
+<b>2026-08-31 19:37:53</b> &ndash; <b>2026-09-02 20:25:53</b> <span class="period-tz">UTC</span></div>
+<div id="verdict" class="verdict neutral">Verifying hash chain&hellip;</div>
+<div id="completeness" class="verdict neutral">Checking completeness against the witness checkpoints&hellip;</div>
+
+<div class="note">This report re-computes its own SHA-256 / RFC 8785 hash chain in your browser (integrity) and checks it against the witness checkpoints it was anchored to (completeness). Whether completeness counts as independently verified depends on who operates the witness — confirm that before relying on it.</div>
+
+<div class="cards">
+  <div class="card"><div class="n">6</div><div class="l">Actions</div></div>
+  <div class="card"><div class="n">6</div><div class="l">Tools</div></div>
+  <div class="card"><div class="n">6</div><div class="l">Scopes</div></div>
+  <div class="card"><div class="n">0</div><div class="l">Flagged</div></div>
+</div>
+<h2>Authorized scopes</h2>
+<div class="scopes"><span class="pill">billing.write</span><span class="pill">mcp:crm</span><span class="pill">mcp:jira</span><span class="pill">mcp:zendesk</span><span class="pill">model:anthropic</span><span class="pill">network</span></div>
+<h2>Captured via</h2>
+<div class="provgrid"><div class="prov" title="Declared captured at the boundary — per this record&#x27;s own source tag, Halo observed the call directly. The tag is set by the integration, not independently verified."><span class="pill cap">Captured</span><span class="prov-via">Halo recorder (native)</span><span class="prov-n">2 actions</span></div><div class="prov" title="Declared captured at the boundary — per this record&#x27;s own source tag, Halo observed the call directly. The tag is set by the integration, not independently verified."><span class="pill cap">Captured</span><span class="prov-via">MCP interceptor</span><span class="prov-n">1 action</span></div><div class="prov" title="Ingested from telemetry the vendor already emits — the witness attests &quot;this is the stream you sent me&quot;, not &quot;I watched it happen&quot;."><span class="pill ing">Ingested</span><span class="prov-via">LiteLLM gateway</span><span class="prov-n">1 action</span></div><div class="prov" title="Ingested from telemetry the vendor already emits — the witness attests &quot;this is the stream you sent me&quot;, not &quot;I watched it happen&quot;."><span class="pill ing">Ingested</span><span class="prov-via">OpenTelemetry GenAI spans</span><span class="prov-n">1 action</span></div><div class="prov" title="Ingested from telemetry the vendor already emits — the witness attests &quot;this is the stream you sent me&quot;, not &quot;I watched it happen&quot;."><span class="pill ing">Ingested</span><span class="prov-via">Langfuse traces</span><span class="prov-n">1 action</span></div></div>
+<div class="note prov-note">Each action is tagged with how Halo observed it. <b>Captured</b> means the record's source tag declares Halo observed the call at the boundary as it happened — the tag comes from the integration that wrote the record. <b>Ingested</b> means the record was built from telemetry the vendor already emits (a gateway, tracing store, or OTel span) — real and anchorable, but the witness attests “this is the stream you sent me,” not “I watched it happen.” The tier is disclosed, never flattened.</div>
+<h2>Activity</h2>
+<div class="filters" id="filters">
+  <input type="search" id="f-q" class="f-grow" placeholder="Search time, tool, scope, summary, hash&hellip;" aria-label="Search actions">
+  <select id="f-tool" aria-label="Filter by tool"><option value="">All tools</option></select>
+  <select id="f-type" aria-label="Filter by action type"><option value="">All types</option></select>
+  <select id="f-sev" aria-label="Filter by severity">
+    <option value="">Any severity</option>
+    <option value="INFO">INFO</option><option value="LOW">LOW</option>
+    <option value="MEDIUM">MEDIUM</option><option value="HIGH">HIGH</option>
+    <option value="CRITICAL">CRITICAL</option>
+  </select>
+  <label class="f-lab">From <input type="datetime-local" id="f-from" step="1" aria-label="From time"></label>
+  <label class="f-lab">To <input type="datetime-local" id="f-to" step="1" aria-label="To time"></label>
+  <label class="f-check"><input type="checkbox" id="f-flags"> Flagged only</label>
+  <button type="button" id="tz-toggle" class="f-btn">Show UTC</button>
+  <button type="button" id="f-reset" class="f-btn">Reset</button>
+</div>
+<div class="rowcount" id="rowcount">Showing 6 of 6 actions, newest first</div>
+
+<div class="tablewrap" id="tablewrap">
+<table>
+<thead><tr><th id="th-time" data-sort="data-ts" data-active="desc">Time (UTC)</th><th data-sort="data-tool">Tool</th><th data-sort="data-type">Type</th><th>Source</th><th>Scope</th><th>Decision</th><th data-sort="data-status">Outcome</th><th data-sort="data-flags">Findings</th><th>Summary</th><th>Hash</th></tr></thead>
+<tbody id="activity-body">
+<tr data-ts="2026-09-02T20:25:53+00:00" data-tool="mcp__jira__create_ticket" data-type="tool_call" data-sev="INFO" data-status="ok" data-flags="0" data-rid="34b07113-b238-4f92-abe2-0b6ebe9784f5" data-text="2026-09-02t20:25:53+00:00 mcp__jira__create_ticket tool_call mcp:jira allowed ok info {&#x27;tenant&#x27;: &#x27;acme-corp&#x27;, &#x27;issue&#x27;: &#x27;recurring billing bug behind zd-30412&#x27;} escalation glx-218 created globex support agent 66116b45108a escalation glx-218 created" tabindex="0" class="rowclick" title="Click for the full record"><td class="mono dim ts-cell">2026-09-02 20:25:53</td><td class="mono">mcp__jira__create_ticket</td><td>tool_call</td><td><span class="pill ing" title="Ingested from telemetry the vendor already emits — the witness attests &quot;this is the stream you sent me&quot;, not &quot;I watched it happen&quot;.">langfuse</span></td><td class="mono">mcp:jira</td><td><span class="pill ok">allowed</span></td><td><span class="pill ok">ok</span></td><td><span class="pill ok" title="no redaction pattern matched; not a guarantee no sensitive data is present">no flags</span></td><td class="trunc dim">escalation GLX-218 created</td><td class="mono dim">66116b45108a</td></tr>
+<tr data-ts="2026-09-02T17:49:53+00:00" data-tool="email.send" data-type="network" data-sev="INFO" data-status="ok" data-flags="0" data-rid="6d54684a-bd93-4c04-ac50-2f9afe6c7a3d" data-text="2026-09-02t17:49:53+00:00 email.send network network allowed ok info {&#x27;tenant&#x27;: &#x27;acme-corp&#x27;, &#x27;to_domain&#x27;: &#x27;acme-corp.com&#x27;, &#x27;ticket&#x27;: &#x27;zd-30412&#x27;} reply sent to customer globex support agent d75d8c252ecf reply sent to customer" tabindex="0" class="rowclick" title="Click for the full record"><td class="mono dim ts-cell">2026-09-02 17:49:53</td><td class="mono">email.send</td><td>network</td><td><span class="pill ing" title="Ingested from telemetry the vendor already emits — the witness attests &quot;this is the stream you sent me&quot;, not &quot;I watched it happen&quot;.">otel</span></td><td class="mono">network</td><td><span class="pill ok">allowed</span></td><td><span class="pill ok">ok</span></td><td><span class="pill ok" title="no redaction pattern matched; not a guarantee no sensitive data is present">no flags</span></td><td class="trunc dim">reply sent to customer</td><td class="mono dim">d75d8c252ecf</td></tr>
+<tr data-ts="2026-09-01T23:07:53+00:00" data-tool="refund.issue" data-type="write" data-sev="INFO" data-status="ok" data-flags="0" data-rid="60e01653-4774-4cbc-aae5-21895e4e5451" data-text="2026-09-01t23:07:53+00:00 refund.issue write billing.write human_approved ok info {&#x27;tenant&#x27;: &#x27;acme-corp&#x27;, &#x27;order&#x27;: &#x27;ord_2291&#x27;, &#x27;amount_usd&#x27;: 48} $48 refund issued after human approval globex support agent 54fa95323b0a $48 refund issued after human approval" tabindex="0" class="rowclick" title="Click for the full record"><td class="mono dim ts-cell">2026-09-01 23:07:53</td><td class="mono">refund.issue</td><td>write</td><td><span class="pill cap" title="Declared captured at the boundary — per this record&#x27;s own source tag, Halo observed the call directly. The tag is set by the integration, not independently verified.">recorder</span></td><td class="mono">billing.write</td><td><span class="pill warn">human_approved</span></td><td><span class="pill ok">ok</span></td><td><span class="pill ok" title="no redaction pattern matched; not a guarantee no sensitive data is present">no flags</span></td><td class="trunc dim">$48 refund issued after human approval</td><td class="mono dim">54fa95323b0a</td></tr>
+<tr data-ts="2026-09-01T17:19:53+00:00" data-tool="model.generate" data-type="tool_call" data-sev="INFO" data-status="ok" data-flags="0" data-rid="755bbc07-4b02-4eb3-9d52-b07abd9be98b" data-text="2026-09-01t17:19:53+00:00 model.generate tool_call model:anthropic allowed ok info {&#x27;provider&#x27;: &#x27;anthropic&#x27;, &#x27;model&#x27;: &#x27;claude-opus-4-8&#x27;, &#x27;zdr&#x27;: true, &#x27;purpose&#x27;: &#x27;draft reply to ticket zd-30412&#x27;, &#x27;messages&#x27;: 6} reply drafted (zero-data-retention) globex support agent d51067acd20b reply drafted (zero-data-retention)" tabindex="0" class="rowclick" title="Click for the full record"><td class="mono dim ts-cell">2026-09-01 17:19:53</td><td class="mono">model.generate</td><td>tool_call</td><td><span class="pill ing" title="Ingested from telemetry the vendor already emits — the witness attests &quot;this is the stream you sent me&quot;, not &quot;I watched it happen&quot;.">litellm</span></td><td class="mono">model:anthropic</td><td><span class="pill ok">allowed</span></td><td><span class="pill ok">ok</span></td><td><span class="pill ok" title="no redaction pattern matched; not a guarantee no sensitive data is present">no flags</span></td><td class="trunc dim">reply drafted (zero-data-retention)</td><td class="mono dim">d51067acd20b</td></tr>
+<tr data-ts="2026-08-31T19:43:53+00:00" data-tool="mcp__zendesk__get_ticket" data-type="read" data-sev="INFO" data-status="ok" data-flags="0" data-rid="c3f93bb2-518d-4c25-b825-b5d7e96e96f9" data-text="2026-08-31t19:43:53+00:00 mcp__zendesk__get_ticket read mcp:zendesk allowed ok info {&#x27;tenant&#x27;: &#x27;acme-corp&#x27;, &#x27;ticket&#x27;: &#x27;zd-30412&#x27;} read ticket thread (4 messages) globex support agent 5c2a52df8bcc read ticket thread (4 messages)" tabindex="0" class="rowclick" title="Click for the full record"><td class="mono dim ts-cell">2026-08-31 19:43:53</td><td class="mono">mcp__zendesk__get_ticket</td><td>read</td><td><span class="pill cap" title="Declared captured at the boundary — per this record&#x27;s own source tag, Halo observed the call directly. The tag is set by the integration, not independently verified.">recorder</span></td><td class="mono">mcp:zendesk</td><td><span class="pill ok">allowed</span></td><td><span class="pill ok">ok</span></td><td><span class="pill ok" title="no redaction pattern matched; not a guarantee no sensitive data is present">no flags</span></td><td class="trunc dim">read ticket thread (4 messages)</td><td class="mono dim">5c2a52df8bcc</td></tr>
+<tr data-ts="2026-08-31T19:37:53+00:00" data-tool="mcp__crm__get_customer" data-type="read" data-sev="INFO" data-status="ok" data-flags="0" data-rid="0c5a5d3d-c496-4eb9-be4f-e77fb3da5e46" data-text="2026-08-31t19:37:53+00:00 mcp__crm__get_customer read mcp:crm allowed ok info {&#x27;tenant&#x27;: &#x27;acme-corp&#x27;, &#x27;customer&#x27;: &#x27;cust_8841&#x27;, &#x27;region&#x27;: &#x27;us-east-1&#x27;} looked up account + order history, tenant-scoped globex support agent c195a58a508c looked up account + order history, tenant-scoped" tabindex="0" class="rowclick" title="Click for the full record"><td class="mono dim ts-cell">2026-08-31 19:37:53</td><td class="mono">mcp__crm__get_customer</td><td>read</td><td><span class="pill cap" title="Declared captured at the boundary — per this record&#x27;s own source tag, Halo observed the call directly. The tag is set by the integration, not independently verified.">mcp</span></td><td class="mono">mcp:crm</td><td><span class="pill ok">allowed</span></td><td><span class="pill ok">ok</span></td><td><span class="pill ok" title="no redaction pattern matched; not a guarantee no sensitive data is present">no flags</span></td><td class="trunc dim">looked up account + order history, tenant-scoped</td><td class="mono dim">c195a58a508c</td></tr>
+</tbody></table>
+<div id="more-sentinel"></div>
+</div>
+<template id="more-rows"></template>
+<aside id="detail" class="detail" aria-hidden="true" aria-label="Record detail">
+  <div class="detail-head">
+    <div class="detail-title">Record</div>
+    <button type="button" id="detail-close" class="f-btn" aria-label="Close record detail">Close</button>
+  </div>
+  <div id="detail-body"></div>
+</aside>
+<footer>Generated by <a href="https://github.com/bkuan001/halo-record">halo-record</a> &middot; format <a href="https://github.com/bkuan001/halo-record/blob/main/src/halo_record/halo-record.schema.json">Halo Runtime Record v0.1</a></footer>
+</div>
+<script id="records" type="application/json">[{"schema_version":"0.1","record_id":"0c5a5d3d-c496-4eb9-be4f-e77fb3da5e46","session_id":"demo-acme-corp","ts":"2026-08-31T19:37:53+00:00","agent":{"id":"globex-agent","name":"Globex Support Agent","version":"2.4.1","model":"claude-opus-4-8"},"action":{"type":"read","category":"privacy","tool":"mcp__crm__get_customer","authorization":{"decision":"allowed","scope":"mcp:crm"},"input":{"hash":"sha256:9fa798f0ebf933885b5ff5d95e9a3974dcbb30e60003ebeb003e4bb527d2b5c9","summary":"{'tenant': 'acme-corp', 'customer': 'cust_8841', 'region': 'us-east-1'}"}},"severity":"INFO","findings":[],"integrity":{"alg":"sha-256","canon":"rfc8785","prev_hash":"0000000000000000000000000000000000000000000000000000000000000000","hash":"c195a58a508c6bc71edcbd289ca9759239d482554dc5cd79ad37e4f6f8c06a2d"},"subject":{"id":"acme-corp","name":"Acme Corp"},"source":{"adapter":"mcp","via":"MCP interceptor","capture":"captured"},"outcome":{"status":"ok","summary":"looked up account + order history, tenant-scoped"}},{"schema_version":"0.1","record_id":"c3f93bb2-518d-4c25-b825-b5d7e96e96f9","session_id":"demo-acme-corp","ts":"2026-08-31T19:43:53+00:00","agent":{"id":"globex-agent","name":"Globex Support Agent","version":"2.4.1","model":"claude-opus-4-8"},"action":{"type":"read","category":"privacy","tool":"mcp__zendesk__get_ticket","authorization":{"decision":"allowed","scope":"mcp:zendesk"},"input":{"hash":"sha256:c4c8e6f6a33435a47345dbbc9df63be3d08e70660eadea20e0e4636953db6432","summary":"{'tenant': 'acme-corp', 'ticket': 'ZD-30412'}"}},"severity":"INFO","findings":[],"integrity":{"alg":"sha-256","canon":"rfc8785","prev_hash":"c195a58a508c6bc71edcbd289ca9759239d482554dc5cd79ad37e4f6f8c06a2d","hash":"5c2a52df8bcc923a371a4cc3afcf2e5783b211eaa435845a698264276ce214bc"},"subject":{"id":"acme-corp","name":"Acme Corp"},"source":{"adapter":"recorder","via":"Halo recorder (native)","capture":"captured"},"outcome":{"status":"ok","summary":"read ticket thread (4 messages)"}},{"schema_version":"0.1","record_id":"755bbc07-4b02-4eb3-9d52-b07abd9be98b","session_id":"demo-acme-corp","ts":"2026-09-01T17:19:53+00:00","agent":{"id":"globex-agent","name":"Globex Support Agent","version":"2.4.1","model":"claude-opus-4-8"},"action":{"type":"tool_call","category":"privacy","tool":"model.generate","authorization":{"decision":"allowed","scope":"model:anthropic"},"input":{"hash":"sha256:1a99bd61816e0f8db733ac54158dc5a01eaa6c502cc6a99ea3c97e24849baf0f","summary":"{'provider': 'anthropic', 'model': 'claude-opus-4-8', 'zdr': True, 'purpose': 'draft reply to ticket ZD-30412', 'messages': 6}"}},"severity":"INFO","findings":[],"integrity":{"alg":"sha-256","canon":"rfc8785","prev_hash":"5c2a52df8bcc923a371a4cc3afcf2e5783b211eaa435845a698264276ce214bc","hash":"d51067acd20b02da2e90216ad0529178557850da82208db56f7bcc16fe04a2f3"},"subject":{"id":"acme-corp","name":"Acme Corp"},"source":{"adapter":"litellm","via":"LiteLLM gateway","capture":"ingested"},"outcome":{"status":"ok","summary":"reply drafted (zero-data-retention)"}},{"schema_version":"0.1","record_id":"60e01653-4774-4cbc-aae5-21895e4e5451","session_id":"demo-acme-corp","ts":"2026-09-01T23:07:53+00:00","agent":{"id":"globex-agent","name":"Globex Support Agent","version":"2.4.1","model":"claude-opus-4-8"},"action":{"type":"write","category":"safety","tool":"refund.issue","authorization":{"decision":"human_approved","scope":"billing.write","approver":"casey.lead@support.example"},"input":{"hash":"sha256:ccc488ec5fd0159f9a79c8dee3a99b62f10b3985e3c820b7fa9c9361598b2cd0","summary":"{'tenant': 'acme-corp', 'order': 'ord_2291', 'amount_usd': 48}"}},"severity":"INFO","findings":[],"integrity":{"alg":"sha-256","canon":"rfc8785","prev_hash":"d51067acd20b02da2e90216ad0529178557850da82208db56f7bcc16fe04a2f3","hash":"54fa95323b0a7ac5a1d322d7f03650575c6ea5e7fe982422ab44b9e34c89d8f3"},"subject":{"id":"acme-corp","name":"Acme Corp"},"source":{"adapter":"recorder","via":"Halo recorder (native)","capture":"captured"},"outcome":{"status":"ok","summary":"$48 refund issued after human approval"}},{"schema_version":"0.1","record_id":"6d54684a-bd93-4c04-ac50-2f9afe6c7a3d","session_id":"demo-acme-corp","ts":"2026-09-02T17:49:53+00:00","agent":{"id":"globex-agent","name":"Globex Support Agent","version":"2.4.1","model":"claude-opus-4-8"},"action":{"type":"network","category":"security","tool":"email.send","authorization":{"decision":"allowed","scope":"network"},"input":{"hash":"sha256:b4a4eee4fa43f06f2d13d02fd9c973ddb7dc657f4b34b9b1055759d7357a73e0","summary":"{'tenant': 'acme-corp', 'to_domain': 'acme-corp.com', 'ticket': 'ZD-30412'}"}},"severity":"INFO","findings":[],"integrity":{"alg":"sha-256","canon":"rfc8785","prev_hash":"54fa95323b0a7ac5a1d322d7f03650575c6ea5e7fe982422ab44b9e34c89d8f3","hash":"d75d8c252ecf639c2189e8fc08abce512d3a52c0298b646097a931ff58fb2396"},"subject":{"id":"acme-corp","name":"Acme Corp"},"source":{"adapter":"otel","via":"OpenTelemetry GenAI spans","capture":"ingested"},"outcome":{"status":"ok","summary":"reply sent to customer"}},{"schema_version":"0.1","record_id":"34b07113-b238-4f92-abe2-0b6ebe9784f5","session_id":"demo-acme-corp","ts":"2026-09-02T20:25:53+00:00","agent":{"id":"globex-agent","name":"Globex Support Agent","version":"2.4.1","model":"claude-opus-4-8"},"action":{"type":"tool_call","category":"reliability","tool":"mcp__jira__create_ticket","authorization":{"decision":"allowed","scope":"mcp:jira"},"input":{"hash":"sha256:13daee84ed723a1eb6e74c616b0cf4a982404a516ebd694bda89e1ea48b87ebd","summary":"{'tenant': 'acme-corp', 'issue': 'recurring billing bug behind ZD-30412'}"}},"severity":"INFO","findings":[],"integrity":{"alg":"sha-256","canon":"rfc8785","prev_hash":"d75d8c252ecf639c2189e8fc08abce512d3a52c0298b646097a931ff58fb2396","hash":"66116b45108afd73c7e2b423b7353c94fefb991adc1257c290b35983ee58a689"},"subject":{"id":"acme-corp","name":"Acme Corp"},"source":{"adapter":"langfuse","via":"Langfuse traces","capture":"ingested"},"outcome":{"status":"ok","summary":"escalation GLX-218 created"}}]</script>
+<script id="checkpoints" type="application/json">[{"chain_root":"c195a58a508c6bc71edcbd289ca9759239d482554dc5cd79ad37e4f6f8c06a2d","subject":"acme-corp","count":6,"head":"66116b45108afd73c7e2b423b7353c94fefb991adc1257c290b35983ee58a689","ts":"2026-09-02T22:01:53.146023Z"}]</script>
+<script id="halo-config" type="application/json">{"witnessUrl":null,"subject":"acme-corp"}</script>
+<script>
+const GENESIS = "0000000000000000000000000000000000000000000000000000000000000000";
+const WINDOW = null;
+function canon(v){
+  if (v === true) return "true";
+  if (v === false) return "false";
+  if (v === null) return "null";
+  const t = typeof v;
+  if (t === "string") return JSON.stringify(v);
+  if (t === "number") return String(v);
+  if (Array.isArray(v)) return "[" + v.map(canon).join(",") + "]";
+  if (t === "object") {
+    const keys = Object.keys(v).sort();
+    return "{" + keys.map(k => JSON.stringify(k) + ":" + canon(v[k])).join(",") + "}";
+  }
+  throw new Error("cannot canonicalize");
+}
+function hex(buf){
+  return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, "0")).join("");
+}
+async function recordHash(rec, prev){
+  const clone = JSON.parse(JSON.stringify(rec));
+  clone.integrity = clone.integrity || {};
+  clone.integrity.prev_hash = prev;
+  delete clone.integrity.hash;
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(canon(clone)));
+  return hex(digest);
+}
+async function verify(records){
+  let prev = GENESIS;
+  for (let i = 0; i < records.length; i++){
+    const r = records[i], integ = r.integrity || {};
+    if (integ.prev_hash !== prev) return {ok:false, at:i+1, why:"chain break (prev_hash)"};
+    const got = await recordHash(r, prev);
+    if (got !== integ.hash) return {ok:false, at:i+1, why:"hash mismatch"};
+    prev = integ.hash;
+  }
+  return {ok:true, head:prev};
+}
+function completeness(records, cps){
+  // Assumes the chain already verified. Mirrors anchor.verify_completeness:
+  // every head the notary independently witnessed must still be present here.
+  // In a windowed report only the checkpoints that land inside the window can
+  // be re-checked in the browser; the ones before/beyond it are disclosed.
+  if (!cps.length) return {ok:null};
+  const latest = Math.max.apply(null, cps.map(c => c.count));
+  if (!WINDOW && records.length < latest)
+    return {ok:false, why:"truncated below witnessed length", have:records.length, witnessed:latest};
+  let inWin = 0, before = 0, beyond = 0;
+  for (const c of cps){
+    const n = c.count;
+    if (WINDOW){
+      if (n < WINDOW.first){ before++; continue; }
+      if (n > WINDOW.last){ beyond++; continue; }
+      const h = (records[n - WINDOW.first].integrity || {}).hash;
+      if (h !== c.head) return {ok:false, why:"record altered or dropped before witnessed point", at:n};
+      inWin++;
+    } else {
+      if (n < 1 || n > records.length) return {ok:false, why:"witnessed count out of range", at:n};
+      const h = (records[n-1].integrity || {}).hash;
+      if (h !== c.head) return {ok:false, why:"record altered or dropped before witnessed point", at:n};
+    }
+  }
+  if (WINDOW && !inWin)
+    return {ok:null, windowed:true, before:before, beyond:beyond};
+  return {ok:true, witnessed:cps.length, latest:latest, inWin:inWin, before:before, beyond:beyond};
+}
+async function liveCheckpoints(cfg, embedded){
+  // Completeness must be checked against the notary, not against checkpoints the
+  // vendor embedded in (and served with) this page. When a hosted Halo witness
+  // is configured, fetch its checkpoints directly (CORS-open) so the verdict
+  // rests on a party the vendor doesn't control. Fall back to the embedded
+  // snapshot only if the live witness is unreachable.
+  if (!cfg.witnessUrl) return {cps: embedded, live: false, error: null};
+  try {
+    const base = cfg.witnessUrl.replace(/\/+$/, "");
+    const u = base + "/v1/checkpoints" + (cfg.subject ? "?subject=" + encodeURIComponent(cfg.subject) : "");
+    const resp = await fetch(u, {mode: "cors"});
+    if (!resp.ok) throw new Error("HTTP " + resp.status);
+    const data = await resp.json();
+    return {cps: data.checkpoints || [], live: true, error: null};
+  } catch (e){
+    return {cps: embedded, live: false, error: e.message};
+  }
+}
+(async function(){
+  const el = document.getElementById("verdict");
+  const cel = document.getElementById("completeness");
+  const records = JSON.parse(document.getElementById("records").textContent);
+  const embedded = JSON.parse(document.getElementById("checkpoints").textContent);
+  const cfg = JSON.parse(document.getElementById("halo-config").textContent);
+  if (!(window.crypto && crypto.subtle)){
+    el.className = "verdict neutral";
+    el.innerHTML = "Self-verification needs a secure context — serve this page over https or localhost to re-check the chain in your browser.";
+    return;
+  }
+  try {
+    if (!records.length){
+      el.className = "verdict neutral";
+      el.innerHTML = "0 records — an empty chain; nothing to attest.";
+      if (cel){ cel.className = "verdict neutral"; cel.innerHTML = "No records to check for completeness."; }
+      return;
+    }
+    const res = await verify(records);
+    window.__haloVerify = res;  // the drawer's chain-position note reads this
+    if (res.ok && WINDOW){
+      el.className = "verdict ok";
+      el.innerHTML = "&#10003; Verified in your browser — records " + WINDOW.first +
+        "&ndash;" + WINDOW.last + " of " + WINDOW.total +
+        ", window chain intact relative to its anchor. <span class='dim'>window head " +
+        res.head.slice(0,16) + "&hellip;</span>";
+    } else if (res.ok){
+      el.className = "verdict ok";
+      el.innerHTML = "&#10003; Verified in your browser — " + records.length +
+        " records, hash chain intact. <span class='dim'>chain head " +
+        res.head.slice(0,16) + "&hellip;</span>";
+    } else {
+      el.className = "verdict fail";
+      el.innerHTML = "&#10007; Verification FAILED at record " + res.at + " (" + res.why + ").";
+      return;
+    }
+  } catch (e){
+    el.className = "verdict fail";
+    el.textContent = "Verification error: " + e.message;
+    return;
+  }
+  if (!cel) return;
+  const src = await liveCheckpoints(cfg, embedded);
+  const comp = completeness(records, src.cps);
+  const witness = src.live ? "the live witness log" : "the witness log embedded in this report";
+  const note = src.error
+    ? " <span class='dim'>(couldn't reach the live witness — checked the embedded snapshot instead)</span>"
+    : "";
+  if (comp.ok === null && comp.windowed){
+    cel.className = "verdict neutral";
+    cel.innerHTML = "No witness checkpoint falls inside this window — window integrity is " +
+      "verified against its anchor above" +
+      (comp.beyond ? "; the chain is witnessed beyond this window" : "") +
+      (comp.before ? "; " + comp.before + " checkpoint(s) precede the window" : "") +
+      "." + note;
+  } else if (comp.ok === null){
+    cel.className = "verdict open";
+    cel.innerHTML = "<b>Not yet anchored.</b> No independent witness exists for this report — " +
+      "completeness rests on the vendor alone until the chain is witnessed. " +
+      "Integrity is verified above; completeness is not." + note;
+  } else if (comp.ok && WINDOW){
+    cel.className = "verdict neutral";
+    cel.innerHTML = (src.live
+        ? "Consistent within window &mdash; "
+        : "Self-attested &mdash; the checkpoint was supplied with this report by its operator, so treat completeness as self-attested until a witness outside the operator confirms it. Within the window it is consistent: ") +
+      witness + " confirmed " + comp.inWin +
+      " checkpoint(s) inside this window" +
+      (comp.beyond ? "; chain continues beyond the window (witnessed to record " + comp.latest + ")" : "") +
+      (comp.before ? "; " + comp.before + " earlier checkpoint(s) precede it" : "") +
+      ". No witnessed record in this window has been dropped or altered." +
+      (src.live
+        ? " Whether this counts as independent verification depends on who operates the witness at " + String(cfg.witnessUrl || "the configured URL").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;") + " &mdash; treat it as self-attested unless that party is outside the operator's control."
+        : "") + note;
+  } else if (comp.ok){
+    cel.className = "verdict neutral";
+    cel.innerHTML = (src.live
+        ? "Consistent &mdash; "
+        : "Self-attested &mdash; the checkpoint was supplied with this report by its operator, so treat completeness as self-attested until a witness outside the operator confirms it. Against that checkpoint the chain is consistent: ") +
+      witness + " confirmed " + comp.witnessed +
+      " checkpoint(s) up to record " + comp.latest +
+      ". No record the notary saw has been dropped or altered." +
+      (src.live
+        ? " Whether this counts as independent verification depends on who operates the witness at " + String(cfg.witnessUrl || "the configured URL").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;") + " &mdash; treat it as self-attested unless that party is outside the operator's control."
+        : "") + note;
+  } else {
+    cel.className = "verdict fail";
+    cel.innerHTML = "&#10007; INCOMPLETE &mdash; conflicts with " + witness + " (" +
+      comp.why + (comp.at ? " at record " + comp.at : "") + ")." + note;
+  }
+})();
+</script>
+<script>
+(function(){
+  var tbody = document.getElementById("activity-body");
+  var tpl = document.getElementById("more-rows");
+  var wrap = document.getElementById("tablewrap");
+  var counter = document.getElementById("rowcount");
+  var sentinel = document.getElementById("more-sentinel");
+  if (!tbody || !tpl || !wrap || !sentinel) return;
+  var BATCH = 100;
+
+  /* One array owns every row; the table body is a rendered view of the
+     filtered+sorted subset. Rows never go back into the template. */
+  var ALL = [];
+  Array.prototype.push.apply(ALL, tbody.querySelectorAll("tr"));
+  Array.prototype.push.apply(ALL, tpl.content.querySelectorAll("tr"));
+  ALL = ALL.filter(function(r){ return r.hasAttribute("data-ts"); });
+  if (!ALL.length) return;
+  tpl.remove();
+
+  var view = ALL.slice();     // current filtered+sorted set
+  var drawn = 0;              // how many of `view` are in the DOM
+
+  /* --- local time -------------------------------------------------------
+     Records are sealed in UTC. A reader investigating "what happened at 3pm"
+     means their own 3pm, so the displayed time follows the viewer's clock by
+     default, with UTC one click away. The underlying record is untouched. */
+  var localMode = true;
+  var TZ = "";
+  try {
+    TZ = Intl.DateTimeFormat().resolvedOptions().timeZone || "";
+  } catch (e) { TZ = ""; }
+  function pad(n){ return (n < 10 ? "0" : "") + n; }
+  function stamp(iso){
+    if (!localMode) return String(iso).replace("T", " ").replace("+00:00", "Z").slice(0, 19);
+    var d = new Date(iso);
+    if (isNaN(d)) return String(iso).slice(0, 19);
+    return d.getFullYear() + "-" + pad(d.getMonth()+1) + "-" + pad(d.getDate()) + " " +
+           pad(d.getHours()) + ":" + pad(d.getMinutes()) + ":" + pad(d.getSeconds());
+  }
+  function paintTimes(){
+    for (var i = 0; i < ALL.length; i++){
+      var cell = ALL[i].querySelector(".ts-cell");
+      if (cell) cell.textContent = stamp(ALL[i].getAttribute("data-ts"));
+    }
+    var th = document.getElementById("th-time");
+    if (th) th.firstChild.textContent = localMode
+      ? ("Time (" + (TZ || "local") + ")") : "Time (UTC)";
+    var btn = document.getElementById("tz-toggle");
+    if (btn) btn.textContent = localMode ? "Show UTC" : "Show local time";
+  }
+
+  /* --- filtering -------------------------------------------------------- */
+  var q = document.getElementById("f-q");
+  var fTool = document.getElementById("f-tool");
+  var fType = document.getElementById("f-type");
+  var fSev = document.getElementById("f-sev");
+  var fFrom = document.getElementById("f-from");
+  var fTo = document.getElementById("f-to");
+  var fFlags = document.getElementById("f-flags");
+  var fReset = document.getElementById("f-reset");
+
+  function fillOptions(sel, attr){
+    if (!sel) return;
+    var seen = {}, vals = [];
+    for (var i = 0; i < ALL.length; i++){
+      var v = ALL[i].getAttribute(attr);
+      if (v && !seen[v]){ seen[v] = 1; vals.push(v); }
+    }
+    vals.sort();
+    for (var j = 0; j < vals.length; j++){
+      var o = document.createElement("option");
+      o.value = vals[j]; o.textContent = vals[j];
+      sel.appendChild(o);
+    }
+  }
+  fillOptions(fTool, "data-tool");
+  fillOptions(fType, "data-type");
+
+  /* Datetime-local inputs are read in the same frame as the displayed time,
+     so a range typed against local timestamps selects what the reader sees. */
+  function bound(input){
+    if (!input || !input.value) return null;
+    var d = localMode ? new Date(input.value) : new Date(input.value + "Z");
+    return isNaN(d) ? null : d.getTime();
+  }
+  function matches(row){
+    if (q && q.value.trim()){
+      var terms = q.value.toLowerCase().split(/\s+/);
+      var hay = row.getAttribute("data-text") || "";
+      for (var i = 0; i < terms.length; i++)
+        if (terms[i] && hay.indexOf(terms[i]) === -1) return false;
+    }
+    if (fTool && fTool.value && row.getAttribute("data-tool") !== fTool.value) return false;
+    if (fType && fType.value && row.getAttribute("data-type") !== fType.value) return false;
+    if (fSev && fSev.value && row.getAttribute("data-sev") !== fSev.value) return false;
+    if (fFlags && fFlags.checked && row.getAttribute("data-flags") === "0") return false;
+    var lo = bound(fFrom), hi = bound(fTo);
+    if (lo !== null || hi !== null){
+      var t = new Date(row.getAttribute("data-ts")).getTime();
+      if (isNaN(t)) return false;
+      if (lo !== null && t < lo) return false;
+      if (hi !== null && t > hi) return false;
+    }
+    return true;
+  }
+
+  /* --- sorting ---------------------------------------------------------- */
+  var sortKey = "data-ts", sortDir = -1;   // newest first, as rendered
+  function cmp(a, b){
+    var av = a.getAttribute(sortKey) || "", bv = b.getAttribute(sortKey) || "";
+    if (sortKey === "data-flags"){ av = +av; bv = +bv; }
+    if (sortKey === "data-sev"){
+      var rank = {INFO:0, LOW:1, MEDIUM:2, HIGH:3, CRITICAL:4};
+      av = rank[av] === undefined ? -1 : rank[av];
+      bv = rank[bv] === undefined ? -1 : rank[bv];
+    }
+    if (av < bv) return -sortDir;
+    if (av > bv) return sortDir;
+    return 0;
+  }
+
+  function render(){
+    tbody.textContent = "";
+    drawn = 0;
+    draw();
+    if (wrap) wrap.scrollTop = 0;
+  }
+  function draw(){
+    var frag = document.createDocumentFragment();
+    var end = Math.min(drawn + BATCH, view.length);
+    for (var i = drawn; i < end; i++) frag.appendChild(view[i]);
+    tbody.appendChild(frag);
+    drawn = end;
+    update();
+  }
+  function update(){
+    if (!counter) return;
+    var filtered = view.length !== ALL.length;
+    counter.textContent = "Showing " + drawn + " of " + view.length + " actions" +
+      (filtered ? " (filtered from " + ALL.length + ")" : "") +
+      (drawn < view.length ? " — scroll the table for more" : "");
+  }
+  function apply(){
+    view = ALL.filter(matches);
+    view.sort(cmp);
+    render();
+  }
+
+  var heads = document.querySelectorAll("th[data-sort]");
+  for (var h = 0; h < heads.length; h++){
+    (function(th){
+      th.addEventListener("click", function(){
+        var key = th.getAttribute("data-sort");
+        if (sortKey === key) sortDir = -sortDir;
+        else { sortKey = key; sortDir = (key === "data-ts") ? -1 : 1; }
+        for (var k = 0; k < heads.length; k++) heads[k].removeAttribute("data-active");
+        th.setAttribute("data-active", sortDir > 0 ? "asc" : "desc");
+        apply();
+      });
+    })(heads[h]);
+  }
+
+  var inputs = [q, fTool, fType, fSev, fFrom, fTo, fFlags];
+  for (var n = 0; n < inputs.length; n++){
+    if (!inputs[n]) continue;
+    inputs[n].addEventListener(inputs[n] === q ? "input" : "change", apply);
+  }
+  if (fReset) fReset.addEventListener("click", function(){
+    if (q) q.value = "";
+    if (fTool) fTool.value = "";
+    if (fType) fType.value = "";
+    if (fSev) fSev.value = "";
+    if (fFrom) fFrom.value = "";
+    if (fTo) fTo.value = "";
+    if (fFlags) fFlags.checked = false;
+    apply();
+  });
+  var tz = document.getElementById("tz-toggle");
+  if (tz) tz.addEventListener("click", function(){
+    localMode = !localMode;
+    paintTimes();
+    apply();
+  });
+
+  if ("IntersectionObserver" in window){
+    var io = new IntersectionObserver(function(entries){
+      for (var i = 0; i < entries.length; i++)
+        if (entries[i].isIntersecting && drawn < view.length){ draw(); break; }
+    }, {root: wrap, rootMargin: "600px"});
+    io.observe(sentinel);
+  } else {
+    wrap.addEventListener("scroll", function(){
+      if (drawn < view.length &&
+          wrap.scrollTop + wrap.clientHeight > wrap.scrollHeight - 600) draw();
+    });
+  }
+
+  /* --- record detail ----------------------------------------------------
+     A row is a summary; the record is the evidence. Clicking a row opens the
+     whole sealed record — every field, the findings that matched, and the
+     hash linkage a reader can check by hand against the JSONL. */
+  var RECORDS = [];
+  try {
+    RECORDS = JSON.parse(document.getElementById("records").textContent) || [];
+  } catch (e) { RECORDS = []; }
+  var byId = {};
+  for (var ri = 0; ri < RECORDS.length; ri++){
+    var rid = RECORDS[ri].record_id;
+    if (rid) byId[rid] = ri;
+  }
+  var panel = document.getElementById("detail");
+  var panelBody = document.getElementById("detail-body");
+  var panelClose = document.getElementById("detail-close");
+
+  function esc(s){
+    return String(s === undefined || s === null ? "" : s)
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+  function field(label, value, mono){
+    if (value === undefined || value === null || value === "") return "";
+    return '<div class="d-row"><div class="d-k">' + esc(label) + '</div>' +
+           '<div class="d-v' + (mono ? " mono" : "") + '">' + esc(value) + '</div></div>';
+  }
+  function openDetail(rid){
+    var idx = byId[rid];
+    if (idx === undefined || !panel || !panelBody) return;
+    var r = RECORDS[idx];
+    var a = r.action || {}, auth = a.authorization || {}, o = r.outcome || {},
+        integ = r.integrity || {}, inp = a.input || {}, f = r.findings || [];
+    var prev = idx > 0 ? RECORDS[idx - 1] : null;
+    var linkOk = prev ? ((prev.integrity || {}).hash === integ.prev_hash) : null;
+
+    var h = "";
+    h += '<div class="d-plain">' + esc(document.querySelector('tr[data-rid="' +
+         rid.replace(/"/g, "") + '"] td:nth-last-child(2)').textContent) + "</div>";
+    h += '<div class="d-sec">When</div>';
+    h += field("Recorded at", stamp(r.ts) + (localMode ? " (your time)" : " (UTC)"));
+    h += field("Sealed timestamp", r.ts, true);
+    h += '<div class="d-sec">What ran</div>';
+    h += field("Tool", a.tool);
+    h += field("Action type", a.type);
+    h += field("Category", a.category);
+    h += field("Agent", (r.agent || {}).name || (r.agent || {}).id);
+    h += field("Session", r.session_id, true);
+    h += '<div class="d-sec">Arguments (as recorded)</div>';
+    h += '<pre class="d-pre">' + esc(inp.summary || "(none recorded)") + "</pre>";
+    h += field("Argument hash", inp.hash, true);
+    h += '<div class="d-sec">Permission</div>';
+    h += field("Scope", auth.scope);
+    h += field("Decision", auth.decision);
+    h += field("Approver", auth.approver);
+    h += '<div class="d-sec">Result</div>';
+    h += field("Status", o.status);
+    if (o.summary){ h += '<pre class="d-pre">' + esc(o.summary) + "</pre>"; }
+    h += field("Result hash", o.hash, true);
+    h += '<div class="d-sec">Flags (' + f.length + ")</div>";
+    if (!f.length){
+      h += '<div class="d-note">No redaction pattern matched. That is not a ' +
+           "guarantee no sensitive data is present — unstructured personal data " +
+           "has no pattern to match.</div>";
+    } else {
+      for (var i = 0; i < f.length; i++){
+        h += '<div class="d-row"><div class="d-k">' + esc(f[i].type || "?") +
+             '</div><div class="d-v">' + esc(f[i].severity || "") +
+             (f[i].sample ? ' &middot; <span class="mono">' + esc(f[i].sample) + "</span>" : "") +
+             "</div></div>";
+      }
+      h += '<div class="d-note">A flag marks a pattern the redactor matched and ' +
+           "masked in the stored summary. The sample above is already masked.</div>";
+    }
+    h += '<div class="d-sec">Chain position</div>';
+    h += field("Record id", r.record_id, true);
+    h += field("This record's hash", integ.hash, true);
+    h += field("Points back to", integ.prev_hash, true);
+    // The declared-linkage check below compares this record's prev_hash to the
+    // PREVIOUS record's DECLARED hash — file order only. The cryptographic
+    // verdict belongs to the page-level verification; if that failed at or
+    // before this record, the declared linkage means nothing and must not
+    // render as a green check.
+    var pageVerify = window.__haloVerify;
+    var brokenHere = pageVerify && pageVerify.ok === false &&
+                     typeof pageVerify.at === "number" && (idx + 1) >= pageVerify.at;
+    if (brokenHere){
+      h += '<div class="d-note bad">✗ Chain verification failed at record ' +
+           pageVerify.at + " — this record's position cannot be verified " +
+           "(declared links after a break prove nothing; see the banner).</div>";
+    } else if (linkOk !== null){
+      h += '<div class="d-note' + (linkOk ? " ok" : " bad") + '">' +
+           (linkOk
+             ? "✓ prev_hash matches the preceding record's declared hash (file order — the cryptographic verdict is the banner above)."
+             : "✗ Does not match the previous record's hash in this file.") +
+           "</div>";
+    } else {
+      h += '<div class="d-note">First record in this file — its predecessor is ' +
+           "outside the exported window.</div>";
+    }
+    panelBody.innerHTML = h;
+    panel.classList.add("open");
+    panel.setAttribute("aria-hidden", "false");
+  }
+  function closeDetail(){
+    if (!panel) return;
+    panel.classList.remove("open");
+    panel.setAttribute("aria-hidden", "true");
+  }
+  tbody.addEventListener("click", function(ev){
+    var tr = ev.target.closest("tr[data-rid]");
+    if (tr) openDetail(tr.getAttribute("data-rid"));
+  });
+  tbody.addEventListener("keydown", function(ev){
+    if (ev.key !== "Enter" && ev.key !== " ") return;
+    var tr = ev.target.closest("tr[data-rid]");
+    if (tr){ ev.preventDefault(); openDetail(tr.getAttribute("data-rid")); }
+  });
+  if (panelClose) panelClose.addEventListener("click", closeDetail);
+  document.addEventListener("keydown", function(ev){
+    if (ev.key === "Escape") closeDetail();
+  });
+
+  paintTimes();
+  apply();
+})();
+</script>
+</body></html>
