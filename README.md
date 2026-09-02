@@ -346,7 +346,7 @@ The same recorder ships for Node: [`halo-record-ts`](https://github.com/bkuan001
 
 ## Community Examples
 
-[trail-halo-poc](https://github.com/AmeyParle/trail-halo-poc) — Making a Halo record's principal authority cryptographically provable using TRAIL credentials: reciprocal binding + org-signed scope grants recorded into a Halo chain, with an adversarial verification suite.
+[trail-halo-poc](https://github.com/AmeyParle/trail-halo-poc) — community proof of concept binding a Halo record's principal authority to TRAIL credentials: a reciprocal org–agent binding and org-signed scope grants recorded into a Halo chain, with an adversarial verification suite.
 
 ## Contributing
 
