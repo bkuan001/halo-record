@@ -30,6 +30,8 @@ What each layer proves — the load-bearing distinction in this project ([LIMITS
 | Detect missing/late checkpoints | — | ✔ (agreed cadence) | ✔ |
 | Prove every action was recorded | — | — | depends on capture boundary |
 
+**See one before you install:** [a sample Runtime Report](https://bkuan001.github.io/halo-record/sample-report.html) — fictional data, real chain, and it re-verifies itself in your browser while you watch.
+
 ## 60-second demo
 
 No agent required. With [uv](https://docs.astral.sh/uv/), nothing to install:
