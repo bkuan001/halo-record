@@ -245,8 +245,10 @@ def build(action_type, category, tool=None, tool_input=None, *,
     tenant/customer it belongs to — the segmentation key. ``authority`` may carry
     a privacy-safe snapshot of the rules/tooling context that governed the run
     (hashes and refs, not raw prompts or private policy text). ``summaries=False``
-    drops every human-readable summary, leaving only hashes: a hash-only record
-    safe to share across a trust boundary, since no payload text is stored.
+    drops every human-readable summary and every finding excerpt, leaving
+    hashes plus finding types/severities. Fields you supply yourself — custom
+    ``outcome`` keys, the ``authority`` block — are stored as given even then,
+    so keep them payload-free if the record must stay hash-only.
 
     ``principal`` records the identities on whose behalf the action ran
     (``human_id`` / ``creator_id`` / ``service_account`` / ``role_scope``);
@@ -307,6 +309,12 @@ def build(action_type, category, tool=None, tool_input=None, *,
         if outcome_summary_raw is not None:
             findings += scan(outcome_summary_raw)
     findings = findings or []
+    if not summaries:
+        # Hash-only records carry finding types and severities, never excerpts.
+        # Non-mapping entries pass through untouched and fail (or not) exactly
+        # where they always did.
+        findings = [({k: v for k, v in f.items() if k != "sample"}
+                     if isinstance(f, dict) else f) for f in findings]
 
     record = {
         "schema_version": SCHEMA_VERSION,
