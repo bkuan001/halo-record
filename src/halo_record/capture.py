@@ -85,8 +85,8 @@ class record_call:
     (the call is never silently swallowed). ``recorder`` may be ``None``, in
     which case the recorder bound by an enclosing ``trace`` is used; if none is
     bound, a ``RuntimeError`` is raised at exit rather than dropping the record.
-    ``threats``, ``data``, and ``verification`` pass through to ``build``
-    unchanged — ``verification`` carries what a gate said about this call,
+    ``threats``, ``data``, ``verification``, and ``authority`` pass through to
+    ``build`` unchanged — ``verification`` carries what a gate said about this call,
     sealed as supplied (see ``build``).
     """
 
@@ -94,7 +94,7 @@ class record_call:
                  action_type="tool_call", scope=None, session_id="local",
                  agent=None, decision="allowed", approver=None,
                  subject=None, summaries=True, principal=None, parent_id=None,
-                 threats=None, data=None, verification=None):
+                 threats=None, data=None, verification=None, authority=None):
         self.recorder = recorder
         self.tool = tool
         self.tool_input = tool_input
@@ -112,6 +112,7 @@ class record_call:
         self.threats = threats
         self.data = data
         self.verification = verification
+        self.authority = authority
         self.result = None
         self.record = None
 
@@ -133,7 +134,7 @@ class record_call:
             subject=self.subject, summaries=self.summaries,
             principal=self.principal, parent_id=self.parent_id,
             threats=self.threats, data=self.data,
-            verification=self.verification,
+            verification=self.verification, authority=self.authority,
             source="recorder",
         )
         recorder.append(self.record)

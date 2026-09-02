@@ -122,3 +122,24 @@ class HashOnlyOutcomeTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class BinaryAuthorityTest(unittest.TestCase):
+    def test_bytes_in_authority_fail_loud_at_seal(self):
+        d = tempfile.mkdtemp()
+        rec = Recorder(os.path.join(d, "c.jsonl"))
+        with self.assertRaises(TypeError):
+            rec.append(build("tool_call", "security", tool="t",
+                             authority={"snapshot_id": "auth_1",
+                                        "blob": b"sk-" + b"a1B2" * 8}))
+
+
+class RecordCallAuthorityTest(unittest.TestCase):
+    def test_record_call_passes_authority_through(self):
+        from halo_record import Recorder as R, record_call
+        d = tempfile.mkdtemp()
+        rec = R(os.path.join(d, "c.jsonl"))
+        with record_call(rec, "search", {"q": "x"},
+                         authority={"snapshot_id": "auth_1", "rules_hash": "ab" * 32}) as call:
+            call.result = "ok"
+        self.assertEqual(call.record["authority"]["snapshot_id"], "auth_1")
