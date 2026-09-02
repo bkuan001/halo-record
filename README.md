@@ -135,7 +135,7 @@ from halo_record.integrations.mcp import instrument_client_session
 instrument_client_session(session, Recorder("audit.jsonl"), server="stripe")   # every session.call_tool() is now recorded
 ```
 
-For gateway or proxy logs (Cloudflare AI Gateway, Portkey, nginx in front of the model), map a log row into the chain — honestly tagged as ingested, not boundary-captured:
+For gateway or proxy logs (Cloudflare AI Gateway, Portkey, nginx in front of the model), map a log row into the chain — explicitly tagged as ingested, not boundary-captured:
 
 ```python
 from halo_record.integrations.gateway import record_log
