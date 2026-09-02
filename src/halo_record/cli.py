@@ -153,6 +153,8 @@ def _cmd_anchor(args):
                 result = verify_completeness(records, cps)
                 status = {True: "COMPLETE", False: "INCOMPLETE", None: "UNWITNESSED"}[result["ok"]]
                 print("%s — %s" % (status, json.dumps(result)))
+                if result.get("subjectless_caveat"):
+                    print("NOTE (subjectless chain): %s" % result["subjectless_caveat"])
                 if result["ok"] is True:
                     return 0
                 return 1 if result["ok"] is False else 3  # UNWITNESSED: distinct, non-zero (3: argparse owns 2)
@@ -174,6 +176,8 @@ def _cmd_anchor(args):
         result = verify_completeness(records, notary.checkpoints())
         status = {True: "COMPLETE", False: "INCOMPLETE", None: "UNWITNESSED"}[result["ok"]]
         print("%s — %s" % (status, json.dumps(result)))
+        if result.get("subjectless_caveat"):
+            print("NOTE (subjectless chain): %s" % result["subjectless_caveat"])
         if result["ok"] is True:
             return 0
         return 1 if result["ok"] is False else 3  # UNWITNESSED: distinct, non-zero (3: argparse owns 2)

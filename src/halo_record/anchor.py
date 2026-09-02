@@ -203,30 +203,42 @@ def verify_completeness(records, checkpoints):
       * ``{"ok": True, ...}``  — every witnessed checkpoint still matches; the
         vendor could not have removed a record the notary saw.
     """
+    # Subjectless chains are matched by chain_root, and dropping the first
+    # record changes the root (see _matches) — so every verdict on such a chain
+    # carries the caveat loudly rather than leaving the weakness implicit.
+    def _out(d):
+        if records and _subject_id(records) is None:
+            d["subjectless_caveat"] = (
+                "checkpoints for a subjectless chain are matched by chain_root, "
+                "which changes if the first record is dropped — a 'no witnesses' "
+                "verdict cannot be distinguished from a re-rooted chain; assign a "
+                "subject to records for a stable witness key")
+        return d
+
     relevant = [c for c in checkpoints if _matches(c, records)]
     if not relevant:
-        return {"ok": None, "why": "no witnesses for this chain", "witnessed": 0}
+        return _out({"ok": None, "why": "no witnesses for this chain", "witnessed": 0})
 
     broken_at = _chain_intact(records)
     if broken_at:
-        return {"ok": False, "why": "chain integrity broken", "at": broken_at,
-                "witnessed": len(relevant)}
+        return _out({"ok": False, "why": "chain integrity broken", "at": broken_at,
+                     "witnessed": len(relevant)})
 
     latest = max(c["count"] for c in relevant)
     if len(records) < latest:
-        return {"ok": False, "why": "chain truncated below witnessed length",
-                "have": len(records), "witnessed_count": latest,
-                "witnessed": len(relevant)}
+        return _out({"ok": False, "why": "chain truncated below witnessed length",
+                     "have": len(records), "witnessed_count": latest,
+                     "witnessed": len(relevant)})
 
     for c in relevant:
         n = c["count"]
         if n < 1 or n > len(records):
-            return {"ok": False, "why": "witnessed count out of range", "at": n,
-                    "witnessed": len(relevant)}
+            return _out({"ok": False, "why": "witnessed count out of range", "at": n,
+                         "witnessed": len(relevant)})
         present_head = (records[n - 1].get("integrity") or {}).get("hash")
         if present_head != c["head"]:
-            return {"ok": False, "why": "record altered or dropped before witnessed point",
-                    "at": n, "witnessed": len(relevant)}
+            return _out({"ok": False, "why": "record altered or dropped before witnessed point",
+                         "at": n, "witnessed": len(relevant)})
 
     result = {"ok": True, "witnessed": len(relevant), "latest_count": latest,
               "head": head(records)}
@@ -246,4 +258,4 @@ def verify_completeness(records, checkpoints):
         result["tsa_time_status"] = "claimed — verify the TSA signature with `openssl ts -verify`"
     if tsa_unverified:
         result["tsa_unverified"] = tsa_unverified  # a stored token that does not bind this state
-    return result
+    return _out(result)
