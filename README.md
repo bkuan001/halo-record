@@ -15,7 +15,7 @@ The record format is open and free to implement. This package is the reference i
 You are being asked to put a recorder inside your agent. You should not take that on faith:
 
 - **Zero runtime dependencies.** Standard library only. `pip install halo-record` installs exactly one package.
-- **No network calls**, except two opt-in ones — the witness (receives only a record count and a chain fingerprint) and the RFC 3161 timestamp (sends only a checkpoint's state hash to a Timestamp Authority). Both are off unless you invoke them; record contents never leave your infrastructure.
+- **No network calls**, except three opt-in ones — anchoring to a witness (sends a record count, a chain fingerprint, and the subject id), reading a witness's checkpoints back (sends the subject id), and the RFC 3161 timestamp (sends only a checkpoint's state hash to a Timestamp Authority). All are off unless you invoke them; record contents never leave your infrastructure.
 - **Full payloads never enter a record.** Arguments are hashed and stored only as a short redacted summary — the complete raw value is never written, though a summary can carry fragments of it. Redaction is best-effort (regex over common secret and PII formats plus an entropy catch-all): treat it as defense-in-depth, not a guarantee.
 - **Small enough to audit.** ~5,300 lines of Python (code lines, not counting blanks and comments). Read all of it in an afternoon.
 - **Apache-2.0.**
