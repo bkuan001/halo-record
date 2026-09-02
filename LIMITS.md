@@ -105,9 +105,12 @@ provider-specific patterns plus an entropy catch-all — defense in depth, not a
 proof. A novel secret format can land in a summary. If you find a path that
 does, that is a vulnerability report we want (see SECURITY.md).
 
-The `authority` block is exempt from the redaction pass entirely: it is stored
-exactly as the producer supplies it, and the hashes-and-refs convention is not
-checked by any code path.
+The `authority` block gets a narrower pass than summaries: known secret formats
+(API keys, tokens, private-key blocks, connection strings) are masked at seal
+time, but the high-entropy catch-all is deliberately not applied — legitimate
+authority values are hashes and refs, which look exactly like entropy — and
+free-form text is not detected. Beyond those named formats, the hashes-and-refs
+convention remains unchecked.
 
 The same bound applies to `data.pii_types`: it is derived from the scanner's
 *named* personal-data categories (email, ssn, credit_card, phone, iban), so it
@@ -288,11 +291,12 @@ can carry personal data, and only the summaries are scanned at all.
 | `action.input.summary`, `outcome.summary` | redacted best-effort only — and per section 6 a **name or postal address has no reliable pattern, is not detected, and is not masked** |
 | `findings[].type` / `.sample` | masked fragments *when the scanner produced them* — a masked email keeps its full domain and an SSN keeps its last four. Findings you supply yourself are stored exactly as given, unmasked |
 
-Note what `summaries=False` does and does not empty: human-readable summaries and
-`findings[].sample` excerpts are both dropped (from scanner findings and findings
-you supply alike), but `data.pii_types` (detected type names) survives, and other
-fields you supply yourself — custom `outcome` keys, the `authority` block, any
-non-`sample` keys on your own findings — are stored as given even then.
+Note what `summaries=False` does and does not empty: human-readable summaries,
+`findings[].sample` excerpts (from scanner findings and findings you supply
+alike), and custom `outcome` keys are all dropped, but `data.pii_types` (detected
+type names) survives, and the `authority` block and any non-`sample` keys on your
+own findings are stored as given even then (authority gets known secret formats
+masked; see section 6).
 
 **The stored fingerprint can confirm a guess.** `action.input.hash` is an unsalted
 SHA-256 over the canonical tool arguments. Where those arguments come from a small

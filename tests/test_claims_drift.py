@@ -11,7 +11,8 @@ import unittest
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 DOC_FILES = ["README.md", "PRIVACY.md", "LIMITS.md", "AIUC.md", "ATC.md",
-             "AARM.md", "OWASP.md", "SECURITY.md", "RETENTION.md", "REVIEWERS.md"]
+             "AARM.md", "OWASP.md", "SECURITY.md", "RETENTION.md", "REVIEWERS.md",
+             "EU-AI-ACT.md", "ISO42001.md", "NIST-AI-RMF.md"]
 
 # Phrases that must never (re)appear, each with the reason it is forbidden.
 FORBIDDEN = [

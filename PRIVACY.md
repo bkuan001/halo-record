@@ -6,8 +6,8 @@ halo-record is local-first by design. This page consolidates, in one place, what
 
 - Each record describes one agent action: the agent and model identifiers you configure, the action type and tool name, authorization fields, the subject (tenant/customer) id you assign, timestamps, and the integrity hashes that chain records together.
 - Tool inputs are stored as a canonical hash plus a redacted summary capped at 200 characters — the complete raw value is never written, though a summary can carry fragments of it, because redaction is best-effort (see the next section). Outcome summaries pass through the same redaction.
-- Scanner findings carry a type, a severity, and a short redacted excerpt (for example, a card's last four digits or a masked email); the `data.pii_types` field lists the detected *types* only. Passing `summaries=False` drops summaries and finding excerpts both, leaving hash-only records — finding types and severities, no payload text.
-- Authority snapshots (`HALO_AUTHORITY_FILE`) are stored exactly as you provide them and are **not** redacted — keep them to hashes and refs, not raw prompts or private policy text (LIMITS §6).
+- Scanner findings carry a type, a severity, and a short redacted excerpt (for example, a card's last four digits or a masked email); the `data.pii_types` field lists the detected *types* only. Passing `summaries=False` drops summaries, finding excerpts, and any custom outcome fields, leaving hash-only records — finding types and severities plus the schema's non-text outcome fields, no payload text.
+- Authority snapshots (`HALO_AUTHORITY_FILE`) get known secret formats masked at seal time, but hashes and refs pass through untouched and free-form text is not detected — keep them to hashes and refs, not raw prompts or private policy text (LIMITS §6).
 
 ## Redaction is best-effort
 
