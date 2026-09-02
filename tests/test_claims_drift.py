@@ -20,6 +20,8 @@ FORBIDDEN = [
      "reverted overclaim: independence is the unbuilt witness property (LIMITS §1)"),
     ("runtime evidence",
      "retired vocabulary: the category noun is 'audit trail', the format noun 'Runtime Record'"),
+    ("runtime-evidence",
+     "retired vocabulary in hyphenated disguise — same rule as 'runtime evidence'"),
     ("provably complete",
      "completeness is never provable from a self-held chain (LIMITS §1)"),
     ("cannot be tampered with",

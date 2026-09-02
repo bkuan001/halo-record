@@ -19,5 +19,5 @@ Two practical routes, both live:
 
 ## Known gaps, stated plainly
 
-- The RMF's subcategories describe organizational *activities* — none is "installable." halo-record contributes the runtime-evidence artifact those activities reference; the program, roles, and risk determinations are yours.
+- The RMF's subcategories describe organizational *activities* — none is "installable." halo-record contributes the record artifact those activities reference; the program, roles, and risk determinations are yours.
 - No subcategory-by-subcategory mapping is published here, deliberately: the defensible unit of mapping for a record format is the function level, and stretching further would be vocabulary theater.
