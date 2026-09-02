@@ -655,13 +655,27 @@ _PAGINATE_JS = r"""
   var heads = document.querySelectorAll("th[data-sort]");
   for (var h = 0; h < heads.length; h++){
     (function(th){
-      th.addEventListener("click", function(){
+      th.setAttribute("tabindex", "0");
+      th.setAttribute("role", "button");
+      th.setAttribute("aria-sort", th.getAttribute("data-active") === "desc" ? "descending" : "none");
+      var activate = function(){
         var key = th.getAttribute("data-sort");
         if (sortKey === key) sortDir = -sortDir;
         else { sortKey = key; sortDir = (key === "data-ts") ? -1 : 1; }
-        for (var k = 0; k < heads.length; k++) heads[k].removeAttribute("data-active");
+        for (var k = 0; k < heads.length; k++){
+          heads[k].removeAttribute("data-active");
+          heads[k].setAttribute("aria-sort", "none");
+        }
         th.setAttribute("data-active", sortDir > 0 ? "asc" : "desc");
+        th.setAttribute("aria-sort", sortDir > 0 ? "ascending" : "descending");
         apply();
+      };
+      th.addEventListener("click", activate);
+      th.addEventListener("keydown", function(e){
+        if (e.key === "Enter" || e.key === " " || e.key === "Spacebar"){
+          e.preventDefault();
+          activate();
+        }
       });
     })(heads[h]);
   }
@@ -898,6 +912,7 @@ border:1px solid var(--line);border-radius:8px;padding:6px 11px}
 .f-btn:hover{background:var(--gold-soft);border-color:var(--gold)}
 th[data-sort]{cursor:pointer;user-select:none;white-space:nowrap}
 th[data-sort]:hover{color:var(--gold)}
+th[data-sort]:focus-visible{outline:2px solid var(--gold);outline-offset:2px;color:var(--gold)}
 th[data-sort]::after{content:"\\2195";opacity:.3;margin-left:5px;font-size:11px}
 th[data-active=asc]::after{content:"\\2191";opacity:1;color:var(--gold)}
 th[data-active=desc]::after{content:"\\2193";opacity:1;color:var(--gold)}
