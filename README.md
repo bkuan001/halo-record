@@ -19,6 +19,16 @@ You are being asked to put a recorder inside your agent. You should not take tha
 - **Full payloads never enter a record.** Arguments are hashed and stored only as a short redacted summary — the complete raw value is never written, though a summary can carry fragments of it. Redaction is best-effort (regex over common secret and PII formats plus an entropy catch-all): treat it as defense-in-depth, not a guarantee.
 - **Small enough to audit.** ~5,300 lines of Python (code lines, not counting blanks and comments). Read all of it in an afternoon.
 - **Apache-2.0.**
+- **The paperwork is first-class.** [LIMITS.md](https://github.com/bkuan001/halo-record/blob/main/LIMITS.md) (what the chain can't prove), [PRIVACY.md](https://github.com/bkuan001/halo-record/blob/main/PRIVACY.md) (what records contain and what leaves your machine), [RETENTION.md](https://github.com/bkuan001/halo-record/blob/main/RETENTION.md) (operating under a retention policy), and [REVIEWERS.md](https://github.com/bkuan001/halo-record/blob/main/REVIEWERS.md) — the four-command independent check plus a citation format for review findings.
+
+What each layer proves — the load-bearing distinction in this project ([LIMITS.md §1](https://github.com/bkuan001/halo-record/blob/main/LIMITS.md)): a chain you hold yourself proves records were not **edited**, relative to a head someone already holds; only checkpoints held outside the operator prove none were **removed**; and no hash proves every action was **captured**.
+
+| Claim | Self-held chain | + External checkpoints | + Trusted capture |
+|---|---|---|---|
+| Detect edits to an established artifact | ✔ | ✔ | ✔ |
+| Detect rewriting of committed history | — | ✔ | ✔ |
+| Detect missing/late checkpoints | — | ✔ (agreed cadence) | ✔ |
+| Prove every action was recorded | — | — | depends on capture boundary |
 
 ## 60-second demo
 
@@ -231,14 +241,7 @@ curl -s -o tsa-ca.pem https://freetsa.org/files/cacert.pem     # CA for the defa
 openssl ts -verify -digest <the digest printed above> -in token.tsr -CAfile tsa-ca.pem   # → "Verification: OK"
 ```
 
-One more boundary, stated plainly: neither the chain nor the witness proves that every real-world action passed through the recorder. That is **capture completeness** — a property of where the recorder sits in the stack (native instrumentation, hooks, gateway ingestion), not of any hash. Records carry a `source` tag for exactly this reason.
-
-| Claim | Self-held chain | + External checkpoints | + Trusted capture |
-|---|---|---|---|
-| Detect edits to an established artifact | ✔ | ✔ | ✔ |
-| Detect rewriting of committed history | — | ✔ | ✔ |
-| Detect missing/late checkpoints | — | ✔ (agreed cadence) | ✔ |
-| Prove every action was recorded | — | — | depends on capture boundary |
+One more boundary, stated plainly: neither the chain nor the witness proves that every real-world action passed through the recorder. That is **capture completeness** — a property of where the recorder sits in the stack (native instrumentation, hooks, gateway ingestion), not of any hash. Records carry a `source` tag for exactly this reason. The claims table under “Check it yourself” at the top of this page is the summary of these three layers.
 
 Anyone can run a witness. A witness you run yourself commits history to *you*; committing it to *your customer* requires a witness they have reason to trust. The protocol is open either way.
 
