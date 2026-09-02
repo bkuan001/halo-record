@@ -344,6 +344,10 @@ Full field reference: [`halo-record.schema.json`](src/halo_record/halo-record.sc
 
 The same recorder ships for Node: [`halo-record-ts`](https://github.com/bkuan001/halo-record-ts). Same chain format, same witness protocol. Records written in either language verify with either verifier.
 
+## Community Examples
+
+[trail-halo-poc](https://github.com/AmeyParle/trail-halo-poc) — community proof of concept binding a Halo record's principal authority to TRAIL credentials: a reciprocal org–agent binding and org-signed scope grants recorded into a Halo chain, with an adversarial verification suite.
+
 ## Contributing
 
 Issues, discussions, and pull requests welcome — see [CONTRIBUTING.md](https://github.com/bkuan001/halo-record/blob/main/CONTRIBUTING.md) for the ground rules (short version: tests required, small PRs, schema changes get discussed first).
