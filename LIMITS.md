@@ -39,6 +39,20 @@ the time by verifying that signature yourself against a TSA you trust:
 (base64-decode `tsa.token_b64` into `<token>` first; use a commercial TSA in
 production).
 
+The same distinction applies to *disclosure*. A timestamp proves the chain
+reached a state no later than the attested time — not that anyone outside the
+operator had seen it by then. An operator can hold a genuine, anchored
+checkpoint private and surface it only when convenient; nothing in the
+artifact records when a reader could first have fetched it. What bounds this
+is the reader's side of the protocol: fetch checkpoints from the witness on
+your own schedule, or demand a fresh anchor at review time — a new timestamp
+over the current head proves the chain's state as of your request, so
+staleness is bounded by how recently you asked, not by what the operator chose
+to surface. (Transparency logs bound the same gap with fixed merge-delay
+rules; a hosted witness would bound it by publishing its own received-at time
+for each checkpoint — which is then the witness's assertion, not the
+operator's.)
+
 **What you say to a reviewer:** "The chain is tamper-evident against everyone
 except the party that operates the recorder. Completeness against the operator
 requires the external witness, and until one holds checkpoints for this chain,
