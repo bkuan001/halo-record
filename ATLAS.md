@@ -6,7 +6,7 @@ halo-record's place in that landscape is one specific mitigation, plus the foren
 
 ## The anchor: AML.M0024 — AI Telemetry Logging
 
-ATLAS's logging mitigation asks, verbatim, for exactly the record this project produces:
+ATLAS's logging mitigation describes the record class this project produces — quoted here, with the gaps tabled below:
 
 > "When deploying AI agents, implement logging of the intermediate steps of agentic actions and decisions, data access and tool use, installation commands, and identity of the agent."
 
@@ -19,11 +19,11 @@ Field by field:
 | Installation commands | Recordable as actions where they flow through an instrumented path — bounded by the capture surface ([LIMITS.md §4](https://github.com/bkuan001/halo-record/blob/main/LIMITS.md)). |
 | Identity of the agent | `agent.id` / `agent.version` / `agent.model` on every record, plus `principal` for who the agent acted for — declared identity, sealed into the hash, not cryptographically attested ([LIMITS.md §5](https://github.com/bkuan001/halo-record/blob/main/LIMITS.md)). |
 
-What ATLAS does not ask of the logs — and what this format adds — is trustworthiness to someone outside the operator: AML.M0024 mandates telemetry and is silent on log integrity. A halo-record chain is that telemetry made tamper-evident and verifiable by anyone, with open code and no account or key.
+What ATLAS does not ask of the logs — and what this format adds — is trustworthiness to someone outside the operator: AML.M0024 asks for telemetry and is silent on log integrity. A halo-record chain is that telemetry made tamper-evident and verifiable by anyone, with open code and no account or key.
 
 ## The forensic layer under the technique matrix
 
-ATLAS techniques describe what an adversary does; detection and incident response then need a trustworthy account of what the *system* did. When an agentic incident is worked — a poisoned context that steered tool use, data exfiltrated through a tool invocation, an agent acting on credentials it should not have had — the questions are which agent, which tools, what inputs, what outputs, in what order, on whose behalf. Those are the record's columns. The chain adds the property incident evidence normally lacks: the account of the incident cannot be quietly edited after the fact without the edit being detectable — including by the counterparty or forensic team reviewing it.
+ATLAS techniques describe what an adversary does; detection and incident response then need a trustworthy account of what the *system* did. When an agentic incident is worked — a poisoned context that steered tool use, data exfiltrated through a tool invocation, an agent acting on credentials it should not have had — the questions are which agent, which tools, what inputs, what outputs, in what order, on whose behalf. Those are the record's columns. The chain adds the property incident evidence normally lacks: any edit to the account after the fact is detectable against a verified head. The scope of that property is [LIMITS.md §1](https://github.com/bkuan001/halo-record/blob/main/LIMITS.md), repeated here because forensics is where it bites: the chain is tamper-evident against everyone *except the party operating the recorder* — an operator (or an attacker who owns the operator's environment) can rewrite and re-seal the whole chain, and only a checkpoint captured outside the operator before the re-seal exposes that. For incident evidence a counterparty can rely on, the chain head must already be held externally — by the relying party or a witness.
 
 Two scope notes, stated plainly:
 
