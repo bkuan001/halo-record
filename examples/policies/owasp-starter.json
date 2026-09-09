@@ -45,7 +45,7 @@
     },
     {
       "id": "money-movement-human-approved",
-      "source": "OWASP ASI02 / Tool Misuse and Exploitation (+ Agentic T15 HITL bypass) (TEMPLATE)",
+      "source": "OWASP ASI02 / Tool Misuse and Exploitation (TEMPLATE)",
       "severity": "HIGH",
       "description": "TEMPLATE \u2014 money movement must be human-approved. Rename action.tool to your real high-impact tools (transfer_funds, issue_refund, ...) or delete if not applicable.",
       "when": {

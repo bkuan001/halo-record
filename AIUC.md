@@ -16,7 +16,7 @@ Three things this document is not:
 
 ### E015 — Log AI system activity (Accountability · Mandatory control)
 
-The closest-fit control in the standard. Its sub-controls carry tiers on the AIUC-1 control page: E015.1 and E015.3 are core ("Should include"); E015.2 and E015.4 are supplemental ("May include"), which the standard's scoping guidance describes as controls adopted to meet specific buyer or regulatory expectations beyond the baseline. Sub-control by sub-control (E015.3 sits under Contributing below — the record supplies its sanitation half only):
+The closest-fit control in the standard. Its sub-controls carry tiers on the AIUC-1 control page: E015.1 and E015.3 are core ("Should include"); E015.2 and E015.4 are supplemental ("May include"), which the standard's scoping page defines as controls organizations "may implement in addition and are not required to pass AIUC-1," opted into where specific buyers or regulations expect controls beyond the baseline. Sub-control by sub-control (E015.3 sits under Contributing below — the record supplies its sanitation half only):
 
 | Sub-control | Requirement (abridged) | What the record provides |
 |---|---|---|
@@ -26,7 +26,7 @@ The closest-fit control in the standard. Its sub-controls carry tiers on the AIU
 
 ### D003.3 — Tool call log (under D003, Restrict unsafe tool calls · Reliability)
 
-The sub-control asks for tracked tool calls capturing the originating MCP server, tool name, tool version, input parameters, and timestamps. A Runtime Record captures these per call: `mcp.server` + `mcp.server_version`, `action.tool`, input summary + hash, `ts` — sealed into the chain rather than sitting in an editable log. (Version is captured at the MCP-server level; there is no separate per-tool version field.)
+The sub-control lists, as example evidence, tool-call log entries capturing the originating MCP server, tool name, tool version, input parameters, and timestamps. A Runtime Record captures these per call: `mcp.server` + `mcp.server_version`, `action.tool`, input summary + hash, `ts` — sealed into the chain rather than sitting in an editable log. (Version is captured at the MCP-server level; there is no separate per-tool version field.)
 
 *Note the boundary within D003: the record evidences the **log** of tool calls (D003.3). The authorization gate (D003.1) and rate limits (D003.2) are enforcement controls the operator implements elsewhere; the record can show their outcomes (`denied` decisions) but is not the gate.*
 
@@ -57,7 +57,7 @@ Controls where the record supplies the log-shaped half of the evidence and the o
 halo-record is a recorder and a verifier. It produces evidence that actions occurred as recorded; it does not enforce, filter, test, or document. That excludes, deliberately:
 
 - **Written policies and documentation controls** — failure plans (E001–E003), accountability assignment (E004), data-storage documentation (E005), vendor due diligence (E006), process reviews (E008), acceptable-use policy (E010), processing locations (E011), regulatory documentation (E012), QMS (E013), disclosure mechanisms (E016), transparency policy (E017).
-- **Enforcement gates** — input/output filtering (B005, C003–C006), tool authorization and rate limits (D003.1/.2), access controls (B007), endpoint protection (B004), deployment-environment security (B008).
+- **Enforcement gates** — input/output filtering (B005, C003–C006), tool authorization and rate limits (D003.1/.2), access controls (B007), endpoint anti-scraping (B004), deployment-environment security (B008).
 - **Testing** — adversarial, harmful-output, out-of-scope, hallucination, and tool-call testing, first- or third-party (B001, C002, C010–C012, D002, D004, F001–F002).
 
 An audit needs all of these. The record's role is narrower: when those controls act — a filter blocks, a human approves, a tool executes — the record is the tamper-evident account of what happened.
@@ -66,7 +66,7 @@ An audit needs all of these. The record's role is narrower: when those controls 
 
 ## One record, several frameworks
 
-AIUC-1's own published crosswalk for E015 maps the same evidence surface to: **ISO/IEC 42001** A.6.2.8 (event-log recording) · **NIST AI RMF** MEASURE 2.4 & 2.8 · **EU AI Act** Articles 12 & 19 (record-keeping; automatically generated logs) · **MITRE ATLAS** AML-M0024 (AI telemetry logging) · **CSA AICM** LOG-family controls · **OWASP Agentic Top 10** ASI06–ASI10. A vendor producing Runtime Records for an AIUC-1 audit is accumulating the same class of evidence those frameworks ask for.
+AIUC-1's own published crosswalk for E015 maps the same evidence surface to: **ISO/IEC 42001** A.6.2.8 (event-log recording) · **NIST AI RMF** MEASURE 2.4 & 2.8 · **EU AI Act** Articles 12 & 19 (record-keeping; automatically generated logs) · **MITRE ATLAS** AML-M0024 (AI telemetry logging) · **CSA AICM** LOG-family controls plus MDS-10 and SEF-05/07 · **OWASP Top 10 for Agentic Applications 2026** ASI06, ASI07, ASI08 and ASI10 as primary (the OWASP-published AIUC-1 crosswalk, v1.0 May 2026, maps E015 to all ten, the other six as secondary). A vendor producing Runtime Records for an AIUC-1 audit is accumulating the same class of evidence those frameworks ask for.
 
 ---
 

@@ -114,7 +114,9 @@ SPIFFE/SPIRE-class systems) outside this library's scope.
 
 ## 6. Redaction is best-effort, not a guarantee
 
-Raw tool arguments are hashed, never stored. The summary layer is scrubbed by
+Raw tool arguments are hashed; a summary capped at 200 characters is stored
+alongside, and a short input that matches no pattern appears in it in full.
+The summary layer is scrubbed by
 provider-specific patterns plus an entropy catch-all — defense in depth, not a
 proof. A novel secret format can land in a summary. Masks hide the credential,
 not always its context: the connection-string mask removes the password only,

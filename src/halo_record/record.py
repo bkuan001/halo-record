@@ -43,6 +43,7 @@ SOURCES = {
     "openai_agents": {"adapter": "openai_agents", "via": "OpenAI Agents SDK",             "capture": "captured"},
     "vercel_ai":     {"adapter": "vercel_ai",     "via": "Vercel AI SDK",                 "capture": "captured"},
     "claude_agent_sdk": {"adapter": "claude_agent_sdk", "via": "Claude Agent SDK",        "capture": "captured"},
+    "hook":          {"adapter": "hook",          "via": "Claude Code PostToolUse hook",  "capture": "ingested"},
     "otel":          {"adapter": "otel",          "via": "OpenTelemetry GenAI spans",     "capture": "ingested"},
     "litellm":       {"adapter": "litellm",       "via": "LiteLLM gateway",               "capture": "ingested"},
     "langfuse":      {"adapter": "langfuse",      "via": "Langfuse traces",               "capture": "ingested"},

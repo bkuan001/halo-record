@@ -43,3 +43,14 @@ class HookAgentTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class HookSourceTier(unittest.TestCase):
+    def test_hook_records_are_ingested_tier_with_label(self):
+        # PostToolUse fires after the tool ran, in a separate process, fed by
+        # the harness: that is the ingested tier under LIMITS section 3.
+        from halo_record.record import normalize_source
+        src = normalize_source("hook")
+        self.assertEqual(src["capture"], "ingested")
+        self.assertEqual(src["adapter"], "hook")
+        self.assertEqual(src["via"], "Claude Code PostToolUse hook")
