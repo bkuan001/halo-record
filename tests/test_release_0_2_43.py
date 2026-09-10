@@ -33,7 +33,7 @@ class PathFieldsStayReadableButScanned(unittest.TestCase):
             self.assertIn(r["severity"], ("INFO", "LOW"), p)
 
     def test_unanchored_path_key_value_gets_the_full_pass(self):
-        # Susie's case: a secret dropped under a path key with no path anchor
+        # a secret dropped under a path key with no path anchor
         r = self._rec({"file_path": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"})
         self.assertNotIn("wJalrXUtnFEMI", r["action"]["input"]["summary"])
         self.assertIn(("high_entropy_secret", "HIGH"), self._types(r))
@@ -277,7 +277,7 @@ class WebhookAndAwsForms(unittest.TestCase):
         self.assertIn("aws_secret_access_key ****", r["action"]["input"]["summary"])
 
 
-class EmiliaFollowUps(unittest.TestCase):
+class ReportAndResponseFollowUps(unittest.TestCase):
     def test_response_filenames_list_stays_readable(self):
         from halo_record.capture import derive_outcome
         p = "/Users/dev/acme-billing/src/services/InvoiceReconciliationService.ts"
