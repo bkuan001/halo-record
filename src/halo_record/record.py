@@ -19,7 +19,7 @@ except ImportError:  # pragma: no cover
     fcntl = None
 
 from .canon import GENESIS_PREV, canon, compute_hash, input_hash, sha256_hex
-from .redact import mask_known_secrets, redact_text, scan, top_severity
+from .redact import mask_known_secrets, redact_fields, redact_text, scan, scan_fields, top_severity
 
 SCHEMA_VERSION = "0.1"
 
@@ -44,6 +44,7 @@ SOURCES = {
     "vercel_ai":     {"adapter": "vercel_ai",     "via": "Vercel AI SDK",                 "capture": "captured"},
     "claude_agent_sdk": {"adapter": "claude_agent_sdk", "via": "Claude Agent SDK",        "capture": "captured"},
     "hook":          {"adapter": "hook",          "via": "Claude Code PostToolUse hook",  "capture": "ingested"},
+    "codex_hook":    {"adapter": "codex_hook",    "via": "Codex CLI PostToolUse hook",    "capture": "ingested"},
     "otel":          {"adapter": "otel",          "via": "OpenTelemetry GenAI spans",     "capture": "ingested"},
     "litellm":       {"adapter": "litellm",       "via": "LiteLLM gateway",               "capture": "ingested"},
     "langfuse":      {"adapter": "langfuse",      "via": "Langfuse traces",               "capture": "ingested"},
@@ -89,6 +90,13 @@ def _norm_principal(principal):
         return None
     if not isinstance(principal, dict):
         return None
+    dropped = sorted(str(k) for k in principal if k not in _PRINCIPAL_KEYS)
+    if dropped:
+        # A misspelled or unsupported key usually means a mis-wired
+        # integration; say so rather than sealing a record with no principal.
+        sys.stderr.write(
+            "halo-record: principal key(s) dropped — %s not in human_id | "
+            "creator_id | service_account | role_scope\n" % ", ".join(dropped))
     out = {k: str(principal[k]) for k in _PRINCIPAL_KEYS
            if principal.get(k) not in (None, "")}
     return out or None
@@ -334,14 +342,16 @@ def build(action_type, category, tool=None, tool_input=None, *,
     if tool_input is not None:
         inp = {"hash": input_hash(tool_input)}
         if summaries:
-            inp["summary"] = redact_text(str(tool_input))[:200]
+            inp["summary"] = str(redact_fields(tool_input))[:200]
         action["input"] = inp
 
     # Normalize the outcome up front so its summary is redacted before it is
     # sealed/served and so it can be scanned for secrets alongside the input.
     outcome_summary_raw = None
+    outcome_scan = None
     if outcome is not None:
         outcome = dict(outcome)
+        outcome_scan = outcome.pop("_scan", None)
         if "summary" in outcome and outcome["summary"] is not None:
             outcome_summary_raw = str(outcome["summary"])
         if not summaries:
@@ -360,9 +370,12 @@ def build(action_type, category, tool=None, tool_input=None, *,
 
     if findings is None:
         findings = []
+        seen = set()
         if tool_input is not None:
-            findings += scan(str(tool_input))
-        if outcome_summary_raw is not None:
+            findings += scan_fields(tool_input, _seen=seen)
+        if outcome_scan is not None:
+            findings += scan_fields(outcome_scan, _seen=seen)
+        elif outcome_summary_raw is not None:
             findings += scan(outcome_summary_raw)
     findings = findings or []
     if not summaries:

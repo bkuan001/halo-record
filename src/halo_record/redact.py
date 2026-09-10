@@ -24,7 +24,9 @@ from collections import Counter
 
 PATTERNS = [
     ("api_key",      "CRITICAL", re.compile(r'(?:sk-[a-zA-Z0-9]{20,}|AKIA[0-9A-Z]{16}|xox[baprs]-[a-zA-Z0-9\-]{10,})')),
-    ("gcp_api_key",  "CRITICAL", re.compile(r'AIza[0-9A-Za-z_\-]{35}')),
+    ("gcp_api_key",  "CRITICAL", re.compile(r'AIza[0-9A-Za-z_\-]{35,}')),
+    ("aws_secret_key", "CRITICAL", re.compile(r'(?i)aws_secret_access_key(?:\s*[=:]\s*|\s+)["\']?[A-Za-z0-9/+=]{40}')),
+    ("webhook_url",   "CRITICAL", re.compile(r'https://(?:hooks\.slack\.com/services/|discord(?:app)?\.com/api/webhooks/|[a-z0-9.-]+\.webhook\.office\.com/webhookb2/|outlook\.office\.com/webhook/)[^\s"\'<>]+')),
     ("stripe_key",   "CRITICAL", re.compile(r'(?:sk|rk|pk)_(?:live|test)_[0-9a-zA-Z]{16,}')),
     ("github_token", "CRITICAL", re.compile(r'(?:gh[opsu]_[A-Za-z0-9]{36}|github_pat_[A-Za-z0-9_]{22,})')),
     # Matches the whole PEM block when the footer is present (so the key body is
@@ -84,6 +86,12 @@ def _looks_like_secret(tok):
 
 def redact_sample(ftype, value):
     v = str(value)
+    if ftype == "aws_secret_key":
+        i = max(v.rfind("="), v.rfind(":"), v.rfind(" "))
+        return (v[:i + 1] + "****") if i > 0 else "****"
+    if ftype == "webhook_url":
+        m = re.match(r'https://[^/]+/[a-z0-9]+/', v)
+        return (m.group(0) + "****") if m else "https://****"
     if ftype == "email":
         m = re.match(r'^([A-Za-z0-9._%+-])[A-Za-z0-9._%+-]*(@.+)$', v)
         return (m.group(1) + "****" + m.group(2)) if m else "****"
@@ -156,10 +164,14 @@ def mask_known_secrets(text):
     return _apply_patterns(str(text))
 
 
-def redact_text(text):
+def redact_text(text, entropy=True):
     # Patterns first, then sweep the residual for high-entropy tokens the
     # patterns did not cover (running on the residual avoids re-masking "****").
+    # ``entropy=False`` keeps the named patterns and skips the catch-all: used
+    # for path-typed argument fields, whose legitimate values look like secrets.
     after = _apply_patterns(str(text))
+    if not entropy:
+        return after
     return TOKEN_RE.sub(
         lambda m: redact_sample(HIGH_ENTROPY_TYPE, m.group(0))
         if _looks_like_secret(m.group(0)) else m.group(0),
@@ -167,7 +179,7 @@ def redact_text(text):
     )
 
 
-def scan(text):
+def scan(text, entropy=True):
     """Return redacted findings for every sensitive pattern in ``text``.
 
     Emits one finding per distinct match (deduped on the redacted sample,
@@ -196,20 +208,9 @@ def scan(text):
 
     # High-entropy catch-all over the pattern-redacted residual, so tokens
     # already flagged above are not double-counted.
-    residual = _apply_patterns(s)
-    e = 0
-    for tok in TOKEN_RE.findall(residual):
-        if not _looks_like_secret(tok):
-            continue
-        sample = redact_sample(HIGH_ENTROPY_TYPE, tok)
-        key = HIGH_ENTROPY_TYPE + ":" + sample
-        if key in seen:
-            continue
-        seen.add(key)
-        findings.append({"type": HIGH_ENTROPY_TYPE, "severity": "HIGH", "sample": sample})
-        e += 1
-        if e >= MAX_PER_TYPE:
-            break
+    if not entropy:
+        return findings
+    findings += _entropy_findings(s, seen)
 
     return findings
 
@@ -218,3 +219,144 @@ def top_severity(findings):
     if not findings:
         return "INFO"
     return max(findings, key=lambda f: SEVERITY_RANK.get(f["severity"], 0))["severity"]
+
+
+# Argument keys whose values are file-system paths, globs, or URLs by
+# contract. A path is exactly the shape the entropy catch-all misreads as a
+# secret. Under these keys, when the value is anchored as a path (leading
+# slash, drive letter, scheme, dot-relative prefix, file extension, or glob
+# metacharacter) and carries no query or credential separators, the value is
+# left READABLE in the summary — but it is still scanned: an entropy hit there
+# is reported as ``high_entropy_path_value`` (LOW) instead of masked, so
+# ``findings: []`` keeps meaning "the scanner found nothing anywhere".
+PATH_KEYS = frozenset({
+    "file_path", "filePath", "notebook_path", "notebookPath", "path", "paths",
+    "filenames", "files", "file", "cwd", "pattern", "glob", "directory", "dir",
+    "old_path", "new_path", "target_file", "source_file", "workdir",
+    "url", "uri", "href", "urls",
+})
+HIGH_ENTROPY_PATH_TYPE = "high_entropy_path_value"
+_NOT_PATH_CHARS = ("=", "?", "&", "%", "@")
+_PATH_ANCHOR_RE = re.compile(r'^(?:[/~]|\./|\.\./|[A-Za-z]:[\\/]|[a-z][a-z0-9+.-]*://)')
+_PATH_EXT_RE = re.compile(r'\.[A-Za-z0-9]{1,6}$')
+_GLOB_CHARS = ("*", "[", "{")
+
+
+def path_value(key, value):
+    """True when ``value`` under ``key`` is treated as a readable path."""
+    if key not in PATH_KEYS or not isinstance(value, str) or not value:
+        return False
+    if any(c in value for c in _NOT_PATH_CHARS):
+        return False
+    if value[0] in "/~" and "/" not in value[1:] and "." not in value:
+        return False  # a lone leading slash on an opaque token is not a path
+    return bool(_PATH_ANCHOR_RE.match(value) or _PATH_EXT_RE.search(value)
+                or any(c in value for c in _GLOB_CHARS))
+
+
+def _entropy_findings(text, seen, ftype=HIGH_ENTROPY_TYPE, severity="HIGH"):
+    out = []
+    residual = _apply_patterns(str(text))
+    e = 0
+    for tok in TOKEN_RE.findall(residual):
+        if not _looks_like_secret(tok):
+            continue
+        sample = redact_sample(HIGH_ENTROPY_TYPE, tok)
+        key = ftype + ":" + sample
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append({"type": ftype, "severity": severity, "sample": sample})
+        e += 1
+        if e >= MAX_PER_TYPE:
+            break
+    return out
+
+
+_PATCH_HEADER_RE = re.compile(r'^(\*\*\* (?:Update|Add|Delete|Move to) File: )(.+)$', re.M)
+
+
+def _split_patch_headers(text):
+    """Yield (segment, is_path) pieces so patch file headers can be treated as
+    path values while the patch body keeps the full pass."""
+    pos = 0
+    for m in _PATCH_HEADER_RE.finditer(text):
+        yield text[pos:m.start(2)], False
+        yield m.group(2), True
+        pos = m.end(2)
+    yield text[pos:], False
+
+
+def redact_fields(obj, _entropy=True, _depth=0):
+    """Redact a tool-argument structure leaf by leaf, keeping its shape.
+
+    Strings under path-typed keys that pass ``path_value`` keep their text
+    (named patterns still masked); every other string gets the full pass.
+    Dict keys are redacted too. Nesting is preserved so ``str()`` of the
+    result reads like ``str()`` of the original."""
+    if _depth > 8:
+        return "…"
+    if isinstance(obj, str):
+        if _entropy and "*** Begin Patch" in obj:
+            return "".join(redact_text(seg, entropy=not (is_path and path_value("file_path", seg)))
+                           for seg, is_path in _split_patch_headers(obj))
+        return redact_text(obj, entropy=_entropy)
+    if isinstance(obj, dict):
+        out = {}
+        for k, v in obj.items():
+            rk = redact_text(k) if isinstance(k, str) else k
+            if isinstance(v, (list, tuple)):
+                out[rk] = [redact_fields(el, not path_value(k, el), _depth + 1) for el in v]
+            else:
+                out[rk] = redact_fields(v, not path_value(k, v), _depth + 1)
+        return out
+    if isinstance(obj, (list, tuple)):
+        return [redact_fields(v, _entropy, _depth + 1) for v in obj]
+    return obj
+
+
+def scan_fields(obj, _entropy=True, _depth=0, _seen=None, _key=None):
+    """Findings over a tool-argument structure, leaf by leaf, deduped.
+
+    The scanner looks everywhere. Under a path-typed key an entropy hit is
+    reported as ``high_entropy_path_value`` (LOW) rather than as a secret,
+    matching what ``redact_fields`` leaves readable."""
+    if _seen is None:
+        _seen = set()
+    out = []
+    if _depth > 8:
+        return out
+    if isinstance(obj, str):
+        if _entropy and "*** Begin Patch" in obj:
+            for seg, is_path in _split_patch_headers(obj):
+                out += scan_fields(seg, _entropy, _depth + 1, _seen, "file_path" if is_path else None)
+            return out
+        if path_value(_key, obj):
+            for f in scan(obj, entropy=False):
+                key = f["type"] + ":" + f.get("sample", "")
+                if key not in _seen:
+                    _seen.add(key)
+                    out.append(f)
+            out += _entropy_findings(obj, _seen, HIGH_ENTROPY_PATH_TYPE, "LOW")
+            return out
+        for f in scan(obj, entropy=_entropy):
+            key = f["type"] + ":" + f.get("sample", "")
+            if key not in _seen:
+                _seen.add(key)
+                out.append(f)
+        return out
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            if isinstance(k, str):
+                out += scan_fields(k, True, _depth + 1, _seen, None)
+            if isinstance(v, (list, tuple)):
+                for el in v:
+                    out += scan_fields(el, _entropy, _depth + 1, _seen, k)
+            else:
+                out += scan_fields(v, _entropy, _depth + 1, _seen, k)
+        return out
+    if isinstance(obj, (list, tuple)):
+        for v in obj:
+            out += scan_fields(v, _entropy, _depth + 1, _seen, None)
+        return out
+    return scan_fields(str(obj), _entropy, _depth + 1, _seen, None) if obj is not None else out

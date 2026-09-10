@@ -125,7 +125,7 @@ For `policy_ref` to be usable as evidence, use a content hash of the ruleset and
 | MCP interceptor | LiteLLM callbacks |
 | LangChain / LangGraph callback | Langfuse export |
 | OpenAI Agents SDK hooks | Any gateway / reverse-proxy log |
-| Claude Code / Claude Agent SDK hook | |
+| Claude Agent SDK hook | Claude Code and Codex CLI `PostToolUse` hooks (fire after the tool ran) |
 
 Framework adapters and ingestion paths stamp each record with a `source` tag, so the report discloses how each piece of evidence was collected. Captured and ingested records live in the same chain.
 
@@ -157,7 +157,7 @@ record_log(Recorder("audit.jsonl"), {"tool": "gen_ai:gpt-4o", "model": "gpt-4o",
 
 Anything that emits OpenTelemetry GenAI spans (CrewAI, LlamaIndex, and most agent frameworks with OTel instrumentation) lands in the chain through the OTel adapter, and the [TypeScript package](https://github.com/bkuan001/halo-record-ts) ships native adapters for the Vercel AI SDK and the JS agent ecosystem. Missing an adapter for your stack? Open an issue. Most adapters are about a hundred lines.
 
-## Record your coding agent
+## Record your coding agent (Claude Code or Codex)
 
 Claude Code fires a `PostToolUse` hook after every tool call. Point it at `halo hook` and each action — file writes, shell commands, MCP connector calls — becomes a record in a local chain. No code changes; one settings entry:
 
@@ -172,6 +172,20 @@ Claude Code fires a `PostToolUse` hook after every tool call. Point it at `halo 
 ```
 
 Add that to `~/.claude/settings.json` and records land in `~/.halo/audit.jsonl` (override with `$HALO_LOG`). Pure-orchestration tools that touch no data, network, or external state are skipped — the chain records trust-boundary actions, not thinking. Set `HALO_HASH_ONLY=1` to record content hashes without summaries. Set `HALO_AGENT_VERSION` (and optionally `HALO_AGENT_MODEL`) to bind every record to the agent build that produced it — when an auditor asks about the version that was running in a given window, the export answers by column instead of by recollection.
+
+Codex CLI ships the same lifecycle hooks with the same event shape (hooks are on by default). Add this to `~/.codex/hooks.json` and Codex's shell commands, `apply_patch` edits, and MCP calls land in the same chain:
+
+```json
+{
+  "hooks": {
+    "PostToolUse": [
+      {"matcher": ".*", "hooks": [{"type": "command", "command": "halo hook"}]}
+    ]
+  }
+}
+```
+
+The hook tells the two apart from the event itself (Codex adds `turn_id` and `model`) and labels each record `claude-code` or `codex`; set `HALO_HOOK_AGENT` to force one. Both are the ingested tier: a `PostToolUse` hook fires after the tool ran, so the record is built from what the harness reports.
 
 If you need the report to answer "under what rules did this run happen?", set `HALO_AUTHORITY_FILE` to a JSON snapshot of the effective authority for the session. Keep it privacy-safe: hashes and refs, not raw prompts, private policy text, secrets, or full tool schemas — known secret formats are masked at seal time, but hashes and refs pass through untouched and free-form text is not detected (see LIMITS §6). Reuse a `snapshot_id` only while the underlying authority is unchanged; consecutive records with the same id and unchanged content are compacted — a reused id over changed content is stored in full, with a notice.
 

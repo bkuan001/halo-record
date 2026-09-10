@@ -23,6 +23,7 @@ import inspect
 
 from .canon import input_hash
 from .record import build
+from .redact import path_value
 from .session import current_recorder, current_agent
 
 
@@ -36,8 +37,33 @@ def _extract_text(obj, depth=0):
     if isinstance(obj, list):
         return " ".join(_extract_text(i, depth + 1) for i in obj)
     if isinstance(obj, dict):
-        return " ".join(_extract_text(v, depth + 1) for v in obj.values())
+        # Path-typed fields (filePath, path, …) name where a tool acted; the
+        # input already carries them, and in a free-text summary they read as
+        # high-entropy secrets. Leave them out of the response summary.
+        parts = []
+        for k, v in obj.items():
+            if isinstance(v, (list, tuple)):
+                kept = [el for el in v if not path_value(k, el)]
+                parts.append(_extract_text(kept, depth + 1))
+            elif not path_value(k, v):
+                parts.append(_extract_text(v, depth + 1))
+        return " ".join(p for p in parts if p)
     return str(obj)
+
+
+def _nonzero_exit(v):
+    """True for an explicit non-zero exit status, whether the harness sent it
+    as a number or as a numeric string."""
+    if isinstance(v, bool) or v is None:
+        return False
+    if isinstance(v, (int, float)):
+        return v != 0
+    if isinstance(v, str):
+        try:
+            return float(v.strip()) != 0
+        except ValueError:
+            return False
+    return False
 
 
 def derive_outcome(response, error=None):
@@ -64,12 +90,17 @@ def derive_outcome(response, error=None):
         response.get("is_error")
         or response.get("error")
         or response.get("status") == "error"
+        or any(_nonzero_exit(response.get(k))
+               for k in ("exit_code", "exitCode", "returncode", "return_code"))
     ):
         status = "error"
     out = {"status": status, "hash": input_hash(response)}
     summary = _extract_text(response)
     if summary:
         out["summary"] = summary
+    # The summary leaves path-typed fields out; the scanner must not. ``build``
+    # scans this structure field by field and drops it before sealing.
+    out["_scan"] = response
     return out
 
 

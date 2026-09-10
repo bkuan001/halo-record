@@ -118,7 +118,22 @@ Raw tool arguments are hashed; a summary capped at 200 characters is stored
 alongside, and a short input that matches no pattern appears in it in full.
 The summary layer is scrubbed by
 provider-specific patterns plus an entropy catch-all — defense in depth, not a
-proof. A novel secret format can land in a summary. Masks hide the credential,
+proof. A novel secret format can land in a summary. Values under path-typed
+argument keys (`file_path`, `path`, `paths`, `pattern`, `url`, and the like)
+are left readable when they are anchored as a path (leading slash, drive
+letter, scheme, dot-relative prefix, file extension, or glob character) and
+carry no `= ? & % @`. "Path-typed" includes URL keys (`url`, `uri`, `href`),
+so a capability URL whose secret is a path segment stays readable there
+unless a named pattern covers it; Slack, Discord, and Teams webhook URLs are
+named patterns. They are still scanned: named patterns mask there as
+everywhere, and an entropy hit under a path key is reported as a
+`high_entropy_path_value` (LOW) finding instead of being masked, so
+`findings: []` still means the scanner found nothing anywhere. A path inside
+free text — a shell command, a tool response — is subject to the full
+catch-all and may be masked as a secret, which also raises that record's
+severity to HIGH; the file named in a patch header (`*** Update File:`) is
+treated as a path value. The report's headline "Flagged" count is
+severity-weighted: LOW notes are counted separately. Masks hide the credential,
 not always its context: the connection-string mask removes the password only,
 so a DSN's username and internal hostname survive into the summary. If you find a path that
 does, that is a vulnerability report we want (see SECURITY.md).

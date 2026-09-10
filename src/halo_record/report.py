@@ -1150,7 +1150,8 @@ def render(records, checkpoints=None, *, witness_url=None, policy=None, window=N
   <div class="card"><div class="n">%(total)s</div><div class="l">Actions</div></div>
   <div class="card"><div class="n">%(ntools)s</div><div class="l">Tools</div></div>
   <div class="card"><div class="n">%(nscopes)s</div><div class="l">Scopes</div></div>
-  <div class="card"><div class="n">%(nflagged)s</div><div class="l">Flagged</div></div>
+  <div class="card"><div class="n">%(nflagged)s</div><div class="l">Flagged (MEDIUM+)</div></div>
+  <div class="card"><div class="n">%(nlow)s</div><div class="l">Low notes</div></div>
 </div>
 <h2>Authorized scopes</h2>
 <div class="scopes">%(scope_pills)s</div>
@@ -1207,7 +1208,10 @@ def render(records, checkpoints=None, *, witness_url=None, policy=None, window=N
         "total": stats["total"],
         "ntools": len(stats["tools"]),
         "nscopes": len(stats["scopes"]),
-        "nflagged": sum(1 for r in records if r.get("findings")),
+        # Headline counts are severity-weighted: LOW notes (readable paths that
+        # merely looked secret-like) do not count as flags.
+        "nflagged": sum(1 for r in records if r.get("severity") in ("MEDIUM", "HIGH", "CRITICAL")),
+        "nlow": sum(1 for r in records if r.get("severity") == "LOW"),
         "scope_pills": scope_pills,
         "integrity_note": integrity_note,
         "provenance_block": provenance_block,

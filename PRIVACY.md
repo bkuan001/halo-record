@@ -11,7 +11,7 @@ halo-record is local-first by design. This page consolidates, in one place, what
 
 ## Redaction is best-effort
 
-Detection is deterministic pattern matching plus a high-entropy catch-all (long random-looking strings) — never a model judgment. Coverage is by named pattern (API keys, cloud and provider tokens, private-key blocks, database connection strings, JWTs, bearer tokens, credit cards, SSNs, IBANs, emails, phone numbers, internal IPs), so it is best-effort, not comprehensive: free-form personal data with no fixed shape — a person's name, a postal address — has no reliable pattern and is not detected. Treat redaction as defense-in-depth for an artifact handed to a third party, not a guarantee that a summary can carry no personal data (see LIMITS §6).
+Detection is deterministic pattern matching plus a high-entropy catch-all (long random-looking strings) — never a model judgment. Coverage is by named pattern (API keys, cloud and provider tokens incl. AWS secret access keys, private-key blocks, database connection strings, JWTs, bearer tokens, Slack/Discord/Teams webhook URLs, credit cards, SSNs, IBANs, emails, phone numbers, internal IPs), so it is best-effort, not comprehensive: free-form personal data with no fixed shape — a person's name, a postal address — has no reliable pattern and is not detected. Treat redaction as defense-in-depth for an artifact handed to a third party, not a guarantee that a summary can carry no personal data (see LIMITS §6).
 
 ## What leaves your machine
 
