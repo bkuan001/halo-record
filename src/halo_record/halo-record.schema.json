@@ -183,6 +183,15 @@
       }
     },
     "jurisdiction": { "type": "string" },
+    "source": {
+      "type": "object",
+      "description": "Provenance of the record: which integration produced it and whether the action was captured at the boundary or ingested from telemetry the operator already emits (see LIMITS §3).",
+      "properties": {
+        "adapter": { "type": "string" },
+        "via": { "type": "string" },
+        "capture": { "type": "string", "enum": ["captured", "ingested"] }
+      }
+    },
     "framework_tags": { "type": "array", "items": { "type": "string" } },
     "integrity": {
       "type": "object",

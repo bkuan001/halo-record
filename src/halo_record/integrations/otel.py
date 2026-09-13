@@ -115,6 +115,9 @@ def _build_exporter_class():
             self.session_id = session_id
             self.subject = subject
             self.summaries = summaries
+            # Spans that could not be recorded. A stopped recorder must never
+            # look like an idle agent, so losses are counted and reported.
+            self.lost_records = 0
 
         def export(self, spans):
             from opentelemetry.sdk.trace.export import SpanExportResult
@@ -123,8 +126,15 @@ def _build_exporter_class():
                     record_span(self.recorder, span, agent=self.agent,
                                 session_id=self.session_id, subject=self.subject,
                                 summaries=self.summaries)
-                except Exception:
-                    pass  # never break the trace pipeline
+                except Exception as exc:
+                    # Never break the trace pipeline — but never lose evidence
+                    # silently either (mirrors the LangChain handler).
+                    self.lost_records += 1
+                    import sys as _sys
+                    _sys.stderr.write(
+                        "halo-record: could not record span %r: %s — "
+                        "this span is NOT in the evidence log (lost so far: %d)\n"
+                        % (getattr(span, "name", None), exc, self.lost_records))
             return SpanExportResult.SUCCESS
 
         def shutdown(self):

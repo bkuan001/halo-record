@@ -57,6 +57,7 @@ CSV_COLUMNS = [
     "model_version",
     # under what authority
     "decision",
+    "approver",
     "scope",
     "authority_snapshot",
     # what was flagged
@@ -64,12 +65,17 @@ CSV_COLUMNS = [
     "findings",
     "threats",
     "pii_types",
+    # data handling declared on the record
+    "region",
+    "cross_region",
+    "purpose",
     # provenance
     "source",
     "session_id",
     # identity + verification
     "record_id",
     "parent_id",
+    "input_hash",
     "prev_hash",
     "hash",
 ]
@@ -213,7 +219,15 @@ def _row(record):
         "action_summary": _readable((action.get("input") or {}).get("summary")),
         "outcome_summary": _readable((record.get("outcome") or {}).get("summary")),
         "decision": (action.get("authorization") or {}).get("decision", ""),
+        "approver": (action.get("authorization") or {}).get("approver", ""),
         "scope": (action.get("authorization") or {}).get("scope", ""),
+        # Data-handling declarations sealed on the record (see data.* in the
+        # schema). Exported as declared; the recorder does not verify them.
+        "region": data.get("region", ""),
+        "cross_region": ("" if data.get("cross_region") is None
+                         else ("true" if data.get("cross_region") else "false")),
+        "purpose": data.get("purpose", ""),
+        "input_hash": (action.get("input") or {}).get("hash", ""),
         "prev_hash": (record.get("integrity") or {}).get("prev_hash", ""),
         "severity": record.get("severity", ""),
         "findings": "; ".join(

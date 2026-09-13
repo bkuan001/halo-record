@@ -206,10 +206,12 @@ class ExportTest(unittest.TestCase):
                          tool_input={"q": "select 1"},
                          subject={"id": "acme", "name": "Acme Corp"},
                          scope="tenant:acme", decision="human_approved",
+                         approver="u-2",
                          principal={"human_id": "u-1"}, parent_id="r-0",
                          agent={"id": "a1", "name": "Support", "version": "1.2.0",
                                 "model": "claude", "model_version": "4"},
-                         data={"pii_types": ["email"]},
+                         data={"pii_types": ["email"], "region": "eu-west-1",
+                               "cross_region": True, "purpose": "support"},
                          ts="2026-06-15T00:00:00+00:00",
                          outcome={"status": "ok", "summary": "1 row"}))
         export(log, out, out=_silent)

@@ -98,6 +98,8 @@ build("tool_call", "security", tool="payments.refund",
                     "checked_at": "2026-08-01T12:00:00Z"})
 ```
 
+One naming note: the package exports a `record` *function* (the decorator), which shadows the `halo_record.record` *module* on the package object. Import from the module path directly when you want its internals — `from halo_record.record import build` — rather than `import halo_record.record as record`.
+
 which seals into the record as:
 
 ```json
