@@ -23,7 +23,7 @@ import re
 from collections import Counter
 
 PATTERNS = [
-    ("api_key",      "CRITICAL", re.compile(r'(?:sk-[a-zA-Z0-9]{20,}|AKIA[0-9A-Z]{16}|xox[baprs]-[a-zA-Z0-9\-]{10,})')),
+    ("api_key",      "CRITICAL", re.compile(r'(?:sk-(?:[a-z0-9]{2,10}-)*[a-zA-Z0-9]{16,}|AKIA[0-9A-Z]{16}|xox[baprs]-[a-zA-Z0-9\-]{10,})')),
     ("gcp_api_key",  "CRITICAL", re.compile(r'AIza[0-9A-Za-z_\-]{35,}')),
     ("aws_secret_key", "CRITICAL", re.compile(r'(?i)aws_secret_access_key(?:\s*[=:]\s*|\s+)["\']?[A-Za-z0-9/+=]{40}')),
     ("webhook_url",   "CRITICAL", re.compile(r'https://(?:hooks\.slack\.com/services/|discord(?:app)?\.com/api/webhooks/|[a-z0-9.-]+\.webhook\.office\.com/webhookb2/|outlook\.office\.com/webhook/)[^\s"\'<>]+')),
@@ -36,13 +36,17 @@ PATTERNS = [
     ("private_key",  "CRITICAL", re.compile(r'-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----(?:[\s\S]*?-----END (?:RSA |EC |OPENSSH )?PRIVATE KEY-----|(?:\n[A-Za-z0-9+/=]+(?![^\n]))*)')),
     ("db_conn",      "CRITICAL", re.compile(r'(?:postgres|mysql|mongodb(?:\+srv)?|redis)://[^\s"\'<>]+')),
     ("jwt",          "HIGH",     re.compile(r'eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}')),
+    # IBAN runs BEFORE credit_card: an IBAN whose digit body happens to Luhn-
+    # check would otherwise be card-masked first, leaving country/check digits
+    # and the tail exposed. Shape-tolerant (case, space/dot/hyphen groups) and
+    # gated on the mod-97 check, so ordinary identifiers are not classified.
+    ("iban",         "HIGH",     re.compile(r'(?i)\b[A-Z]{2}[0-9]{2}(?:[ .\-]?[A-Z0-9]){11,30}\b')),
     ("credit_card",  "HIGH",     re.compile(r'\b(?:4[0-9]{3}|5[1-5][0-9]{2}|3[47][0-9]{2}|6(?:011|5[0-9]{2}))(?:[ -]?[0-9]){9,13}\b')),
     ("ssn",          "HIGH",     re.compile(r'\b\d{3}[- ]\d{2}[- ]\d{4}\b')),
     ("bearer_token", "HIGH",     re.compile(r'Bearer\s+[a-zA-Z0-9\-_\.]{20,}')),
     ("email",        "MEDIUM",   re.compile(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b')),
     ("ip_internal",  "MEDIUM",   re.compile(r'\b(10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(?:1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3})\b')),
     ("phone",        "MEDIUM",   re.compile(r'\b(?:\+?1[-.\s])?\(?\d{3}\)?[-.\s]\d{3}[-.\s]\d{4}\b')),
-    ("iban",         "HIGH",     re.compile(r'\b[A-Z]{2}[0-9]{2}(?:[ -]?[A-Z0-9]){11,30}\b')),
 ]
 
 SEVERITY_RANK = {"CRITICAL": 4, "HIGH": 3, "MEDIUM": 2, "LOW": 1, "INFO": 0}
@@ -119,7 +123,7 @@ def redact_sample(ftype, value):
         digits = re.sub(r'\D', '', v)
         return ("***-***-" + digits[-4:]) if len(digits) >= 4 else "****"
     if ftype == "iban":
-        return (v[:2] + "****") if len(v) > 2 else "****"
+        return (v[:2].upper() + "****") if len(v) > 2 else "****"
     if ftype == "ip_internal":
         parts = v.split(".")
         return ".".join(parts[:2] + ["*", "*"]) if len(parts) == 4 else "****"
@@ -144,13 +148,34 @@ def _luhn_ok(value):
     return total % 10 == 0
 
 
+def _iban_ok(value):
+    """ISO 13616 mod-97 check over ``value`` with separators removed. Like the
+    Luhn check for cards: a match is only a finding if it checksums, so an
+    order number or licence key that happens to be IBAN-shaped is neither
+    masked nor recorded as ``pii_types: ["iban"]``."""
+    v = re.sub(r'[ .\-]', '', str(value)).upper()
+    if not 15 <= len(v) <= 34 or not v[:2].isalpha() or not v[2:4].isdigit():
+        return False
+    rearranged = v[4:] + v[:4]
+    try:
+        n = int("".join(str(ord(c) - 55) if c.isalpha() else c for c in rearranged))
+    except ValueError:
+        return False
+    return n % 97 == 1
+
+
+# Patterns whose shape alone is ambiguous carry a checksum gate.
+_VALIDATORS = {"credit_card": _luhn_ok, "iban": _iban_ok}
+
+
 def _apply_patterns(text):
     out = text
     for name, _sev, pattern in PATTERNS:
-        if name == "credit_card":
+        ok = _VALIDATORS.get(name)
+        if ok is not None:
             out = pattern.sub(
-                lambda m: redact_sample("credit_card", m.group(0))
-                if _luhn_ok(m.group(0)) else m.group(0), out)
+                lambda m, n=name, ok=ok: redact_sample(n, m.group(0))
+                if ok(m.group(0)) else m.group(0), out)
         else:
             out = pattern.sub(lambda m, n=name: redact_sample(n, m.group(0)), out)
     return out
@@ -194,7 +219,8 @@ def scan(text, entropy=True):
         n = 0
         for m in pattern.findall(s):
             raw = m if isinstance(m, str) else next((x for x in m if x), "")
-            if name == "credit_card" and not _luhn_ok(raw):
+            ok = _VALIDATORS.get(name)
+            if ok is not None and not ok(raw):
                 continue
             sample = redact_sample(name, str(raw)[:120])
             key = name + ":" + sample

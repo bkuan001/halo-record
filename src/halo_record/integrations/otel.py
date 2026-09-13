@@ -134,7 +134,7 @@ def _build_exporter_class():
                     _sys.stderr.write(
                         "halo-record: could not record span %r: %s — "
                         "this span is NOT in the evidence log (lost so far: %d)\n"
-                        % (getattr(span, "name", None), exc, self.lost_records))
+                        % (_span_name(span), exc, self.lost_records))
             return SpanExportResult.SUCCESS
 
         def shutdown(self):

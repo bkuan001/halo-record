@@ -65,6 +65,15 @@ def normalize_source(source):
     src = dict(source)
     src.setdefault("capture", "ingested")
     src.setdefault("via", src.get("adapter", "unknown"))
+    if not isinstance(src["capture"], str) or src["capture"] not in CAPTURE_TIERS:
+        # The verifier rejects any other tier, so sealing it would poison an
+        # append-only chain with a record that can never verify. Drop the tier
+        # claim loudly rather than guess one; the record seals without a source.
+        sys.stderr.write(
+            "halo-record: source.capture=%r is not one of %s; source dropped "
+            "(the record seals without a provenance tag)\n"
+            % (src["capture"], sorted(CAPTURE_TIERS)))
+        return None
     return src
 
 
@@ -132,6 +141,11 @@ def _norm_threats(threats):
 
 
 VERIFICATION_STATUSES = {"allowed", "blocked", "modified", "unverified"}
+# Values the verifier accepts for authorization.decision and source.capture.
+# build() drops anything else loudly rather than seal a record that can never
+# verify (an append-only chain has no undo).
+DECISIONS = {"allowed", "denied", "human_approved"}
+CAPTURE_TIERS = {"captured", "ingested"}
 _VERIFICATION_KEYS = ("verifier", "policy_ref", "checked_at")
 
 
@@ -227,12 +241,19 @@ def _norm_data(data):
         if k == "cross_region":
             if isinstance(v, bool):
                 out[k] = int(v)
-            elif isinstance(v, int):
-                out[k] = v
-            elif isinstance(v, float) and v.is_integer():
+            elif isinstance(v, (int, float)) and v in (0, 1):
                 out[k] = int(v)
-            # a non-numeric cross_region is dropped, not sealed as invalid
+            else:
+                # Anything but a boolean or 0/1 is dropped, not sealed as
+                # invalid — and said aloud, so a residency test never finds a
+                # blank it cannot explain.
+                import sys as _sys
+                _sys.stderr.write(
+                    "halo-record: data.cross_region=%r is not a boolean or 0/1; "
+                    "dropped (the column will read as 'not declared')\n" % (v,))
         elif k in ("region", "purpose"):
+            if v is None:
+                continue  # absent, not the string "None"
             out[k] = v if isinstance(v, str) else str(v)
         else:
             out[k] = _canon_safe(v)
@@ -283,7 +304,7 @@ def _authority_content_hash(authority):
 
 
 def build(action_type, category, tool=None, tool_input=None, *,
-          session_id="local", agent=None, scope=None, decision="allowed",
+          session_id="local", agent=None, scope=None, decision=None,
           approver=None, findings=None, outcome=None, ts=None,
           subject=None, source=None, authority=None, summaries=True,
           principal=None, parent_id=None, threats=None, data=None,
@@ -332,12 +353,30 @@ def build(action_type, category, tool=None, tool_input=None, *,
     action = {"type": action_type, "category": category}
     if tool is not None:
         action["tool"] = tool
-    if scope is not None or decision is not None:
-        auth = {"decision": decision}
+    if decision is not None and (not isinstance(decision, str) or decision not in DECISIONS):
+        # Same discipline as verification.status: the verifier rejects any
+        # other value, so an integration typo must not seal a chain that can
+        # never verify. Drop the decision loudly; scope/approver still seal.
+        sys.stderr.write(
+            "halo-record: authorization.decision=%r is not one of %s; dropped\n"
+            % (decision, sorted(DECISIONS)))
+        decision = None
+    # The authorization block appears only when the integration supplies one.
+    # Nothing is defaulted: a record with no decision says "no gate reported",
+    # never "allowed".
+    if scope is not None or decision is not None or approver is not None:
+        auth = {}
+        if decision is not None:
+            auth["decision"] = decision
         if scope is not None:
             auth["scope"] = scope
         if approver is not None:
             auth["approver"] = approver
+        elif decision == "human_approved":
+            # Sealed as supplied, but an approval with no approver is the
+            # exception an approval-control test will flag — say so now.
+            print("halo-record: decision is human_approved but no approver was "
+                  "supplied; the record seals without one", file=sys.stderr)
         action["authorization"] = auth
     if tool_input is not None:
         inp = {"hash": input_hash(tool_input)}

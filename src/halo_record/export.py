@@ -81,6 +81,52 @@ CSV_COLUMNS = [
 ]
 
 
+# Column dictionary carried in the manifest. Keep in step with CSV_COLUMNS
+# (test_manifest_column_notes_cover_every_column guards it).
+COLUMN_NOTES = {
+    "ts": {"source": "recorder", "blank": "never"},
+    "action_type": {"source": "recorder", "blank": "never"},
+    "category": {"source": "recorder", "blank": "never"},
+    "tool": {"source": "recorder", "blank": "no tool named"},
+    "action_summary": {"source": "recorder", "blank": "no arguments recorded",
+                       "note": "redacted summary; raw arguments never exported"},
+    "outcome": {"source": "declared", "blank": "no outcome sealed"},
+    "outcome_summary": {"source": "declared", "blank": "no outcome summary"},
+    "subject": {"source": "declared", "blank": "untenanted chain"},
+    "subject_name": {"source": "declared", "blank": "not supplied"},
+    "principal": {"source": "declared", "blank": "not supplied"},
+    "agent": {"source": "declared", "blank": "not supplied"},
+    "agent_version": {"source": "declared", "blank": "not supplied"},
+    "model": {"source": "declared", "blank": "not supplied"},
+    "model_version": {"source": "declared", "blank": "not supplied"},
+    "decision": {"source": "declared", "blank": "no authorization gate reported",
+                 "note": "present only when the integration supplied a decision; never defaulted"},
+    "approver": {"source": "declared", "blank": "no approver supplied",
+                 "note": "an assertion sealed as supplied; not tied to an identity provider"},
+    "scope": {"source": "declared", "blank": "not supplied"},
+    "authority_snapshot": {"source": "declared", "blank": "no authority snapshot sealed"},
+    "severity": {"source": "recorder", "blank": "no findings",
+                 "note": "highest redaction-scanner finding, not a risk rating"},
+    "findings": {"source": "recorder", "blank": "no findings"},
+    "threats": {"source": "declared", "blank": "none supplied"},
+    "pii_types": {"source": "recorder", "blank": "none detected"},
+    "region": {"source": "declared", "blank": "not declared"},
+    "cross_region": {"source": "declared", "blank": "not declared (not 'false')"},
+    "purpose": {"source": "declared", "blank": "not declared"},
+    "source": {"source": "declared", "blank": "no source tag (older recorder, or none supplied)",
+               "note": "capture:adapter — captured at the boundary vs ingested from telemetry; "
+                       "declared by the integration that built the record (LIMITS §3)"},
+    "session_id": {"source": "declared", "blank": "never"},
+    "record_id": {"source": "recorder", "blank": "never"},
+    "parent_id": {"source": "declared", "blank": "no parent action"},
+    "input_hash": {"source": "recorder", "blank": "no arguments recorded",
+                   "note": "sha256 over the canonical JSON of the arguments, or a sorted-key "
+                           "compact JSON when they do not canonicalize (see LIMITS §14)"},
+    "prev_hash": {"source": "recorder", "blank": "never"},
+    "hash": {"source": "recorder", "blank": "never"},
+}
+
+
 def _parse_ts(value):
     """Parse an RFC 3339 timestamp (tolerating a trailing Z) to an aware UTC datetime."""
     if not value:
@@ -122,7 +168,10 @@ def load_records(path):
 def in_window(record, start=None, end=None):
     ts = _parse_ts(record.get("ts"))
     if ts is None:
-        return False
+        # An unparseable timestamp cannot be placed in a window, so a bounded
+        # export leaves it out (the manifest's counts disclose the gap). An
+        # unbounded export is the whole population: nothing is dropped.
+        return start is None and end is None
     if start is not None and ts < start:
         return False
     if end is not None and ts > end:
@@ -251,13 +300,29 @@ def _row(record):
 
 
 def build_manifest(records, window_records, *, source_log, start=None, end=None,
-                   verified=None, csv_sha256=None, tools=None):
+                   verified=None, csv_sha256=None, tools=None, source_log_sha256=None):
     def _iso(dt):
         return dt.isoformat() if dt else None
 
+    from . import __version__ as _producer_version
+    if source_log_sha256 is None:
+        try:
+            with open(source_log, "rb") as fh:
+                source_log_sha256 = hashlib.sha256(fh.read()).hexdigest()
+        except OSError:
+            source_log_sha256 = None
     manifest = {
         "generated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        # Which halo-record produced this export (REVIEWERS.md's "produced with"
+        # half of the citation line) and the exact chain file it was cut from.
+        "producer_version": _producer_version,
         "source_log": os.path.basename(str(source_log)),
+        "source_log_sha256": source_log_sha256,
+        # What each column is and what a blank means, so the CSV can be read
+        # without the source. "recorder" fields are computed or sealed by the
+        # recorder; "declared" fields are sealed exactly as the integration
+        # supplied them and are not verified by the recorder (LIMITS §10).
+        "columns": COLUMN_NOTES,
         "window": {"from": _iso(start), "to": _iso(end)},
         # A tool filter narrows the exported population, so it is disclosed
         # here: a reviewer must be able to see that this CSV is a SUBSET and
@@ -295,12 +360,43 @@ def export(log_path, out_path, *, start=None, end=None, tools=None,
     Returns 0 on success, 1 if the chain fails verification (nothing is
     written in that case: no evidence file from a broken chain)."""
     silent = lambda *a, **k: None  # noqa: E731
-    if not verify_log(log_path, out=silent):
-        out(f"REFUSED: {log_path} fails verification; no export written.")
-        return 1
-    records = load_records(log_path)
+    # Snapshot the chain once, so verification, the exported rows, the head
+    # hash and source_log_sha256 all describe the same bytes even if a
+    # recorder appends while the export runs.
+    with open(log_path, "rb") as fh:
+        snapshot = fh.read()
+    source_log_sha256 = hashlib.sha256(snapshot).hexdigest()
+    import tempfile
+    snap = tempfile.NamedTemporaryFile(prefix=".halo-export-", suffix=".jsonl",
+                                       dir=os.path.dirname(os.path.abspath(str(log_path))) or None,
+                                       delete=False)
+    try:
+        snap.write(snapshot)
+        snap.close()
+        if not verify_log(snap.name, out=silent):
+            out(f"REFUSED: {log_path} fails verification; no export written.")
+            return 1
+        records = load_records(snap.name)
+    finally:
+        try:
+            os.unlink(snap.name)
+        except OSError:
+            pass
+    # An empty population is nothing to attest, not a clean evidence file: a
+    # header-only CSV under a manifest that says "verified" would read as a
+    # verified empty history. Refuse and write nothing (exit 3, like verify).
+    if not records:
+        out(f"REFUSED: {log_path} holds 0 records — nothing to attest; no export written.")
+        return 3
     window = [r for r in records
               if in_window(r, start, end) and matches_tools(r, tools)]
+    if not window:
+        # An empty window over a real chain is legitimate evidence ("no
+        # recorded actions in this period") and the manifest discloses it as
+        # window_records: 0 — but say it aloud so a scripted export never
+        # passes an inverted window or a misspelled tool off as a quiet quarter.
+        out(f"NOTE: 0 of {len(records)} records match the window/tool filter; "
+            "the export is header-only and the manifest records window_records: 0.")
     with open(out_path, "w", encoding="utf-8", newline="") as fh:
         writer = csv.DictWriter(fh, fieldnames=CSV_COLUMNS)
         writer.writeheader()
@@ -310,7 +406,7 @@ def export(log_path, out_path, *, start=None, end=None, tools=None,
         csv_sha256 = hashlib.sha256(fh.read()).hexdigest()
     manifest = build_manifest(
         records, window, source_log=log_path, start=start, end=end, verified=True,
-        csv_sha256=csv_sha256, tools=tools,
+        csv_sha256=csv_sha256, tools=tools, source_log_sha256=source_log_sha256,
     )
     m_path = manifest_path or (str(out_path) + ".manifest.json")
     with open(m_path, "w", encoding="utf-8") as fh:

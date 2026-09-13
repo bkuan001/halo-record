@@ -82,6 +82,10 @@ happened. **Ingested** means the record was built from telemetry the operator
 already emits (a gateway, tracing store, or OTel span) — real and anchorable,
 but the witness attests "this is the stream you sent me," not "I watched it
 happen." Reports label every action's tier and never flatten the distinction.
+The tier is declared by the integration that built the record (its `source`
+argument) and sealed as declared — the recorder does not attest to it, the same
+standing as the agent and principal blocks (§5, §10). A record with no source
+tag carries no tier claim at all.
 
 **What you say to a reviewer:** "Ingested records inherit the trustworthiness
 of the system that produced them; captured records inherit the recorder's.
@@ -128,7 +132,7 @@ unless a named pattern covers it; Slack, Discord, and Teams webhook URLs are
 named patterns. They are still scanned: named patterns mask there as
 everywhere, and an entropy hit under a path key is reported as a
 `high_entropy_path_value` (LOW) finding instead of being masked, so
-`findings: []` still means the scanner found nothing anywhere. A path inside
+`findings: []` still means the scanner found nothing in the fields it scans (the argument and outcome summaries — see §13 for the fields it does not), unless the integration supplied its own `findings`, which are sealed as given and bypass the scan (§13). A path inside
 free text — a shell command, a tool response — is subject to the full
 catch-all and may be masked as a secret, which also raises that record's
 severity to HIGH; the file named in a patch header (`*** Update File:`) is
@@ -148,7 +152,7 @@ convention remains unchecked.
 The same bound applies to `data.pii_types`: it is derived from the scanner's
 *named* personal-data categories (email, ssn, credit_card, phone, iban), so it
 is a floor, not a census. Within a category the coverage is by shape: cards and
-IBANs are caught in their spaced/hyphenated printed forms (cards Luhn-checked);
+IBANs are caught in their spaced/hyphenated/dotted printed forms (cards Luhn-checked, IBANs mod-97-checked, so look-alike identifiers are neither masked nor classified);
 SSNs are caught in delimited form (`123-45-6789`, `123 45 6789`), but an
 undelimited nine-digit run is deliberately not classified as an SSN — it is
 indistinguishable from any other nine-digit identifier, and treating every one
@@ -409,6 +413,16 @@ Two consequences to know before relying on a record's `data`/`outcome` values:
 - **If type fidelity matters for your evidence, encode it explicitly** — for
   example, record `{"score_millis": 500}` instead of `{"score": 0.5}`, or wrap
   values as `{"type": "int", "value": "9007199254740993"}` in your payload.
+
+The argument hash (`action.input.hash`, the `input_hash` export column) is
+computed separately from the record hash and over the arguments **as passed**,
+before the normalization above: `sha256:` over the RFC 8785 canonical JSON of
+the arguments when they canonicalize, otherwise over a sorted-key, no-whitespace
+`json.dumps` of them (so a non-integer float hashes as its literal, and a value
+JSON cannot represent — a date object, say — hashes as its string form). To
+re-derive it from source data, serialize the same arguments the same way;
+`halo hash '<json>'` prints the result for any JSON input. Key order does not
+matter; whitespace and the float-vs-string distinction do.
 
 This trade was chosen so that an untampered chain verifies identically in every
 reader, and so that no caller-supplied number can crash the recorder mid-run.

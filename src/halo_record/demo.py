@@ -88,11 +88,16 @@ def emit_runtime(directory):
         for (hours_ago, atype, cat, tool, tinput, scope, decision, approver,
              outcome, source) in actions:
             ts = (now - datetime.timedelta(hours=hours_ago)).isoformat()
+            # Residency and purpose are data-handling declarations, so the
+            # demo seals them in data.* where the export and residency checks
+            # read them, not only in the argument summary.
+            data = {k: tinput[k] for k in ("region", "purpose") if k in tinput}
             record = build(
                 atype, cat, tool=tool, tool_input=tinput,
                 session_id="demo-" + sid, ts=ts,
                 agent=AGENT, scope=scope, decision=decision, approver=approver,
-                outcome=outcome, subject={"id": sid, "name": sname}, source=source)
+                outcome=outcome, subject={"id": sid, "name": sname}, source=source,
+                data=data or None)
             rec.append(record)
         counts[sid] = len(actions)
     return counts

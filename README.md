@@ -354,7 +354,7 @@ A native push integration â€” evidence landing in your platform automatically â€
 
 ```
 halo verify   validate schema + hash chain (exit 1 broken, 3 empty chain; CI-friendly)
-halo report   render a chain as a self-verifying HTML Runtime Report
+halo report   render a chain as a self-verifying HTML Runtime Report (hash chain; `halo verify` also checks the record format)
               (--from/--to: a date-windowed report covering only the review period)
 halo policy   corroborate a chain against a declarative policy pack
               (per-rule pass / violation / evidence-gap; exit 1 violated, 3 nothing in scope)

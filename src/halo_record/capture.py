@@ -251,10 +251,13 @@ def record_model_call(recorder=None, *, provider, model, zdr=None, purpose=None,
     rec = build(
         "tool_call", "privacy", tool="model.generate", tool_input=tool_input,
         session_id=session_id, agent=agent or current_agent(),
-        scope="model:" + provider, decision="allowed",
+        scope="model:" + provider,
         outcome=derive_outcome(response, error=error),
         subject=subject, summaries=summaries,
         source=source or "recorder",
+        # The declared purpose is data-handling context, so it also lands in
+        # data.purpose where the export and residency checks read it.
+        data={"purpose": purpose} if purpose else None,
     )
     recorder.append(rec)
     return rec
