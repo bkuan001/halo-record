@@ -310,7 +310,10 @@ def _row(r, show_agent=False):
         _esc(action.get("type") or "—"),
         source_cell,
         _esc(auth.get("scope") or "—"),
-        "ok" if auth.get("decision") == "allowed" else "warn",
+        # No decision = no gate reported: a statement, not an alarm. Green is
+        # reserved for a supplied allow/approval; amber for a supplied denial.
+        ("neutral" if not auth.get("decision")
+         else "ok" if auth.get("decision") in ("allowed", "human_approved") else "warn"),
         _esc(auth.get("decision") or "—"),
         "ok" if status == "ok" else ("warn" if status == "error" else "neutral"),
         _esc(status),

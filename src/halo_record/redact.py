@@ -23,7 +23,7 @@ import re
 from collections import Counter
 
 PATTERNS = [
-    ("api_key",      "CRITICAL", re.compile(r'(?:sk-(?:[a-z0-9]{2,10}-)*[a-zA-Z0-9]{16,}|AKIA[0-9A-Z]{16}|xox[baprs]-[a-zA-Z0-9\-]{10,})')),
+    ("api_key",      "CRITICAL", re.compile(r'(?:sk-[A-Za-z0-9_\-]{20,}|AKIA[0-9A-Z]{16}|xox[baprs]-[a-zA-Z0-9\-]{10,})')),
     ("gcp_api_key",  "CRITICAL", re.compile(r'AIza[0-9A-Za-z_\-]{35,}')),
     ("aws_secret_key", "CRITICAL", re.compile(r'(?i)aws_secret_access_key(?:\s*[=:]\s*|\s+)["\']?[A-Za-z0-9/+=]{40}')),
     ("webhook_url",   "CRITICAL", re.compile(r'https://(?:hooks\.slack\.com/services/|discord(?:app)?\.com/api/webhooks/|[a-z0-9.-]+\.webhook\.office\.com/webhookb2/|outlook\.office\.com/webhook/)[^\s"\'<>]+')),
@@ -40,7 +40,7 @@ PATTERNS = [
     # check would otherwise be card-masked first, leaving country/check digits
     # and the tail exposed. Shape-tolerant (case, space/dot/hyphen groups) and
     # gated on the mod-97 check, so ordinary identifiers are not classified.
-    ("iban",         "HIGH",     re.compile(r'(?i)\b[A-Z]{2}[0-9]{2}(?:[ .\-]?[A-Z0-9]){11,30}\b')),
+    ("iban",         "HIGH",     re.compile(r'(?i)\b[A-Z]{2}[0-9]{2}(?:[ .\-\t\u00a0]{0,2}[A-Z0-9]{4}){2,7}(?:[ .\-\t\u00a0]{0,2}[A-Z0-9]{1,4})?\b')),
     ("credit_card",  "HIGH",     re.compile(r'\b(?:4[0-9]{3}|5[1-5][0-9]{2}|3[47][0-9]{2}|6(?:011|5[0-9]{2}))(?:[ -]?[0-9]){9,13}\b')),
     ("ssn",          "HIGH",     re.compile(r'\b\d{3}[- ]\d{2}[- ]\d{4}\b')),
     ("bearer_token", "HIGH",     re.compile(r'Bearer\s+[a-zA-Z0-9\-_\.]{20,}')),
@@ -148,12 +148,15 @@ def _luhn_ok(value):
     return total % 10 == 0
 
 
+_IBAN_SEP = re.compile(r'[ .\-\t\u00a0]')
+
+
 def _iban_ok(value):
     """ISO 13616 mod-97 check over ``value`` with separators removed. Like the
     Luhn check for cards: a match is only a finding if it checksums, so an
     order number or licence key that happens to be IBAN-shaped is neither
     masked nor recorded as ``pii_types: ["iban"]``."""
-    v = re.sub(r'[ .\-]', '', str(value)).upper()
+    v = _IBAN_SEP.sub('', str(value)).upper()
     if not 15 <= len(v) <= 34 or not v[:2].isalpha() or not v[2:4].isdigit():
         return False
     rearranged = v[4:] + v[:4]
@@ -164,6 +167,37 @@ def _iban_ok(value):
     return n % 97 == 1
 
 
+def _iban_prefix(match_text):
+    """The longest block-aligned prefix of ``match_text`` that passes mod-97,
+    or None. A regex match can run past the account number into whatever
+    follows it ("DE89 … 00 EUR"); the gate must not let that trailing text
+    disarm the mask, so it retries shorter candidates before giving up."""
+    t = str(match_text)
+    if _iban_ok(t):
+        return t
+    # Try every shorter endpoint, longest first — separator-aligned or not, so
+    # a compact IBAN glued to a suffix ("…013000EUR") is still found. At most
+    # ~30 mod-97 checks per match.
+    for end in range(len(t) - 1, 0, -1):
+        cand = t[:end].rstrip(" .-\t\u00a0")
+        if len(_IBAN_SEP.sub('', cand)) < 15:
+            break
+        if _iban_ok(cand):
+            return cand
+    return None
+
+
+def _validated_span(name, match_text):
+    """For checksum-gated patterns, the part of ``match_text`` that is a real
+    finding (None if none). Cards check as matched; IBANs may shrink to a
+    passing prefix."""
+    if name == "credit_card":
+        return match_text if _luhn_ok(match_text) else None
+    if name == "iban":
+        return _iban_prefix(match_text)
+    return match_text
+
+
 # Patterns whose shape alone is ambiguous carry a checksum gate.
 _VALIDATORS = {"credit_card": _luhn_ok, "iban": _iban_ok}
 
@@ -171,11 +205,13 @@ _VALIDATORS = {"credit_card": _luhn_ok, "iban": _iban_ok}
 def _apply_patterns(text):
     out = text
     for name, _sev, pattern in PATTERNS:
-        ok = _VALIDATORS.get(name)
-        if ok is not None:
-            out = pattern.sub(
-                lambda m, n=name, ok=ok: redact_sample(n, m.group(0))
-                if ok(m.group(0)) else m.group(0), out)
+        if name in _VALIDATORS:
+            def _sub(m, n=name):
+                span = _validated_span(n, m.group(0))
+                if span is None:
+                    return m.group(0)
+                return redact_sample(n, span) + m.group(0)[len(span):]
+            out = pattern.sub(_sub, out)
         else:
             out = pattern.sub(lambda m, n=name: redact_sample(n, m.group(0)), out)
     return out
@@ -215,13 +251,20 @@ def scan(text, entropy=True):
     findings = []
     seen = set()
 
+    iban_spans = []  # accepted IBAN intervals; a card match inside one is the same number
     for name, severity, pattern in PATTERNS:
         n = 0
-        for m in pattern.findall(s):
-            raw = m if isinstance(m, str) else next((x for x in m if x), "")
-            ok = _VALIDATORS.get(name)
-            if ok is not None and not ok(raw):
-                continue
+        for m in pattern.finditer(s):
+            raw = m.group(0)
+            if name in _VALIDATORS:
+                span = _validated_span(name, raw)
+                if span is None:
+                    continue
+                if name == "iban":
+                    iban_spans.append((m.start(), m.start() + len(span)))
+                elif name == "credit_card" and any(a <= m.start() < b for a, b in iban_spans):
+                    continue
+                raw = span
             sample = redact_sample(name, str(raw)[:120])
             key = name + ":" + sample
             if key in seen:
@@ -244,7 +287,8 @@ def scan(text, entropy=True):
 def top_severity(findings):
     if not findings:
         return "INFO"
-    return max(findings, key=lambda f: SEVERITY_RANK.get(f["severity"], 0))["severity"]
+    best = max(findings, key=lambda f: SEVERITY_RANK.get(f.get("severity"), 0))
+    return best.get("severity") if best.get("severity") in SEVERITY_RANK else "INFO"
 
 
 # Argument keys whose values are file-system paths, globs, or URLs by

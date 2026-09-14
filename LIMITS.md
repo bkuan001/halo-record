@@ -152,7 +152,7 @@ convention remains unchecked.
 The same bound applies to `data.pii_types`: it is derived from the scanner's
 *named* personal-data categories (email, ssn, credit_card, phone, iban), so it
 is a floor, not a census. Within a category the coverage is by shape: cards and
-IBANs are caught in their spaced/hyphenated/dotted printed forms (cards Luhn-checked, IBANs mod-97-checked, so look-alike identifiers are neither masked nor classified);
+IBANs are caught in their spaced/hyphenated/dotted printed forms, including mid-sentence (cards Luhn-checked, IBANs mod-97-checked, so look-alike identifiers are not classified — a two-digit checksum still passes about 1 in 97 random look-alikes);
 SSNs are caught in delimited form (`123-45-6789`, `123 45 6789`), but an
 undelimited nine-digit run is deliberately not classified as an SSN — it is
 indistinguishable from any other nine-digit identifier, and treating every one

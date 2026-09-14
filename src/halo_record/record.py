@@ -19,7 +19,7 @@ except ImportError:  # pragma: no cover
     fcntl = None
 
 from .canon import GENESIS_PREV, canon, compute_hash, input_hash, sha256_hex
-from .redact import mask_known_secrets, redact_fields, redact_text, scan, scan_fields, top_severity
+from .redact import SEVERITY_RANK, mask_known_secrets, redact_fields, redact_text, scan, scan_fields, top_severity
 
 SCHEMA_VERSION = "0.1"
 
@@ -62,7 +62,17 @@ def normalize_source(source):
         return None
     if isinstance(source, str):
         return dict(SOURCES.get(source, {"adapter": source, "via": source, "capture": "ingested"}))
+    if not isinstance(source, dict):
+        sys.stderr.write(
+            "halo-record: source=%r is not a tag name or mapping; source dropped\n" % (source,))
+        return None
     src = dict(source)
+    for k in ("adapter", "via"):
+        if k in src and src[k] is not None and not isinstance(src[k], str):
+            src[k] = str(src[k])
+    if not src.get("adapter"):
+        sys.stderr.write("halo-record: source has no adapter name; source dropped\n")
+        return None
     src.setdefault("capture", "ingested")
     src.setdefault("via", src.get("adapter", "unknown"))
     if not isinstance(src["capture"], str) or src["capture"] not in CAPTURE_TIERS:
@@ -86,7 +96,20 @@ def _norm_subject(subject):
         return None
     if isinstance(subject, str):
         return {"id": subject}
-    return subject
+    if isinstance(subject, dict):
+        out = dict(subject)
+        for k in ("id", "name"):
+            v = out.get(k)
+            if v is None or isinstance(v, str):
+                continue
+            if isinstance(v, (int, float, bool)):
+                out[k] = str(v)
+            else:
+                sys.stderr.write("halo-record: subject.%s=%r is not a scalar; subject dropped\n" % (k, v))
+                return None
+        return out
+    sys.stderr.write("halo-record: subject=%r is not a string or mapping; dropped\n" % (subject,))
+    return None
 
 
 _PRINCIPAL_KEYS = ("human_id", "creator_id", "service_account", "role_scope")
@@ -303,6 +326,44 @@ def _authority_content_hash(authority):
     return sha256_hex(canon(_canon_safe(body)))
 
 
+
+def _as_str(field, value):
+    """Coerce a scalar to str for a schema-typed string field; drop anything
+    else with a stderr note. None passes through."""
+    if value is None or isinstance(value, str):
+        return value
+    if isinstance(value, (int, float, bool)):
+        return str(value)
+    sys.stderr.write("halo-record: %s=%r is not a string; dropped\n" % (field, value))
+    return None
+
+
+def _norm_caller_findings(findings):
+    """Caller-supplied findings are sealed as given (LIMITS §13), but never in a
+    shape the verifier rejects or the recorder cannot rank: entries must be
+    mappings with a ``type``; a missing/unknown ``severity`` becomes INFO.
+    A non-list is dropped (returns None so the recorder scans instead)."""
+    if not isinstance(findings, list):
+        sys.stderr.write(
+            "halo-record: findings=%r is not a list; ignored, the recorder's own scan applies\n"
+            % (findings,))
+        return None
+    out = []
+    for f in findings:
+        if not isinstance(f, dict) or not f.get("type"):
+            sys.stderr.write("halo-record: finding %r lacks a type; dropped\n" % (f,))
+            continue
+        # Only the schema's three fields survive, and a caller-supplied sample
+        # goes through the same masking as everything else the record stores.
+        g = {"type": str(f["type"])}
+        sev = f.get("severity")
+        g["severity"] = sev if isinstance(sev, str) and sev in SEVERITY_RANK else "INFO"
+        sample = f.get("sample")
+        if isinstance(sample, (str, int, float, bool)):
+            g["sample"] = redact_text(str(sample))[:120]
+        out.append(g)
+    return out
+
 def build(action_type, category, tool=None, tool_input=None, *,
           session_id="local", agent=None, scope=None, decision=None,
           approver=None, findings=None, outcome=None, ts=None,
@@ -349,6 +410,33 @@ def build(action_type, category, tool=None, tool_input=None, *,
         raise ValueError("action.type must be one of %s" % sorted(ACTION_TYPES))
     if category not in CATEGORIES:
         raise ValueError("action.category must be one of %s" % sorted(CATEGORIES))
+
+    # Schema-typed string fields: a scalar is coerced to str; anything else is
+    # dropped with a note rather than sealed into a record that can never
+    # verify (an append-only chain has no undo).
+    tool = _as_str("tool", tool)
+    scope = _as_str("authorization.scope", scope)
+    approver = _as_str("authorization.approver", approver)
+    session_id = _as_str("session_id", session_id) or "local"
+    if isinstance(agent, str):
+        agent = {"id": agent, "name": agent}
+    elif isinstance(agent, dict):
+        agent = dict(agent)
+        for k in ("id", "name", "version", "model", "model_version"):
+            v = agent.get(k)
+            if v is None or isinstance(v, str):
+                continue
+            if isinstance(v, (int, float, bool)):
+                agent[k] = str(v)
+            else:
+                sys.stderr.write("halo-record: agent.%s=%r is not a scalar; recorded as unknown\n" % (k, v))
+                agent = None
+                break
+    elif agent is not None:
+        sys.stderr.write("halo-record: agent=%r is not a mapping; recorded as unknown\n" % (agent,))
+        agent = None
+    if findings is not None:
+        findings = _norm_caller_findings(findings)
 
     action = {"type": action_type, "category": category}
     if tool is not None:

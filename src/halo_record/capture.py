@@ -123,7 +123,7 @@ class record_call:
 
     def __init__(self, recorder=None, tool=None, tool_input=None, *, category="security",
                  action_type="tool_call", scope=None, session_id="local",
-                 agent=None, decision="allowed", approver=None,
+                 agent=None, decision=None, approver=None,
                  subject=None, summaries=True, principal=None, parent_id=None,
                  threats=None, data=None, verification=None, authority=None):
         self.recorder = recorder
@@ -174,7 +174,7 @@ class record_call:
 
 def record(recorder=None, *, category="security", action_type="tool_call",
            scope=None, tool=None, session_id="local", agent=None,
-           decision="allowed", approver=None, subject=None, summaries=True,
+           decision=None, approver=None, subject=None, summaries=True,
            principal=None, parent_id=None, threats=None, data=None):
     """Decorator that records every call to a tool function.
 

@@ -10,6 +10,6 @@ You will get a human reply within 48 hours. Please give us a chance to ship a fi
 
 ## Scope notes
 
-- The recorder makes no network calls except the opt-in witness anchor. Anything that causes record contents to leave the host is a vulnerability.
+- The recorder makes no network calls except the three opt-in ones in PRIVACY.md (witness anchor, checkpoint fetch, RFC 3161 timestamp). Anything else that causes record contents to leave the host is a vulnerability.
 - Raw tool arguments must never be written to a chain. Any path that lands unredacted input in a record is a vulnerability.
 - Integrity claims are load-bearing: any way to alter a chain that still passes `halo verify`, or to fool a completeness check against an honest witness, is a critical finding and we would genuinely love to hear about it.

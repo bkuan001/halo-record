@@ -313,8 +313,9 @@ after the mapping is gone, and ends with questions a reviewer should ask.
 Record a model call (the buyer's first question: "which model saw my data?"):
 
 ```python
-from halo_record import record_model_call
+from halo_record import Recorder, record_model_call
 
+rec = Recorder("audit.jsonl")
 record_model_call(rec, provider="anthropic", model="claude-sonnet-4-6",
                   zdr=True, purpose="draft support reply",
                   subject="acme")   # tool=model.generate, scope=model:anthropic

@@ -36,7 +36,7 @@ def classify_tool(tool_name):
 def record_tool_call(recorder, tool_name, tool_input=None, *, response=None,
                      error=None, agent=None, cls=None, action_type=None,
                      category=None, scope=None, session_id="local",
-                     decision="allowed", approver=None, subject=None,
+                     decision=None, approver=None, subject=None,
                      source=None, summaries=True):
     """Build and append one record for a completed tool call. ``response`` and
     ``error`` are mutually exclusive (error wins); the outcome is derived the

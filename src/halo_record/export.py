@@ -357,18 +357,24 @@ def export(log_path, out_path, *, start=None, end=None, tools=None,
            manifest_path=None, out=print):
     """Verify the chain, then write the windowed CSV + manifest.
 
-    Returns 0 on success, 1 if the chain fails verification (nothing is
-    written in that case: no evidence file from a broken chain)."""
+    Returns 0 on success, 1 if the chain fails verification, 3 if it holds no
+    records (nothing is written in either case: no evidence file from a broken
+    or empty chain), 2 if the chain file cannot be read."""
     silent = lambda *a, **k: None  # noqa: E731
+    real_path = os.path.expanduser(str(log_path))
     # Snapshot the chain once, so verification, the exported rows, the head
     # hash and source_log_sha256 all describe the same bytes even if a
     # recorder appends while the export runs.
-    with open(log_path, "rb") as fh:
-        snapshot = fh.read()
+    try:
+        with open(real_path, "rb") as fh:
+            snapshot = fh.read()
+    except OSError as exc:
+        out(f"REFUSED: {log_path} is not a readable chain file ({exc.strerror}); no export written.")
+        return 2
     source_log_sha256 = hashlib.sha256(snapshot).hexdigest()
     import tempfile
     snap = tempfile.NamedTemporaryFile(prefix=".halo-export-", suffix=".jsonl",
-                                       dir=os.path.dirname(os.path.abspath(str(log_path))) or None,
+                                       dir=os.path.dirname(os.path.abspath(real_path)) or None,
                                        delete=False)
     try:
         snap.write(snapshot)
