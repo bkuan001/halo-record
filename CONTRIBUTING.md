@@ -14,3 +14,17 @@ Contributions are welcome — issues, discussions, and pull requests alike.
 ## Process
 
 Every PR gets a full read and a CI run. Expect review comments — they're engagement, not rejection. Response time is usually within a day or two.
+
+## Licensing and sign-off
+
+This project is licensed under [Apache-2.0](LICENSE). By contributing you agree that your contribution is licensed under the same terms (Apache-2.0 §5: contributions are licensed inbound exactly as the project is licensed outbound). You keep the copyright in what you write.
+
+Every commit must carry a Developer Certificate of Origin sign-off — the one-line statement that you have the right to submit the code under this license. The text you are certifying is the [Developer Certificate of Origin 1.1](https://developercertificate.org/). Add it with:
+
+```
+git commit -s
+```
+
+which appends `Signed-off-by: Your Name <you@example.com>` using your git identity. A CI check declines pull requests whose commits lack the line; `git commit --amend -s` or `git rebase --signoff` adds it after the fact.
+
+Trademarks are not covered by the license (Apache-2.0 §6): the name "Halo" and the project's marks stay with the project.
