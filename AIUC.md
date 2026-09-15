@@ -8,6 +8,8 @@ Three things this document is not:
 - **Not a compliance claim.** Whether any evidence is sufficient for any control in any deployment is a determination for the certifying auditor. This maps what the record *contains*, not what an audit will *accept*.
 - **Not a completeness claim.** A Runtime Record documents what flowed through the recorder while it was running. See [LIMITS.md](https://github.com/bkuan001/halo-record/blob/main/LIMITS.md) for the capture boundary.
 
+Audit partners we've worked with say it can automate up to 25% of an AIUC-1 audit today.
+
 **Legend** — *Direct*: the record or its tooling is itself the evidence class the sub-control names. *Contributing*: the record supplies part of the evidence; the operator supplies the rest (the system, workflow, or documentation around it). *Out of scope*: halo-record does not address this by design.
 
 ---
