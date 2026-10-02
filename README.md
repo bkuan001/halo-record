@@ -17,7 +17,7 @@ You are being asked to put a recorder inside your agent. You should not take tha
 - **Zero runtime dependencies.** Standard library only. `pip install halo-record` installs exactly one package.
 - **No network calls**, except three opt-in ones — anchoring to a witness (sends the subject id, a record count, and two chain fingerprints — the head and the chain root), reading a witness's checkpoints back (sends the subject id), and the RFC 3161 timestamp (sends only a checkpoint's state hash to a Timestamp Authority). All are off unless you invoke them; record contents never leave your infrastructure.
 - **Raw tool arguments are hashed, with a redacted summary alongside.** Arguments are stored as a canonical hash plus a summary: the argument text with known secret and PII patterns masked, capped at 200 characters. A short input that matches no pattern appears in the summary in full; hash-only mode (`summaries=False`) keeps no summary at all. Redaction is best-effort (regex over common secret and PII formats plus an entropy catch-all): treat it as defense-in-depth, not a guarantee. Outcome fields you supply beyond `summary` seal as given (LIMITS §13).
-- **Small enough to audit.** ~5,300 lines of Python (code lines, not counting blanks and comments). Read all of it in an afternoon.
+- **Small enough to audit.** ~8,000 lines of Python, including the report page's embedded JavaScript and CSS (code lines, not counting blanks, comments, and docstrings). Read all of it in a day.
 - **Apache-2.0.**
 - **The paperwork is first-class.** [LIMITS.md](https://github.com/bkuan001/halo-record/blob/main/LIMITS.md) (what the chain can't prove), [PRIVACY.md](https://github.com/bkuan001/halo-record/blob/main/PRIVACY.md) (what records contain and what leaves your machine), [RETENTION.md](https://github.com/bkuan001/halo-record/blob/main/RETENTION.md) (operating under a retention policy), and [REVIEWERS.md](https://github.com/bkuan001/halo-record/blob/main/REVIEWERS.md) — the four-command independent check plus a citation format for review findings.
 
@@ -30,7 +30,7 @@ What each layer proves — the load-bearing distinction in this project ([LIMITS
 | Detect missing/late checkpoints | — | ✔ (agreed cadence) | ✔ |
 | Prove every action was recorded | — | — | depends on capture boundary |
 
-**See one before you install:** [a sample Runtime Report](https://bkuan001.github.io/halo-record/sample-report.html) — fictional data, real chain, and it re-verifies itself in your browser while you watch.
+**See one before you install:** [a sample Runtime Report](https://bkuan001.github.io/halo-record/sample-report.html) — fictional data, real chain, and its script re-computes the embedded records' hash chain in your browser when you open it.
 
 ## 60-second demo
 

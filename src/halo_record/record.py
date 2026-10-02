@@ -440,8 +440,11 @@ def build(action_type, category, tool=None, tool_input=None, *,
     """Construct a v0.1 record (without integrity.hash filled in).
 
     ``tool_input`` is hashed (canonical) and, by default, a redacted summary is
-    stored; raw arguments never enter the record. If ``findings`` is None and
-    ``tool_input`` is given, the input is scanned automatically.
+    stored; argument text enters the record only through that summary (at most
+    200 characters; a short input that matches no pattern appears as written,
+    and ``summaries=False`` stores none). If ``findings`` is None, the input,
+    the outcome, and caller-defined outcome and ``data`` fields are scanned
+    automatically.
 
     ``subject`` (a str id or ``{"id", "name"}`` dict) tags the record with the
     tenant/customer it belongs to — the segmentation key. ``authority`` may carry

@@ -7,7 +7,8 @@ The rebuilt chain verifies internally — so hash-chaining alone proves
 tamper-evidence, **not completeness**. ("Did you show me every record, or a
 curated subset?")
 
-The notary closes that gap. A neutral party (Halo) periodically *witnesses* each
+The notary closes that gap. A party the vendor does not control (none is
+hosted by Halo today; see LIMITS.md section 1) periodically *witnesses* each
 chain's head: it records ``(chain_root, count, head, ts)`` in its own append-only
 log that the vendor does not control. To later hide record ``k``, the vendor
 would have to rewrite history on the witness log too. Completeness

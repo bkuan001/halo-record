@@ -363,7 +363,8 @@ def main(argv=None):
 
     p_report = sub.add_parser(
         "report",
-        help="render one tenant's JSONL chain as a self-verifying HTML Runtime Report")
+        help="render one tenant's JSONL chain as an HTML Runtime Report whose script "
+             "re-computes the embedded records' hash chain in the browser")
     p_report.add_argument("log", help="path to the .jsonl log (one subject/chain)")
     p_report.add_argument("-o", "--out", help="output .html path (default: alongside the log)")
     p_report.add_argument("-w", "--witness",

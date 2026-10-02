@@ -62,7 +62,7 @@ halo-record is a recorder and a verifier. It produces evidence that actions occu
 - **Enforcement gates** — input/output filtering (B005, C003–C006), tool authorization and rate limits (D003.1/.2), access controls (B007), endpoint anti-scraping (B004), deployment-environment security (B008).
 - **Testing** — adversarial, harmful-output, out-of-scope, hallucination, and tool-call testing, first- or third-party (B001, C002, C010–C012, D002, D004, F001–F002).
 
-An audit needs all of these. The record's role is narrower: when those controls act — a filter blocks, a human approves, a tool executes — the record is the tamper-evident account of what happened.
+An audit needs all of these. The record's role is narrower: when those controls act — a filter blocks, a human approves, a tool executes — the record is the tamper-evident record of what happened under the declared capture surface.
 
 ---
 

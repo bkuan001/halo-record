@@ -1,4 +1,5 @@
-"""Render one tenant's runtime record as a shareable, self-verifying web page.
+"""Render one tenant's runtime record as a shareable web page whose script
+re-computes the embedded records' hash chain in the viewer's browser.
 
 ``halo report customer.jsonl -o customer.html`` produces a single self-contained
 HTML file (no build step, no external JS) that:

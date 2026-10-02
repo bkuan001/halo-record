@@ -9,7 +9,10 @@ pip install halo-record                      # zero dependencies; the whole inst
 halo verify audit.jsonl                      # integrity: nothing edited (exit 0 = pass, 1 = fail)
 halo anchor audit.jsonl --remote https://<witness> --check --expect-subject <customer-id>
                                              # completeness, fetched from the witness yourself, under the
-                                             # customer id YOU expect (0 = complete, 1 = incomplete, 3 = unwitnessed)
+                                             # customer id YOU expect (0 = complete; 1 = incomplete, or the
+                                             # check could not run: an unreachable witness, a refused read
+                                             # key, an unreadable chain; 2 = a local witness file that does
+                                             # not exist; 3 = unwitnessed)
 halo report audit.jsonl -o report.html --expect-subject <customer-id> --witness-url https://<witness>
                                              # your own render of the report from the JSONL
 ```
@@ -26,6 +29,10 @@ For a checkpoint's RFC 3161 timestamp, validate the TSA signature with a standar
 - **`--check` COMPLETE** — every checkpoint the witness holds still matches the presented chain. The strength of this verdict is exactly the independence of the witness: a checkpoint *handed to you by the operator* proves nothing — fetch it from the witness yourself, and ask who operates the witness.
 - **UNWITNESSED** — the chain was never anchored; completeness is simply unknown, not failed.
 - A chain with no `subject` carries a stated caveat in the verdict: its witness key (`chain_root`) changes if the first record is dropped.
+
+## Policy verdicts
+
+A policy verdict names its rules by `Policy sha256 …`: the SHA-256 of the policy file it was computed from. Reproduce it from the file you hold with `shasum -a 256 policy.json` (or `sha256sum policy.json`; on Windows, `Get-FileHash policy.json`). For a bundled pack run by name, hash `halo_record/policies/<name>.json` in the installed package. On a report page, the rules are the policy text embedded in the page by whoever generated it; the page hashes that text, so a digest that differs from your file's means the verdict was computed under different rules. To see the verdict under your own copy, run `halo policy audit.jsonl policy.json` yourself.
 
 ## What not to accept
 

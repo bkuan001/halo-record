@@ -162,7 +162,11 @@ policy format: a JSON list of rules, or {"rules": [...]} (optional "name",
   require          a selected record that does not match this is a violation
   expect_evidence  true: no selected record at all is an evidence gap
 Every rule needs forbid, require, or expect_evidence. Unknown keys, unknown
-matchers, and field paths that are not Runtime Record fields are rejected.
+matchers, field paths that are not Runtime Record fields, values a field cannot
+hold (outside its allowed set, the wrong type, null, non-finite), matchers that
+do not fit the field, contradictory matchers, and repeated JSON keys are
+rejected. A verdict names the policy by the SHA-256 of its file
+(shasum -a 256 <file>).
 Fields are dotted record paths; "[]" fans out over a list
 (findings[].type, threats[].type). Matchers: a bare value (equality), or
 {"eq"|"ne"|"in"|"nin"|"contains"|"exists"|"gt"|"gte"|"lt"|"lte": value}.
