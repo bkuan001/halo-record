@@ -1111,8 +1111,10 @@ class TenantRecorder:
         found = set()
         if not os.path.exists(path):
             return found
-        with open(path, "r", encoding="utf-8", errors="replace") as fh:
-            for line in fh:
+        # Split the way the verifier does (verify.read_log_lines): on "\n"
+        # only, a CR kept as JSON whitespace, a leading BOM skipped.
+        with open(path, "r", encoding="utf-8-sig", errors="replace", newline="") as fh:
+            for line in fh.read().split("\n"):
                 if not line.strip():
                     continue
                 try:
