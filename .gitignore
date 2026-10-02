@@ -20,3 +20,6 @@ CLAUDE.local.md
 # Recorded agent data — the recorder emits .jsonl at runtime; keep real records out of git
 # (test fixtures are built inline as dicts; the only tracked .json is the schema)
 *.jsonl
+
+# Test fixtures are data the suite reads; keep them tracked.
+!tests/fixtures/**/*.jsonl
