@@ -24,14 +24,15 @@ from . import _view
 
 
 def _load(path):
+    from .verify import _parse_int
     lines = read_log_lines(path)
     records = []
     for n, ln in enumerate(lines, start=1):
         try:
-            records.append(json.loads(ln))
-        except json.JSONDecodeError as e:
+            records.append(json.loads(ln, parse_int=_parse_int))
+        except (ValueError, RecursionError) as e:
             raise ValueError(
-                "record %d is not valid JSON (%s) — run `halo verify %s` for "
+                "record %d is not readable (%s) — run `halo verify %s` for "
                 "the full picture" % (n, e, path)) from e
     return records
 
@@ -1228,6 +1229,9 @@ def write_report(log_path, out_path=None, witness_log=None, witness_url=None,
     unchecked one. Pass a dict as ``status`` to receive ``completeness`` (the
     ``anchor.verify_completeness`` result, or None when no witness was named)
     and ``chain_records``."""
+    if witness_log and not os.path.isfile(os.path.expanduser(str(witness_log))):
+        raise ValueError("witness file %s does not exist; refusing to render a report "
+                         "that would read as not anchored" % witness_log)
     records = _load(log_path)
     checkpoints = None
     if witness_log:

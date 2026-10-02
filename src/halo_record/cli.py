@@ -161,6 +161,16 @@ def _cmd_policy(args):
 
 
 def _cmd_anchor(args):
+    # Unreadable input (a missing file, a torn line, an integer too long to
+    # read) is reported in one line and fails closed with exit 1.
+    try:
+        return _anchor(args)
+    except (ValueError, OSError, RecursionError) as e:
+        print("halo anchor: cannot read %s: %s" % (args.log, e), file=sys.stderr)
+        return 1
+
+
+def _anchor(args):
     from .anchor import (Notary, verify_completeness, _subject_id,
                          checkpoint, attach_timestamp, TimestampError)
     from .anchor import chain_root as _chain_root
@@ -205,6 +215,10 @@ def _cmd_anchor(args):
         return 2
     notary = Notary(args.witness)
     if args.check:
+        import os
+        if not os.path.isfile(args.witness):
+            print("halo anchor: witness file %s does not exist" % args.witness, file=sys.stderr)
+            return 2
         result = verify_completeness(records, notary.checkpoints(),
                                      expected_subject=args.expect_subject)
         status = {True: "COMPLETE", False: "INCOMPLETE", None: "UNWITNESSED"}[result["ok"]]
@@ -278,7 +292,12 @@ def _cmd_demo(args):
 
 def _cmd_witness_serve(args):
     from .witness import serve
-    return serve(args.store, host=args.host, port=args.port)
+    try:
+        return serve(args.store, host=args.host, port=args.port)
+    except OSError as e:
+        print("halo witness-serve: cannot serve on %s:%s (%s)" % (args.host, args.port, e),
+              file=sys.stderr)
+        return 1
 
 
 def main(argv=None):
