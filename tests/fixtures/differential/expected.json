@@ -2,6 +2,7 @@
   "astral.jsonl": true,
   "big_int.jsonl": false,
   "bom.jsonl": true,
+  "bom_line.jsonl": false,
   "bom_midfile.jsonl": false,
   "cr_only_separators.jsonl": false,
   "cr_whitespace.jsonl": true,
@@ -15,5 +16,6 @@
   "line_separators.jsonl": true,
   "lone_surrogate.jsonl": true,
   "long_int_digits.jsonl": false,
-  "valid.jsonl": true
+  "valid.jsonl": true,
+  "whitespace_line.jsonl": true
 }
