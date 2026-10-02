@@ -82,7 +82,8 @@ def _cmd_export(args):
     for value in (args.tool or []):
         tools.extend(part for part in value.split(",") if part.strip())
     return export(args.log, args.out, start=start, end=end, tools=tools or None,
-                  manifest_path=args.manifest)
+                  manifest_path=args.manifest, witness_log=args.witness,
+                  witness_url=args.witness_url, expected_subject=args.expect_subject)
 
 
 def _cmd_hook(args):
@@ -100,14 +101,30 @@ def _cmd_report(args):
         print(e)
         return 2
     out = args.out or (args.log.rsplit(".", 1)[0] + ".html")
+    status = {}
     try:
         _, count = write_report(args.log, out, witness_log=args.witness,
                                 witness_url=args.witness_url, policy_path=args.policy,
-                                start=start, end=end, expected_subject=args.expect_subject)
+                                start=start, end=end, expected_subject=args.expect_subject,
+                                status=status)
     except (ValueError, OSError) as e:
         print("REFUSED: %s" % e)
         return 1
     print("wrote %s (%d records)" % (out, count))
+    # The exit code carries the verdict a script would otherwise have to read
+    # out of the HTML: 1 INCOMPLETE, 3 nothing attested / not witnessed.
+    comp = status.get("completeness")
+    if comp is not None and comp.get("ok") is False:
+        print("INCOMPLETE — the chain conflicts with the witness: %s" % json.dumps(comp),
+              file=sys.stderr)
+        return 1
+    if not status.get("chain_records"):
+        print("NOTE: 0 records — an empty chain; the report attests nothing.", file=sys.stderr)
+        return 3
+    if comp is not None and comp.get("ok") is None:
+        print("UNWITNESSED — the named witness holds no checkpoints for this chain; "
+              "completeness is not established: %s" % json.dumps(comp), file=sys.stderr)
+        return 3
     return 0
 
 
@@ -294,6 +311,14 @@ def main(argv=None):
                                "so the export discloses that it is a subset.")
     p_export.add_argument("--manifest", default=None,
                           help="manifest path (default: <out>.manifest.json)")
+    p_export.add_argument("-w", "--witness", default=None,
+                          help="local witness log to check completeness against; an "
+                               "INCOMPLETE chain is refused (exit 1)")
+    p_export.add_argument("--witness-url", default=None,
+                          help="hosted witness URL to check completeness against "
+                               "(unreachable = refused)")
+    p_export.add_argument("--expect-subject", default=None,
+                          help="the customer id you expect; refused if the chain carries another")
     p_export.set_defaults(func=_cmd_export)
 
     p_hook = sub.add_parser(

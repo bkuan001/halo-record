@@ -239,3 +239,157 @@ class StarterPackSemanticsTest(unittest.TestCase):
             pack = json.load(fh)
         rule = [r for r in pack["rules"] if r["id"] == "high-risk-writes-authorized"][0]
         self.assertNotIn("network", rule["description"])
+
+
+def _reseal(records):
+    from halo_record.canon import GENESIS_PREV, compute_hash
+    prev = GENESIS_PREV
+    out = []
+    for r in records:
+        r = json.loads(json.dumps(r))
+        r["integrity"]["prev_hash"] = prev
+        r["integrity"]["hash"] = compute_hash(r, prev)
+        prev = r["integrity"]["hash"]
+        out.append(r)
+    return out
+
+
+def _write_records(path, records):
+    with open(path, "w", encoding="utf-8") as fh:
+        for r in records:
+            fh.write(json.dumps(r, separators=(",", ":")) + "\n")
+
+
+class _WitnessedChain(unittest.TestCase):
+    """A 4-record chain witnessed at its head, then a copy with record 2
+    deleted and the chain re-sealed (verifies on its own; the witness catches it)."""
+
+    def setUp(self):
+        from halo_record.anchor import Notary
+        self.d = tempfile.mkdtemp()
+        self.log = os.path.join(self.d, "c.jsonl")
+        recs = _chain(self.log, 4)
+        self.witness = os.path.join(self.d, "w.jsonl")
+        Notary(self.witness).witness(recs)
+        self.resealed = os.path.join(self.d, "rs.jsonl")
+        _write_records(self.resealed, _reseal(recs[:1] + recs[2:]))
+        self.assertTrue(verify_log(self.resealed, out=lambda *a: None))
+
+
+class ReportCompletenessExitTest(_WitnessedChain):
+    def test_incomplete_report_exits_nonzero_and_says_so_on_stderr(self):
+        code, out, err = _run(["report", self.resealed, "-o", os.path.join(self.d, "r.html"),
+                               "-w", self.witness])
+        self.assertEqual(code, 1)
+        self.assertIn("INCOMPLETE", err)
+
+    def test_complete_report_exits_zero(self):
+        code, out, err = _run(["report", self.log, "-o", os.path.join(self.d, "r.html"),
+                               "-w", self.witness])
+        self.assertEqual(code, 0, out + err)
+
+    def test_unwitnessed_chain_with_a_witness_named_is_not_a_clean_exit(self):
+        empty = os.path.join(self.d, "none.jsonl")
+        open(empty, "w").close()
+        code, out, err = _run(["report", self.log, "-o", os.path.join(self.d, "r.html"),
+                               "-w", empty])
+        self.assertEqual(code, 3)
+        self.assertIn("UNWITNESSED", err)
+
+    def test_empty_chain_report_is_not_a_clean_exit(self):
+        empty = os.path.join(self.d, "e.jsonl")
+        open(empty, "w").close()
+        code, out, err = _run(["report", empty, "-o", os.path.join(self.d, "r.html")])
+        self.assertEqual(code, 3)
+
+    def test_unreachable_witness_url_fails_closed(self):
+        out_html = os.path.join(self.d, "r.html")
+        code, out, err = _run(["report", self.log, "-o", out_html,
+                               "--witness-url", "http://127.0.0.1:9/",
+                               "--from", "2000-01-01"])
+        self.assertNotEqual(code, 0)
+        self.assertIn("witness", (out + err).lower())
+        self.assertFalse(os.path.exists(out_html))
+
+    def test_window_page_flags_a_witness_longer_than_the_chain(self):
+        if not shutil.which("node"):
+            self.skipTest("node not installed")
+        from halo_record.report import _VERIFY_JS
+        from halo_record.canon import GENESIS_PREV
+        page = _VERIFY_JS % {"genesis": json.dumps(GENESIS_PREV),
+                             "window_json": json.dumps({"first": 1, "last": 2, "total": 3})}
+        funcs = page[:page.index("async function liveCheckpoints(")]
+        recs = [json.loads(l) for l in open(self.log) if l.strip()][:2]
+        cps = [{"count": 9, "head": "a" * 64}]
+        script = funcs + "\nconsole.log(JSON.stringify(completeness(%s, %s)));" % (
+            json.dumps(recs), json.dumps(cps))
+        js = os.path.join(self.d, "w.mjs")
+        open(js, "w").write(script)
+        res = json.loads(subprocess.run(["node", js], capture_output=True, text=True,
+                                        timeout=60).stdout)
+        self.assertIs(res["ok"], False)
+
+
+class ExportCompletenessTest(_WitnessedChain):
+    def _export(self, log, *extra):
+        out = os.path.join(self.d, "ev.csv")
+        code, o, e = _run(["export", log, "-o", out] + list(extra))
+        return code, o + e, out
+
+    def test_resealed_chain_is_refused_when_a_witness_is_named(self):
+        code, text, out = self._export(self.resealed, "--witness", self.witness)
+        self.assertEqual(code, 1)
+        self.assertIn("INCOMPLETE", text)
+        self.assertFalse(os.path.exists(out))
+
+    def test_manifest_carries_subject_witness_and_completeness(self):
+        code, text, out = self._export(self.log, "--witness", self.witness,
+                                       "--expect-subject", "acme")
+        self.assertEqual(code, 0, text)
+        m = json.load(open(out + ".manifest.json"))
+        self.assertEqual(m["completeness"]["status"], "COMPLETE")
+        self.assertEqual(m["subject"]["expected"], "acme")
+        self.assertEqual(m["subject"]["ids"], ["acme"])
+        self.assertEqual(m["witness"]["checkpoints"], 1)
+        self.assertIn("declared", m["chain"]["ts_source"])
+
+    def test_without_a_witness_the_manifest_says_completeness_was_not_checked(self):
+        code, text, out = self._export(self.log)
+        self.assertEqual(code, 0, text)
+        m = json.load(open(out + ".manifest.json"))
+        self.assertEqual(m["completeness"]["status"], "NOT_CHECKED")
+
+    def test_unexpected_subject_is_refused(self):
+        code, text, out = self._export(self.log, "--expect-subject", "globex")
+        self.assertEqual(code, 1)
+        self.assertFalse(os.path.exists(out))
+
+    def test_unreachable_witness_url_is_refused(self):
+        code, text, out = self._export(self.log, "--witness-url", "http://127.0.0.1:9/")
+        self.assertEqual(code, 1)
+        self.assertFalse(os.path.exists(out))
+
+
+class ExportColumnsTest(unittest.TestCase):
+    def test_verification_columns_are_exported(self):
+        import csv
+        from halo_record.export import export
+        d = tempfile.mkdtemp()
+        log = os.path.join(d, "c.jsonl")
+        Recorder(log).append(build("tool_call", "security", tool="pay",
+                                   verification={"status": "blocked", "verifier": "gate/2",
+                                                 "policy_ref": "p-7",
+                                                 "checked_at": "2026-06-01T00:00:00Z"}))
+        export(log, os.path.join(d, "o.csv"), out=lambda *a: None)
+        row = list(csv.DictReader(open(os.path.join(d, "o.csv"))))[0]
+        self.assertEqual(row["verification_status"], "blocked")
+        self.assertEqual(row["verification_verifier"], "gate/2")
+        self.assertEqual(row["verification_policy_ref"], "p-7")
+        self.assertEqual(row["verification_checked_at"], "2026-06-01T00:00:00Z")
+
+    def test_leading_whitespace_formula_vectors_are_neutralized(self):
+        from halo_record.export import _neutralize
+        for v in (" =1+1", "\n=cmd|' /C calc'!A0", "  @SUM(A1)", " +1", "\x0b=1"):
+            self.assertTrue(_neutralize(v).startswith("'"), repr(v))
+        self.assertEqual(_neutralize(" plain text"), " plain text")
+        self.assertEqual(_neutralize("ok"), "ok")

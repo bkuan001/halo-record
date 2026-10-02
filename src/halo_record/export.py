@@ -60,6 +60,11 @@ CSV_COLUMNS = [
     "approver",
     "scope",
     "authority_snapshot",
+    # what a verification / policy gate said at run time (as supplied)
+    "verification_status",
+    "verification_verifier",
+    "verification_policy_ref",
+    "verification_checked_at",
     # what was flagged
     "severity",
     "findings",
@@ -84,7 +89,9 @@ CSV_COLUMNS = [
 # Column dictionary carried in the manifest. Keep in step with CSV_COLUMNS
 # (test_manifest_column_notes_cover_every_column guards it).
 COLUMN_NOTES = {
-    "ts": {"source": "recorder", "blank": "never"},
+    "ts": {"source": "recorder", "blank": "never",
+           "note": "the recording host's clock when the record was built; sealed into the "
+                   "chain but not attested by a third party (see chain.ts_source)"},
     "action_type": {"source": "recorder", "blank": "never"},
     "category": {"source": "recorder", "blank": "never"},
     "tool": {"source": "recorder", "blank": "no tool named"},
@@ -105,6 +112,12 @@ COLUMN_NOTES = {
                  "note": "an assertion sealed as supplied; not tied to an identity provider"},
     "scope": {"source": "declared", "blank": "not supplied"},
     "authority_snapshot": {"source": "declared", "blank": "no authority snapshot sealed"},
+    "verification_status": {"source": "declared", "blank": "no verification claim supplied",
+                            "note": "allowed / blocked / modified / unverified, as the "
+                                    "reporting gate supplied it; not re-checked by the recorder"},
+    "verification_verifier": {"source": "declared", "blank": "not supplied"},
+    "verification_policy_ref": {"source": "declared", "blank": "not supplied"},
+    "verification_checked_at": {"source": "declared", "blank": "not supplied"},
     "severity": {"source": "recorder", "blank": "no findings",
                  "note": "highest redaction-scanner finding, not a risk rating"},
     "findings": {"source": "recorder", "blank": "no findings"},
@@ -228,16 +241,26 @@ def matches_tools(record, tools=None):
     return tool in {t.strip().lower() for t in tools if t and t.strip()}
 
 
+_FORMULA_START = ("=", "+", "-", "@")
+
+
 def _neutralize(value):
     """Defuse spreadsheet formula injection in a CSV cell.
 
     The export's target flow is "open in Excel/Sheets or upload to a GRC
     platform", and record fields (tool names, session ids, summaries) can be
     influenced by whatever the agent touched. A cell starting with ``=``,
-    ``+``, ``-``, ``@``, tab, or CR would execute as a formula there, so those
-    cells are prefixed with a single quote — the standard neutralization,
-    displayed by spreadsheets as plain text."""
-    if isinstance(value, str) and value[:1] in ("=", "+", "-", "@", "\t", "\r"):
+    ``+``, ``-``, ``@``, or a control character (tab, CR, LF, ...) — or whose
+    first non-whitespace character is a formula start, since some importers
+    trim leading whitespace — would execute as a formula there, so those cells
+    are prefixed with a single quote: the standard neutralization, displayed
+    by spreadsheets as plain text."""
+    if not isinstance(value, str) or not value:
+        return value
+    first = value[0]
+    if first in _FORMULA_START or (ord(first) < 32) or first == "\x7f":
+        return "'" + value
+    if first.isspace() and value.lstrip()[:1] in _FORMULA_START:
         return "'" + value
     return value
 
@@ -251,6 +274,8 @@ def _row(record):
     findings = record.get("findings") or []
     threats = record.get("threats") or []
     data = record.get("data") or {}
+    verification = record.get("verification")
+    verification = verification if isinstance(verification, dict) else {}
     row = {
         "ts": record.get("ts", ""),
         "record_id": record.get("record_id", ""),
@@ -300,13 +325,24 @@ def _row(record):
             else (record.get("source") or "")
         ),
         "authority_snapshot": authority.get("snapshot_id", ""),
+        "verification_status": verification.get("status", ""),
+        "verification_verifier": verification.get("verifier", ""),
+        "verification_policy_ref": verification.get("policy_ref", ""),
+        "verification_checked_at": verification.get("checked_at", ""),
         "hash": (record.get("integrity") or {}).get("hash", ""),
     }
     return {k: _neutralize(v) for k, v in row.items()}
 
 
+TS_SOURCE = ("declared: each record's ts is the recording host's clock, sealed into the "
+             "chain as written; it is not attested by a third party. An attested time "
+             "exists only where a witness checkpoint carries an RFC 3161 token (verify "
+             "it with openssl ts -verify).")
+
+
 def build_manifest(records, window_records, *, source_log, start=None, end=None,
-                   verified=None, csv_sha256=None, tools=None, source_log_sha256=None):
+                   verified=None, csv_sha256=None, tools=None, source_log_sha256=None,
+                   subject=None, witness=None, completeness=None):
     def _iso(dt):
         return dt.isoformat() if dt else None
 
@@ -349,7 +385,18 @@ def build_manifest(records, window_records, *, source_log, start=None, end=None,
             # head (integrity). It is NOT a completeness claim — records dropped
             # from the tail need an external witness (see LIMITS.md).
             "verified_scope": "integrity_relative_to_head",
+            "ts_source": TS_SOURCE,
         },
+        # Whose chain this is: the subject ids the records carry, and the id
+        # the exporter expected (when one was given; a mismatch is refused).
+        "subject": subject or {"ids": _subject_ids(records), "expected": None},
+        # Which witness completeness was checked against, if any.
+        "witness": witness,
+        # COMPLETE / UNWITNESSED / NOT_CHECKED (an INCOMPLETE chain is refused).
+        "completeness": completeness or {
+            "status": "NOT_CHECKED",
+            "note": "no witness was named; records removed and the chain re-sealed "
+                    "would not be visible here (export --witness / --witness-url)"},
     }
     if window_records:
         manifest["window"]["first_ts"] = window_records[0].get("ts")
@@ -359,13 +406,48 @@ def build_manifest(records, window_records, *, source_log, start=None, end=None,
     return manifest
 
 
+def _subject_ids(records):
+    from .report import _record_subject
+    return sorted({_record_subject(r) for r in records if isinstance(r, dict)},
+                  key=lambda x: json.dumps(x))
+
+
+def _completeness(records, *, witness_log=None, witness_url=None, expected_subject=None):
+    """(witness_info, completeness_result) for the named witness, or (None, None).
+    Raises ValueError when a named witness URL cannot be reached."""
+    from .anchor import Notary, verify_completeness, _subject_id, chain_root
+    if witness_log:
+        cps = Notary(witness_log).checkpoints_for(records)
+        info = {"kind": "local", "path": os.path.basename(str(witness_log))}
+    elif witness_url:
+        from .witness import fetch_checkpoints
+        subj = expected_subject if expected_subject is not None else _subject_id(records)
+        try:
+            cps = fetch_checkpoints(witness_url, subject=subj,
+                                    chain_root=(chain_root(records) if subj is None else None))
+        except Exception as e:
+            raise ValueError("the witness at %s could not be reached (%s)" % (witness_url, e))
+        info = {"kind": "url", "url": witness_url}
+    else:
+        return None, None
+    result = verify_completeness(records, cps, expected_subject=expected_subject)
+    info["checkpoints"] = result.get("witnessed", 0)
+    info["operator_note"] = ("completeness is independent only if this witness is operated "
+                             "by a party outside the vendor's control")
+    return info, result
+
+
 def export(log_path, out_path, *, start=None, end=None, tools=None,
-           manifest_path=None, out=print):
+           manifest_path=None, out=print, witness_log=None, witness_url=None,
+           expected_subject=None):
     """Verify the chain, then write the windowed CSV + manifest.
 
-    Returns 0 on success, 1 if the chain fails verification, 3 if it holds no
-    records (nothing is written in either case: no evidence file from a broken
-    or empty chain), 2 if the chain file cannot be read."""
+    Returns 0 on success, 1 if the chain fails verification, carries an
+    unexpected subject, conflicts with a named witness (INCOMPLETE), or the
+    named witness cannot be reached; 3 if it holds no records — nothing is
+    written in any of those cases — or if a named witness holds no checkpoints
+    for it (UNWITNESSED: the export is written and its manifest says so);
+    2 if the chain file cannot be read."""
     silent = lambda *a, **k: None  # noqa: E731
     real_path = os.path.expanduser(str(log_path))
     # Snapshot the chain once, so verification, the exported rows, the head
@@ -400,6 +482,26 @@ def export(log_path, out_path, *, start=None, end=None, tools=None,
     if not records:
         out(f"REFUSED: {log_path} holds 0 records — nothing to attest; no export written.")
         return 3
+    ids = _subject_ids(records)
+    if expected_subject is not None and ids != [expected_subject]:
+        out(f"REFUSED: {log_path} carries subject id(s) {json.dumps(ids)}, not exactly the "
+            f"expected {json.dumps(expected_subject)}; no export written.")
+        return 1
+    try:
+        witness_info, comp = _completeness(records, witness_log=witness_log,
+                                           witness_url=witness_url,
+                                           expected_subject=expected_subject)
+    except (ValueError, OSError) as e:
+        out(f"REFUSED: {e}; no export written.")
+        return 1
+    completeness = None
+    if comp is not None:
+        status = {True: "COMPLETE", False: "INCOMPLETE", None: "UNWITNESSED"}[comp.get("ok")]
+        if status == "INCOMPLETE":
+            out(f"REFUSED: INCOMPLETE — {log_path} conflicts with the witness "
+                f"({json.dumps(comp)}); no export written.")
+            return 1
+        completeness = {"status": status, "detail": comp}
     window = [r for r in records
               if in_window(r, start, end) and matches_tools(r, tools)]
     if not window:
@@ -419,6 +521,8 @@ def export(log_path, out_path, *, start=None, end=None, tools=None,
     manifest = build_manifest(
         records, window, source_log=log_path, start=start, end=end, verified=True,
         csv_sha256=csv_sha256, tools=tools, source_log_sha256=source_log_sha256,
+        subject={"ids": ids, "expected": expected_subject},
+        witness=witness_info, completeness=completeness,
     )
     m_path = manifest_path or (str(out_path) + ".manifest.json")
     with open(m_path, "w", encoding="utf-8") as fh:
@@ -428,4 +532,13 @@ def export(log_path, out_path, *, start=None, end=None, tools=None,
         f"exported {len(window)} of {len(records)} records -> {out_path} "
         f"(manifest: {m_path}; chain head {manifest['chain']['head_hash'][:16]}...)"
     )
+    if completeness is None:
+        out("NOTE: completeness NOT CHECKED — no witness named; the manifest attests "
+            "integrity relative to the head only.")
+    elif completeness["status"] == "UNWITNESSED":
+        out("UNWITNESSED — the named witness holds no checkpoints for this chain; "
+            "the manifest records completeness as UNWITNESSED.")
+        return 3
+    else:
+        out("COMPLETE — every checkpoint the witness holds for this chain is present.")
     return 0

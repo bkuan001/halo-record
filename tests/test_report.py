@@ -67,8 +67,11 @@ class WriteReportTest(unittest.TestCase):
         d = tempfile.mkdtemp()
         _chain(d)
         out = os.path.join(d, "report.html")
-        write_report(os.path.join(d, "c.jsonl"), out,
-                     witness_url="https://witness.halo.dev")
+        # The witness is checked at generation; stand in for a reachable one.
+        from unittest import mock
+        with mock.patch("halo_record.witness.fetch_checkpoints", return_value=[]):
+            write_report(os.path.join(d, "c.jsonl"), out,
+                         witness_url="https://witness.halo.dev")
         with open(out) as fh:
             html = fh.read()
         cfg = json.loads(_extract(html, "halo-config"))

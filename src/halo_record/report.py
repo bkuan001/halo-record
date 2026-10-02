@@ -453,6 +453,11 @@ function completeness(records, cps){
   for (const c of cps) if (c.count > latest) latest = c.count;
   if (!WINDOW && records.length < latest)
     return {ok:false, why:"truncated below witnessed length", have:records.length, witnessed:latest};
+  // A window is cut from a chain of WINDOW.total records; a witness holding a
+  // longer chain means records exist that this report's source chain lacks.
+  if (WINDOW && latest > WINDOW.total)
+    return {ok:false, why:"the witness holds " + latest + " records but this report was cut from a " +
+            WINDOW.total + "-record chain", have:WINDOW.total, witnessed:latest};
   let inWin = 0, before = 0, beyond = 0;
   for (const c of cps){
     const n = c.count;
@@ -1340,7 +1345,8 @@ def render(records, checkpoints=None, *, witness_url=None, policy=None, window=N
 
 
 def write_report(log_path, out_path=None, witness_log=None, witness_url=None,
-                 policy_path=None, start=None, end=None, expected_subject=None):
+                 policy_path=None, start=None, end=None, expected_subject=None,
+                 status=None):
     """Render ``log_path`` to HTML. ``witness_log`` embeds a local notary's
     checkpoints (offline fallback / static report). ``witness_url`` points the
     page at a hosted Halo witness it fetches live, so completeness is checked
@@ -1354,21 +1360,30 @@ def write_report(log_path, out_path=None, witness_log=None, witness_url=None,
     fails verification), then only the records inside the window are embedded:
     the browser re-verifies the window against its anchor (the chain head
     immediately before the window), and records outside the window never enter
-    the page."""
+    the page.
+
+    When a witness is named (``witness_log`` or ``witness_url``) the full
+    chain's completeness is checked here, at generation, and an unreachable
+    witness URL refuses the report (ValueError) rather than rendering an
+    unchecked one. Pass a dict as ``status`` to receive ``completeness`` (the
+    ``anchor.verify_completeness`` result, or None when no witness was named)
+    and ``chain_records``."""
     records = _load(log_path)
     checkpoints = None
     if witness_log:
         from .anchor import Notary
         checkpoints = Notary(witness_log).checkpoints_for(records)
     elif witness_url:
+        from .witness import fetch_checkpoints
+        subj = expected_subject if expected_subject is not None else _subject_id(records)
         try:
-            from .witness import fetch_checkpoints
-            subj = _subject_id(records)
             checkpoints = fetch_checkpoints(
                 witness_url, subject=subj,
                 chain_root=(_chain_root(records) if subj is None and records else None))
-        except Exception:
-            checkpoints = None  # live fetch happens in-browser regardless
+        except Exception as e:
+            raise ValueError(
+                "%s: the witness at %s could not be reached (%s); refusing to render a "
+                "report whose completeness was not checked" % (log_path, witness_url, e))
     policy = None
     if policy_path:
         from .policy import load_policy
@@ -1383,6 +1398,14 @@ def write_report(log_path, out_path=None, witness_log=None, witness_url=None,
     chain_ok = verify_records(records)
     full_records = records
     window = None
+    completeness = None
+    if witness_log or witness_url:
+        from .anchor import verify_completeness
+        completeness = verify_completeness(records, checkpoints or [],
+                                           expected_subject=expected_subject)
+    if status is not None:
+        status["completeness"] = completeness
+        status["chain_records"] = len(records)
     if start is None and end is None and not chain_ok:
         raise ValueError(
             "%s: the chain does not verify (run halo verify); refusing to render a report "
@@ -1441,13 +1464,10 @@ def write_report(log_path, out_path=None, witness_log=None, witness_url=None,
                   "to": end.isoformat() if end else None}
         # The page can only re-check checkpoints that fall inside the window, so
         # the full chain is checked against the witness here, at generation.
-        if checkpoints:
-            from .anchor import verify_completeness
-            full = verify_completeness(full_records, checkpoints, expected_subject=expected_subject)
-            if full.get("ok") is False:
-                raise ValueError(
-                    "%s: the chain conflicts with the witness (%s); refusing to render a "
-                    "windowed report that could not show it" % (log_path, full.get("why")))
+        if completeness is not None and completeness.get("ok") is False:
+            raise ValueError(
+                "%s: the chain conflicts with the witness (%s); refusing to render a "
+                "windowed report that could not show it" % (log_path, completeness.get("why")))
         records = win_records
     html_doc = render(records, checkpoints, witness_url=witness_url, policy=policy,
                       window=window)
