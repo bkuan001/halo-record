@@ -6,7 +6,6 @@ result (so a retry cannot repeat the tool's side effects)."""
 import asyncio
 import contextlib
 import io
-import json
 import os
 import tempfile
 import unittest

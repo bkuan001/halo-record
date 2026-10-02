@@ -4,7 +4,6 @@ line ends, a leading byte-order mark, and backdated timestamps."""
 
 import contextlib
 import io
-import json
 import os
 import tempfile
 import unittest

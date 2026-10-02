@@ -7,7 +7,7 @@ confirms the RFC 8785 + SHA-256 hash chain is intact.
 import json
 import os
 import re
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 
 from .canon import GENESIS_PREV, canon_issues, compute_hash
 
