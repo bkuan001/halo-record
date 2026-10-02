@@ -11,5 +11,6 @@ You will get a human reply within 48 hours. Please give us a chance to ship a fi
 ## Scope notes
 
 - The recorder makes no network calls except the three opt-in ones in PRIVACY.md (witness anchor, checkpoint fetch, RFC 3161 timestamp). Anything else that causes record contents to leave the host is a vulnerability.
-- Raw tool arguments must never be written to a chain. Any path that lands unredacted input in a record is a vulnerability.
-- Integrity claims are load-bearing: any way to alter a chain that still passes `halo verify`, or to fool a completeness check against an honest witness, is a critical finding and we would genuinely love to hear about it.
+- Tool arguments are stored as a canonical hash plus a redacted summary of at most 200 characters. A short argument that matches no secret or PII pattern appears in that summary as written; hash-only mode (`summaries=False`) stores no summary (LIMITS §6, §13). Any path that stores argument text beyond that summary, or a value the scanner detects without masking it, is a vulnerability.
+- Integrity claims are load-bearing: any way to alter a chain that still passes `halo verify`, or to fool a completeness check against a witness that follows the protocol, is a critical finding and we would genuinely love to hear about it.
+- Records are written after the action runs. A failed write passes the action's result through and is reported on stderr (strict mode, `HALO_STRICT_RECORDING=1`, raises instead); LIMITS §18 describes both. A path that loses a record without that stderr report is a vulnerability.

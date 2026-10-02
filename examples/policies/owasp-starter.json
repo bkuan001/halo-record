@@ -91,11 +91,22 @@
         "findings[].type": {
           "in": [
             "api_key",
-            "private_key",
+            "aws_secret_key",
             "bearer_token",
-            "db_conn",
+            "bot_token",
+            "credential_field",
             "credit_card",
-            "ssn"
+            "db_conn",
+            "gcp_api_key",
+            "github_token",
+            "high_entropy_secret",
+            "iban",
+            "jwt",
+            "password",
+            "private_key",
+            "ssn",
+            "stripe_key",
+            "webhook_url"
           ]
         }
       }
@@ -104,17 +115,11 @@
       "id": "pii-egress-controlled",
       "source": "OWASP LLM02 / Sensitive Information Disclosure",
       "severity": "HIGH",
-      "description": "Network actions that ran must not carry SSNs off the boundary. Actions recorded as denied or blocked did not egress and are out of scope.",
+      "description": "Network actions must not carry SSNs off the boundary. Only an outcome recorded as denied takes a record out of scope: a gate's report of blocked, or an authorization decision of denied, is the reporting layer's claim and does not show the action did not run (LIMITS.md section 11).",
       "when": {
         "action.type": "network",
-        "action.authorization.decision": {
-          "ne": "denied"
-        },
         "outcome.status": {
           "ne": "denied"
-        },
-        "verification.status": {
-          "ne": "blocked"
         }
       },
       "forbid": {

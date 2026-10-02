@@ -2,7 +2,7 @@
 
 A per-tenant hash chain is internally tamper-evident, but a vendor who hosts
 their *own* chain can drop a record and rebuild a chain that still verifies
-(see ``anchor`` for the full argument). The fix is an append-only witness the
+(see ``anchor`` for the full argument). The answer is an append-only witness the
 vendor does not control. ``anchor.Notary`` is that store on disk; this module
 puts it behind HTTP so vendors can anchor to a witness operated by someone
 other than themselves. "Complete" is a claim the buyer's security team can

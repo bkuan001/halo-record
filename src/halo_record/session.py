@@ -42,3 +42,39 @@ def bind_recorder(recorder):
 def reset_recorder(token):
     """Restore the previously-bound recorder."""
     _ACTIVE.reset(token)
+
+
+# --------------------------------------------------------------------------- #
+# When a record cannot be written
+# --------------------------------------------------------------------------- #
+
+# Records are written after the action runs. If writing one fails, the wrappers
+# (record_call, @record, trace, the framework adapters, the MCP wrapper, the
+# Claude Code hook) pass the action's own result or error through unchanged and
+# say on stderr which record is missing: raising instead would make a completed
+# action look failed, and a retry would repeat its side effects. Strict mode
+# raises the recording error instead, for callers that prefer an error to a
+# missing record and accept that risk.
+STRICT_RECORDING_ENV = "HALO_STRICT_RECORDING"
+
+
+def strict_recording(value=None):
+    """Whether a recording failure raises: ``value`` when it is given, else the
+    ``HALO_STRICT_RECORDING`` environment variable (1 / true / yes)."""
+    if value is not None:
+        return bool(value)
+    import os
+    return os.environ.get(STRICT_RECORDING_ENV, "").strip().lower() in ("1", "true", "yes")
+
+
+def recording_failed(what, exc, strict=None, note=""):
+    """Handle ``exc``, raised while recording ``what`` after the action ran:
+    raise it in strict mode, otherwise report it on stderr and return."""
+    if strict_recording(strict):
+        raise exc
+    import sys
+    sys.stderr.write(
+        "halo-record: FAILED to record %r (%s: %s); the action ran, but its record is "
+        "NOT in the evidence log. The action's own result or error is passed through "
+        "unchanged (set %s=1 to raise instead).%s\n"
+        % (what, type(exc).__name__, exc, STRICT_RECORDING_ENV, note))

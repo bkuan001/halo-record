@@ -19,7 +19,7 @@ try:  # POSIX inter-process append lock; on other platforms appends are
 except ImportError:  # pragma: no cover
     fcntl = None
 
-from .canon import CIRCULAR, GENESIS_PREV, MAX_DEPTH, TOO_DEEP, canon, compute_hash, input_hash, json_key, sha256_hex
+from .canon import CIRCULAR, GENESIS_PREV, MAX_DEPTH, TOO_DEEP, canon, compute_hash, input_hash, int_text, json_key, sha256_hex, sort_key
 from .redact import CREDENTIAL_MASK, SEVERITY_RANK, credential_value, mask_known_secrets, mask_secrets_only, pseudonymize_secrets, redact_fields, redact_text, scan, scan_fields, top_severity
 
 SCHEMA_VERSION = "0.1"
@@ -223,7 +223,7 @@ def _pii_types_from_findings(findings):
 _MAX_EXACT_JSON_INT = 2**53 - 1
 
 
-def _canon_safe(value, _depth=0, _active=None):
+def _canon_safe(value, _depth=0, _active=None, render=True):
     """Recursively make a value safe for RFC 8785 canonicalization, which permits
     only integer-valued numbers. A non-integer float is preserved as a string
     instead of crashing the recorder when the record is hashed, and an integer
@@ -238,7 +238,7 @@ def _canon_safe(value, _depth=0, _active=None):
     if isinstance(value, int):
         if -_MAX_EXACT_JSON_INT <= value <= _MAX_EXACT_JSON_INT:
             return value
-        return str(value)
+        return int_text(value)
     if isinstance(value, float):
         if value.is_integer():
             as_int = int(value)
@@ -248,6 +248,17 @@ def _canon_safe(value, _depth=0, _active=None):
         return str(value)
     if isinstance(value, str):
         return _no_lone_surrogates(value)
+    if value is None or not render and not isinstance(value, (dict, list, tuple)):
+        # ``render=False`` (the authority block) leaves a non-JSON value as is,
+        # so it fails at seal instead of being stored as its text.
+        return value
+    if isinstance(value, (set, frozenset)):
+        # Sets have no order or JSON form: a sorted list, as tool input renders them.
+        value = sorted(value, key=sort_key)
+    if not isinstance(value, (dict, list, tuple)):
+        # Bytes and other objects are stored as the text they render as (and
+        # masked like any other string before the record is sealed).
+        return _no_lone_surrogates(str(value))
     if isinstance(value, (dict, list, tuple)):
         # A cycle or runaway nesting in caller data is marked, not recursed
         # into, so it can neither crash the recorder nor the host.
@@ -268,9 +279,9 @@ def _canon_safe(value, _depth=0, _active=None):
                     while key in out:  # never let a normalized key overwrite another
                         key = "%s#%d" % (base, n)
                         n += 1
-                    out[key] = _canon_safe(v, _depth + 1, _active)
+                    out[key] = _canon_safe(v, _depth + 1, _active, render)
                 return out
-            return [_canon_safe(v, _depth + 1, _active) for v in value]
+            return [_canon_safe(v, _depth + 1, _active, render) for v in value]
         finally:
             _active.discard(id(value))
     return value
@@ -429,8 +440,11 @@ def build(action_type, category, tool=None, tool_input=None, *,
     """Construct a v0.1 record (without integrity.hash filled in).
 
     ``tool_input`` is hashed (canonical) and, by default, a redacted summary is
-    stored; raw arguments never enter the record. If ``findings`` is None and
-    ``tool_input`` is given, the input is scanned automatically.
+    stored; argument text enters the record only through that summary (at most
+    200 characters; a short input that matches no pattern appears as written,
+    and ``summaries=False`` stores none). If ``findings`` is None, the input,
+    the outcome, and caller-defined outcome and ``data`` fields are scanned
+    automatically.
 
     ``subject`` (a str id or ``{"id", "name"}`` dict) tags the record with the
     tenant/customer it belongs to — the segmentation key. ``authority`` may carry
@@ -536,10 +550,14 @@ def build(action_type, category, tool=None, tool_input=None, *,
     # sealed/served and so it can be scanned for secrets alongside the input.
     outcome_summary_raw = None
     outcome_scan = None
+    outcome_custom = None
     if outcome is not None:
         outcome = dict(outcome)
         outcome_scan = outcome.pop("_scan", None)
         outcome = _canon_safe(outcome)
+        # Caller-defined outcome keys are scanned like the rest of the record.
+        outcome_custom = {k: v for k, v in outcome.items()
+                          if k not in ("status", "summary", "hash")} or None
         if "summary" in outcome and outcome["summary"] is not None:
             outcome_summary_raw = str(outcome["summary"])
         if not summaries:
@@ -569,6 +587,12 @@ def build(action_type, category, tool=None, tool_input=None, *,
             findings += scan_fields(outcome_scan, _seen=seen)
         elif outcome_summary_raw is not None:
             findings += scan(outcome_summary_raw)
+        if outcome_custom is not None:
+            findings += scan_fields(outcome_custom, _seen=seen)
+        if isinstance(data, dict):
+            data_custom = {k: v for k, v in data.items() if k not in ("pii_types", "cross_region")}
+            if data_custom:
+                findings += scan_fields(_canon_safe(data_custom), _seen=seen)
     findings = findings or []
     if not summaries:
         # Hash-only records carry finding types and severities, never excerpts.
@@ -605,7 +629,7 @@ def build(action_type, category, tool=None, tool_input=None, *,
     if source is not None:
         record["source"] = source
     if authority is not None:
-        record["authority"] = _sanitize_authority(_canon_safe(authority))
+        record["authority"] = _sanitize_authority(_canon_safe(authority, render=False))
     threats = _norm_threats(threats)
     if threats is not None:
         record["threats"] = threats
@@ -628,7 +652,7 @@ def build(action_type, category, tool=None, tool_input=None, *,
     # Final guard: a caller-supplied value (a float score in data/outcome, say)
     # must never crash the recorder when the record is hashed. No-op on a record
     # that was already canonicalizable, so the hash of valid records is unchanged.
-    return _canon_safe(record)
+    return {k: _canon_safe(v, render=(k != "authority")) for k, v in record.items()}
 
 
 # Fields the recorder itself produces or has already redacted; everything else
@@ -1087,8 +1111,10 @@ class TenantRecorder:
         found = set()
         if not os.path.exists(path):
             return found
-        with open(path, "r", encoding="utf-8", errors="replace") as fh:
-            for line in fh:
+        # Split the way the verifier does (verify.read_log_lines): on "\n"
+        # only, a CR kept as JSON whitespace, a leading BOM skipped.
+        with open(path, "r", encoding="utf-8-sig", errors="replace", newline="") as fh:
+            for line in fh.read().split("\n"):
                 if not line.strip():
                     continue
                 try:

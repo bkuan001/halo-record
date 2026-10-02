@@ -14,6 +14,7 @@ The handler subclasses LangChain's ``BaseCallbackHandler``. LangChain is
 imported lazily so it is only required when this adapter is actually used.
 """
 
+from ..session import recording_failed
 from ._common import record_tool_call
 
 _AGENT = {"id": "langchain", "name": "langchain"}
@@ -41,8 +42,9 @@ def _build_handler_class():
 
         def __init__(self, recorder, *, category="security", scope=None,
                      session_id="local", agent=None, subject=None,
-                     summaries=True):
+                     summaries=True, strict_recording=None):
             self.recorder = recorder
+            self.strict_recording = strict_recording
             self.category = category
             self.scope = scope
             self.session_id = session_id
@@ -79,11 +81,8 @@ def _build_handler_class():
                 # failure mode an evidence recorder can have. Count it and say
                 # so loudly; the agent's own action is never interrupted.
                 self.lost_records = getattr(self, "lost_records", 0) + 1
-                import sys as _sys
-                _sys.stderr.write(
-                    "halo-record: FAILED to append record for tool %r (%s) — "
-                    "this action is NOT in the evidence log (lost so far: %d)\n"
-                    % (pending.get("tool"), exc, self.lost_records))
+                recording_failed(pending.get("tool"), exc, self.strict_recording,
+                                 " (lost so far: %d)" % self.lost_records)
 
     return _HaloCallbackHandler
 

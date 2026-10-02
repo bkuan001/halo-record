@@ -24,6 +24,7 @@ Two ways in:
 ``HaloSpanExporter`` needs the SDK, imported lazily.
 """
 
+from ..session import recording_failed
 from ._common import record_tool_call
 
 _AGENT = {"id": "otel", "name": "otel-genai"}
@@ -109,8 +110,9 @@ def _build_exporter_class():
         Non-GenAI spans pass through untouched (nothing is recorded)."""
 
         def __init__(self, recorder, *, agent=None, session_id="local",
-                     subject=None, summaries=True):
+                     subject=None, summaries=True, strict_recording=None):
             self.recorder = recorder
+            self.strict_recording = strict_recording
             self.agent = agent
             self.session_id = session_id
             self.subject = subject
@@ -130,11 +132,8 @@ def _build_exporter_class():
                     # Never break the trace pipeline — but never lose evidence
                     # silently either (mirrors the LangChain handler).
                     self.lost_records += 1
-                    import sys as _sys
-                    _sys.stderr.write(
-                        "halo-record: could not record span %r: %s — "
-                        "this span is NOT in the evidence log (lost so far: %d)\n"
-                        % (_span_name(span), exc, self.lost_records))
+                    recording_failed("span %s" % _span_name(span), exc, self.strict_recording,
+                                     " (lost so far: %d)" % self.lost_records)
             return SpanExportResult.SUCCESS
 
         def shutdown(self):

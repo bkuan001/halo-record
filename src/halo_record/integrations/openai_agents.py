@@ -14,6 +14,7 @@ lazily so it is only required when this adapter is actually used. Recording is
 best-effort and never interferes with the run.
 """
 
+from ..session import recording_failed
 from ._common import record_tool_call
 
 _AGENT = {"id": "openai-agents", "name": "openai-agents"}
@@ -42,8 +43,9 @@ def _build_hooks_class():
 
         def __init__(self, recorder, *, category="security", scope=None,
                      session_id="local", agent=None, subject=None,
-                     summaries=True):
+                     summaries=True, strict_recording=None):
             self.recorder = recorder
+            self.strict_recording = strict_recording
             self.category = category
             self.scope = scope
             self.session_id = session_id
@@ -57,11 +59,16 @@ def _build_hooks_class():
 
         async def on_tool_end(self, context, agent, tool, result):
             name = self._pending.pop(id(tool), None) or _tool_name(tool)
-            record_tool_call(
-                self.recorder, name, None, response=result, agent=self.agent,
-                category=self.category, scope=self.scope,
-                session_id=self.session_id, subject=self.subject,
-                source="openai_agents", summaries=self.summaries)
+            # The tool has already run; a recording failure is reported, not
+            # raised into the run (unless strict_recording).
+            try:
+                record_tool_call(
+                    self.recorder, name, None, response=result, agent=self.agent,
+                    category=self.category, scope=self.scope,
+                    session_id=self.session_id, subject=self.subject,
+                    source="openai_agents", summaries=self.summaries)
+            except Exception as exc:
+                recording_failed(name, exc, self.strict_recording)
 
     return _HaloRunHooks
 

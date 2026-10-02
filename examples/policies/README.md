@@ -52,7 +52,16 @@ no checkout: `halo policy chain.jsonl owasp-starter` (or `aiuc-1-starter`).
 A policy is validated before it runs: an unknown key, an unknown matcher, a
 field path that is not a Runtime Record field, or a rule with no `forbid`,
 `require`, or `expect_evidence` is refused (exit 2) rather than reported as a
-pass.
+pass. So is a value a record cannot hold: one outside a field's allowed set
+(`"deny"` for `action.authorization.decision`), of the wrong type, `null` (use
+`{"exists": false}`), non-finite or beyond 2^53−1; a matcher that does not apply
+to the field (`contains` on a string, equality on a list — use `contains` or
+`field[]` — or `gt` on a string); matchers that contradict each other; and a
+JSON key repeated in one object. A rule whose `when` selects no record reports
+"matched no records".
+
+Each verdict names `Policy sha256 …`, the SHA-256 of the policy file
+(`shasum -a 256 policy.json` prints the same value).
 
 Both are starting points, not official certified mappings; rename and tune the
 rules to your agent's tools and your buyer's contract.

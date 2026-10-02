@@ -7,7 +7,8 @@ The rebuilt chain verifies internally — so hash-chaining alone proves
 tamper-evidence, **not completeness**. ("Did you show me every record, or a
 curated subset?")
 
-The notary closes that gap. A neutral party (Halo) periodically *witnesses* each
+The notary closes that gap. A party the vendor does not control (none is
+hosted by Halo today; see LIMITS.md section 1) periodically *witnesses* each
 chain's head: it records ``(chain_root, count, head, ts)`` in its own append-only
 log that the vendor does not control. To later hide record ``k``, the vendor
 would have to rewrite history on the witness log too. Completeness
@@ -33,7 +34,7 @@ except ImportError:  # Windows
 from datetime import datetime, timezone
 
 from .canon import GENESIS_PREV, canon, compute_hash, sha256_hex
-from .verify import read_log_lines
+from .verify import _parse_int, read_log_lines
 
 
 def _now():
@@ -197,7 +198,7 @@ class Notary:
         cps = []
         for ln in read_log_lines(self.path):
             try:
-                cp = json.loads(ln)
+                cp = json.loads(ln, parse_int=_parse_int)
             except (ValueError, RecursionError):
                 continue  # a damaged line (torn write) never hides the rest
             if isinstance(cp, dict):

@@ -14,7 +14,11 @@ agent's own invocation boundary (its call and outcome) is recorded too, so even
 an uninstrumented agent produces a real, verifiable Record from one import.
 
 It does not change what your agent returns, and it never swallows exceptions: a
-raised error is recorded as the boundary outcome and then re-raised.
+raised error is recorded as the boundary outcome and then re-raised. The
+boundary record is written after the agent returns; if writing it fails, the
+agent's own result or error is passed through unchanged and the missing record
+is reported on stderr (``strict_recording=True`` or ``HALO_STRICT_RECORDING=1``
+raises the recording error instead).
 
 Storage:
   - default            ``~/.halo/<profile>.jsonl`` (one chain for the agent)
@@ -28,7 +32,7 @@ import os
 
 from .capture import derive_outcome
 from .record import Recorder, TenantRecorder, build
-from .session import bind_recorder, current_recorder, reset_recorder, bind_agent, reset_agent
+from .session import bind_recorder, current_recorder, reset_recorder, bind_agent, reset_agent, recording_failed
 
 DEFAULT_HOME = "~/.halo"
 
@@ -69,7 +73,8 @@ def _make_recorder(profile, log, directory):
 
 
 def trace(fn=None, *, profile, log=None, dir=None, subject=None,
-          category="security", agent=None, summaries=True, record_boundary=True):
+          category="security", agent=None, summaries=True, record_boundary=True,
+          strict_recording=None):
     """Wrap an agent entrypoint so its run produces a Halo Runtime Record.
 
     Usable directly — ``trace(run, profile="acme")`` — or as a decorator with
@@ -78,6 +83,21 @@ def trace(fn=None, *, profile, log=None, dir=None, subject=None,
     """
     recorder = _make_recorder(profile, log, dir)
     agent_meta = agent or {"id": profile, "name": profile}
+
+    def _record_boundary(args, kwargs, result, error):
+        outcome = derive_outcome(result, error=error)
+        # Boundary marker only — arg *shape*, never raw payloads.
+        boundary_input = {
+            "args": len(args),
+            "kwargs": sorted(kwargs.keys()),
+        }
+        rec = build(
+            "agent_message", category, tool=profile,
+            tool_input=boundary_input, agent=agent_meta,
+            subject=subject, outcome=outcome, summaries=summaries,
+            source="recorder",
+        )
+        recorder.append(rec)
 
     def wrap(func):
         @functools.wraps(func)
@@ -93,22 +113,15 @@ def trace(fn=None, *, profile, log=None, dir=None, subject=None,
                 error = exc
                 raise
             finally:
-                if record_boundary:
-                    outcome = derive_outcome(result, error=error)
-                    # Boundary marker only — arg *shape*, never raw payloads.
-                    boundary_input = {
-                        "args": len(args),
-                        "kwargs": sorted(kwargs.keys()),
-                    }
-                    rec = build(
-                        "agent_message", category, tool=profile,
-                        tool_input=boundary_input, agent=agent_meta,
-                        subject=subject, outcome=outcome, summaries=summaries,
-                        source="recorder",
-                    )
-                    recorder.append(rec)
-                reset_agent(agent_token)
-                reset_recorder(token)
+                try:
+                    if record_boundary:
+                        try:
+                            _record_boundary(args, kwargs, result, error)
+                        except Exception as rec_exc:
+                            recording_failed(profile, rec_exc, strict_recording)
+                finally:
+                    reset_agent(agent_token)
+                    reset_recorder(token)
 
         wrapper.halo_recorder = recorder
         return wrapper

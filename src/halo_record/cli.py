@@ -161,6 +161,16 @@ def _cmd_policy(args):
 
 
 def _cmd_anchor(args):
+    # Unreadable input (a missing file, a torn line, an integer too long to
+    # read) is reported in one line and fails closed with exit 1.
+    try:
+        return _anchor(args)
+    except (ValueError, OSError, RecursionError) as e:
+        print("halo anchor: cannot read %s: %s" % (args.log, e), file=sys.stderr)
+        return 1
+
+
+def _anchor(args):
     from .anchor import (Notary, verify_completeness, _subject_id,
                          checkpoint, attach_timestamp, TimestampError)
     from .anchor import chain_root as _chain_root
@@ -205,6 +215,10 @@ def _cmd_anchor(args):
         return 2
     notary = Notary(args.witness)
     if args.check:
+        import os
+        if not os.path.isfile(args.witness):
+            print("halo anchor: witness file %s does not exist" % args.witness, file=sys.stderr)
+            return 2
         result = verify_completeness(records, notary.checkpoints(),
                                      expected_subject=args.expect_subject)
         status = {True: "COMPLETE", False: "INCOMPLETE", None: "UNWITNESSED"}[result["ok"]]
@@ -251,7 +265,11 @@ def _cmd_grant(args):
     if not access.recipient_ok(args.recipient):
         print("not a valid email address or domain: %r" % args.recipient, file=sys.stderr)
         return 2
-    key = chain_key(args.dir, args.chain)
+    try:
+        key = chain_key(args.dir, args.chain)
+    except ValueError as e:
+        print("halo grant: %s" % e, file=sys.stderr)
+        return 2
     if key != args.chain:
         print("note: %s is served as chain %r" % (args.chain, key))
     allow = access.grant(args.dir, key, args.recipient)
@@ -278,7 +296,12 @@ def _cmd_demo(args):
 
 def _cmd_witness_serve(args):
     from .witness import serve
-    return serve(args.store, host=args.host, port=args.port)
+    try:
+        return serve(args.store, host=args.host, port=args.port)
+    except OSError as e:
+        print("halo witness-serve: cannot serve on %s:%s (%s)" % (args.host, args.port, e),
+              file=sys.stderr)
+        return 1
 
 
 def main(argv=None):
@@ -340,7 +363,8 @@ def main(argv=None):
 
     p_report = sub.add_parser(
         "report",
-        help="render one tenant's JSONL chain as a self-verifying HTML Runtime Report")
+        help="render one tenant's JSONL chain as an HTML Runtime Report whose script "
+             "re-computes the embedded records' hash chain in the browser")
     p_report.add_argument("log", help="path to the .jsonl log (one subject/chain)")
     p_report.add_argument("-o", "--out", help="output .html path (default: alongside the log)")
     p_report.add_argument("-w", "--witness",

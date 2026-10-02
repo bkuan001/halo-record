@@ -442,9 +442,13 @@ def export(log_path, out_path, *, start=None, end=None, tools=None,
     named witness cannot be reached; 3 if it holds no records — nothing is
     written in any of those cases — or if a named witness holds no checkpoints
     for it (UNWITNESSED: the export is written and its manifest says so);
-    2 if the chain file cannot be read."""
+    2 if the chain file or the named local witness file cannot be read."""
     silent = lambda *a, **k: None  # noqa: E731
     real_path = os.path.expanduser(str(log_path))
+    if witness_log and not os.path.isfile(os.path.expanduser(str(witness_log))):
+        # A mistyped witness path must not read as "not anchored yet".
+        out(f"REFUSED: witness file {witness_log} does not exist; no export written.")
+        return 2
     # Snapshot the chain once, so verification, the exported rows, the head
     # hash and source_log_sha256 all describe the same bytes even if a
     # recorder appends while the export runs.

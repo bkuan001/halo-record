@@ -4,7 +4,7 @@ The [OWASP GenAI Security Project](https://genai.owasp.org) publishes the **OWAS
 
 halo-record sits in the **Operate → Monitor → Govern** stages. It is **record-only by design** — it does not intercept, guard, or enforce — so it is not a control that *prevents* any of these threats. It is the **evidence layer underneath them**: a tamper-evident record of what the agent actually did, which is the forensic basis the ASI threat list assumes but does not itself provide. Traceability is the cross-cutting mitigation; halo-record is where it comes from.
 
-> **Two distinct things a record does per threat.** Every threat below leaves a forensic trace in the record (that is universal — a record documents what was recorded under the declared capture surface). Separately, some threats admit a **deterministic policy check** over that record (a rule that flags when the evidence is missing or the wrong shape). The record is always present; the rule exists only where a deterministic check is warranted — a record proves what an agent *did*, never what a control *prevented*.
+> **Two distinct things a record does per threat.** Every threat below leaves a forensic trace in the record (that is universal — a record documents what was recorded under the declared capture surface). Separately, some threats admit a **deterministic policy check** over that record (a rule that flags when the evidence is missing or the wrong shape). The record is always present; the rule exists only where a deterministic check is warranted — a record records what an agent *did* under the declared capture surface, never what a control *prevented*.
 
 ## Top 10 for Agentic Applications (2026) → halo-record
 
@@ -23,7 +23,7 @@ Coverage marks: **✅ shipped policy rule** · **🟡 template rule** (rename to
 | ASI09 | Human-Agent Trust Exploitation | **out of scope** — a human/organizational risk outside what a record policy can assert | ❌ |
 | ASI10 | Rogue Agents | `purpose-declared` (deviation is detectable only if purpose is declared) + `agent-attributed` | ✅ |
 
-**Cross-cutting (traceability floor the rest of the list assumes):** `actions-traceable` (halo's framing, not an OWASP category; Agentic T8 Repudiation & Untraceability — every recorded action timestamped, attributable, and tamper-evidently sealed — identity values are integration-supplied, so this is attribution, not non-repudiation; see LIMITS.md §5/§10); `no-secret-disclosure` and `pii-egress-controlled` (LLM02:2025 Sensitive Information Disclosure; the former also supports ASI03 credential hygiene).
+**Cross-cutting (traceability floor the rest of the list assumes):** `actions-traceable` (halo's framing, not an OWASP category; Agentic T8 Repudiation & Untraceability — every recorded action timestamped, attributable, and tamper-evidently sealed — identity values are integration-supplied, so this is attribution, not non-repudiation; see LIMITS.md §5/§10); `no-secret-disclosure` and `pii-egress-controlled` (LLM02:2025 Sensitive Information Disclosure). `no-secret-disclosure` forbids every credential and secret finding type the scanner emits (a test keeps the rule in step with the scanner), so it also supports ASI03 credential hygiene for the formats the scanner detects (LIMITS.md §6).
 
 The rules above ship as [`examples/policies/owasp-starter.json`](examples/policies/owasp-starter.json) — run `halo policy <chain.jsonl> owasp-starter.json`. This is an **approximate, community-oriented mapping, not an official OWASP artifact**; corrections welcome.
 

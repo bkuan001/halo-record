@@ -1,7 +1,7 @@
 # halo-record — Architectural Limits
 
 What halo-record does not do, by design. These are boundaries, documented so a
-reviewer can evaluate the system honestly. Each one states what holds, what
+reviewer can evaluate the system on its own terms. Each one states what holds, what
 does not, and what to say when an assessor asks.
 
 ---
@@ -147,7 +147,7 @@ unless a named pattern covers it; Slack, Discord, and Teams webhook URLs are
 named patterns. They are still scanned: named patterns mask there as
 everywhere, and an entropy hit under a path key is reported as a
 `high_entropy_path_value` (LOW) finding instead of being masked, so
-`findings: []` still means the scanner found nothing in the fields it scans (the argument and outcome summaries — see §13 for the fields it does not), unless the integration supplied its own `findings`, which are sealed as given and bypass the scan (§13). A path inside
+`findings: []` still means the scanner found nothing in the fields it scans (the arguments, the outcome, and caller-defined outcome and `data` fields — see §13 for the fields it does not), unless the integration supplied its own `findings`, which are sealed as given and bypass the scan (§13). A path inside
 free text — a shell command, a tool response — is subject to the full
 catch-all and may be masked as a secret, which also raises that record's
 severity to HIGH; the file named in a patch header (`*** Update File:`) is
@@ -156,6 +156,16 @@ severity-weighted: LOW notes are counted separately. Masks hide the credential,
 not always its context: the connection-string mask removes the password only,
 so a DSN's username and internal hostname survive into the summary. If you find a path that
 does, that is a vulnerability report we want (see SECURITY.md).
+
+Two bounds keep the scanner linear on hostile text. A stored text value is
+masked up to its first 65,536 characters and the rest is withheld, replaced by
+`[… N more characters withheld]` (the cut lands on whitespace, or before a
+partial token); findings still cover the whole text, scanned in overlapping
+windows. Invisible characters spliced inside a token — every Unicode format
+character (category Cf, as of Unicode 15.1), the combining grapheme joiner,
+variation selectors, and Hangul fillers — are dropped before matching, so they
+cannot split a key; outside a token (an emoji sequence, a bidi mark in prose)
+they are kept.
 
 The credential coverage, by finding type:
 
@@ -178,7 +188,8 @@ The credential coverage, by finding type:
 Known gaps in that coverage: a password in free prose with no assignment —
 `pw hunter2`, `login with password hunter2` — is not detected. Card numbers
 are matched at 13–17 digits on the Visa, Mastercard 51–55, American Express,
-and Discover 6011/65 prefixes; other ranges (Mastercard 2-series, UnionPay,
+and Discover 6011/65 prefixes, undelimited or with digit groups separated by
+spaces, hyphens, dots, or no-break spaces (U+00A0, U+2007, U+202F); other ranges (Mastercard 2-series, UnionPay,
 JCB, Maestro) are not matched. A 19-digit card number is not detected as a
 whole: undelimited it passes through unmasked, and grouped at most a leading
 16-digit run is masked, leaving its last digits readable.
@@ -204,7 +215,7 @@ convention remains unchecked.
 The same bound applies to `data.pii_types`: it is derived from the scanner's
 *named* personal-data categories (email, ssn, credit_card, phone, iban), so it
 is a floor, not a census. Within a category the coverage is by shape: cards and
-IBANs are caught in their spaced/hyphenated/dotted printed forms, including mid-sentence (cards Luhn-checked, IBANs mod-97-checked, so look-alike identifiers are not classified — a two-digit checksum still passes about 1 in 97 random look-alikes);
+IBANs are caught in their spaced, hyphenated, dotted, and no-break-space printed forms, including mid-sentence (cards Luhn-checked, IBANs mod-97-checked, so look-alike identifiers are not classified — a two-digit checksum still passes about 1 in 97 random look-alikes);
 SSNs are caught in delimited form (`123-45-6789`, `123 45 6789`), but an
 undelimited nine-digit run is deliberately not classified as an SSN — it is
 indistinguishable from any other nine-digit identifier, and treating every one
@@ -227,6 +238,20 @@ does not intercept, block, or approve anything at runtime. If the agent
 framework ignores a control, the verdict records the violation; it does not
 prevent it. Enforcement belongs to the operator's runtime stack; evidence of
 what happened belongs here.
+
+A policy is validated against the record schema before it runs, so a rule
+cannot pass by matching nothing: values outside a field's allowed set, values
+of the wrong type, `null`, non-finite numbers or numbers beyond 2⁵³−1,
+matchers that do not apply to the field, contradictory matchers, and duplicate
+JSON keys are refused (exit 2). A rule whose `when` selects no record reports
+"matched no records", never PASS. Validation catches a rule that cannot mean
+what it says; it cannot catch a valid rule aimed at the wrong field.
+
+A verdict names its policy by `Policy sha256`: the SHA-256 of the policy file's
+bytes, the value `shasum -a 256 <file>` prints. A report page carries the
+policy file's text, re-reads the rules from it in the browser, and names the
+digest of the text it carries; those rules were embedded by whoever generated
+the page, so compare the digest with the policy file you hold.
 
 ---
 
@@ -306,6 +331,13 @@ action did not execute. And `policy_ref` is only as strong as its resolution:
 a content hash of a retained ruleset can be produced and compared; an
 unresolvable label cannot.
 
+A gate's `blocked` does not outrank the recorded outcome. When a record says
+`verification.status: blocked` (or `authorization.decision: denied`) and its
+outcome is recorded as `ok`, the report shows both ("Gate reported blocked;
+outcome recorded: ok") and prefers neither. The starter packs' egress rules
+take a record out of scope only when its outcome is recorded as `denied`, so a
+gate's report alone never removes a record from an egress check.
+
 **What you say to a reviewer:** "`verification.status` is the named gate's own
 report of its decision, written by the operator's integration and sealed so it
 cannot be altered afterward. Halo records it; nothing in Halo confirms it.
@@ -365,18 +397,19 @@ means anything sealed into a record is, for practical purposes, permanent.
 and it is meant for the tenant *organization* an action serves — not for a natural
 person. But it is not the only door. Everything in this table is sealed verbatim.
 The table is a starting point, not a closed inventory: any caller-supplied string
-can carry personal data, and only the summaries are scanned at all.
+can carry personal data, and only the summaries and caller-defined `outcome` and
+`data` fields are scanned at all.
 
 | Field | How it goes wrong |
 |---|---|
 | `principal.human_id` / `creator_id` / `role_scope` | names the person the action ran on behalf of — teams put a work login here, which is usually an email address |
 | `action.authorization.approver` / `scope` / `decision` | the approving person's name or login, and values built from one |
-| `outcome.*` (keys other than `summary`) | passed through untouched and never scanned — a result field like `customer` or `address` seals a person's details permanently |
+| `outcome.*` (keys other than `summary`) | scanned and masked like a summary — a detected secret or personal-data pattern produces a finding (and `data.pii_types`) — but a name or postal address has no pattern, so a result field like `customer` or `address` seals a person's details permanently |
 | `session_id`, `parent_id` | free-form; often built by joining a user identifier to a date |
 | `agent.*`, `source.*`, `authority.*` | free-form labels — a laptop, an assistant, or a runbook named after a customer |
 | `action.tool` | a tool name built from the thing it acts on |
 | `threats[].type` / `.ref` | ticket references and notes copied from an upstream detector |
-| `data.*` | any key you add beyond `region` / `purpose` / `cross_region` |
+| `data.*` | any key you add beyond `region` / `purpose` / `cross_region` — scanned and masked like `outcome.*`, with the same gap for names and addresses |
 | `action.input.summary`, `outcome.summary` | redacted best-effort only — and per section 6 a **name or postal address has no reliable pattern, is not detected, and is not masked** |
 | `findings[].type` / `.sample` | masked fragments *when the scanner produced them* — a masked email keeps its full domain and an SSN keeps its last four. Findings you supply yourself are stored exactly as given, unmasked |
 
@@ -462,6 +495,8 @@ Two consequences to know before relying on a record's `data`/`outcome` values:
   identical hashes. Relative to an established chain head (section 9), the
   chain is tamper-evident for the canonical bytes; it does not prove what
   JSON type the caller originally passed.
+- **An integer of more than 4,300 digits** (Python 3.11+ refuses to print one)
+  is stored as the text `[integer of N bits]`, in every Python version.
 - **If type fidelity matters for your evidence, encode it explicitly** — for
   example, record `{"score_millis": 500}` instead of `{"score": 0.5}`, or wrap
   values as `{"type": "int", "value": "9007199254740993"}` in your payload.
@@ -549,3 +584,35 @@ those records stay where they are, the subject's new records start their own
 chain in its digested file (`<name>~<digest>.jsonl`), and the recorder says so
 on stderr, naming both files. Verify and report the two files separately; the
 new chain starts at genesis and does not link to the earlier records.
+
+**Naming a chain to `halo grant`.** A chain is named by its subject id or its
+file name. A subject id is chosen by whoever writes the records, so it can
+equal another tenant's digested file name; a name that is one chain's subject
+id and another chain's file name is refused (exit 2) and both files are
+listed. Name the chain by a file name that is unique.
+
+---
+
+## 18. A record that cannot be written is reported, not raised
+
+Records are written after the action runs; halo-record never blocks an action
+on its record, and writing before the action is not offered. When an append
+fails (disk full, permissions, a lock held past its timeout), `trace()`,
+`record_call`, `@record`, the OpenAI Agents, LangChain, LiteLLM and OTel
+adapters, the MCP wrapper and `halo hook` pass the action's own result or
+exception through unchanged and print one line to stderr:
+
+    halo-record: FAILED to record '<tool>' (<ErrorType>: <message>); the action ran, but its record is NOT in the evidence log. The action's own result or error is passed through unchanged (set HALO_STRICT_RECORDING=1 to raise instead).
+
+The chain itself cannot show a record that was never written: the remaining
+records still verify. Witness checkpoints on a cadence are what reveal a
+stalled chain (section 1).
+
+`strict_recording=True`, or `HALO_STRICT_RECORDING=1` in the environment,
+raises the recording error instead. The action has already happened by then; a
+caller that reads the error as a failed action and retries repeats the action.
+
+**What you say to a reviewer:** "A failed write is reported on stderr and the
+action's outcome is unchanged; the chain has a gap there that only a witness
+cadence or the stderr log reveals. Strict mode turns that into an error at the
+cost of a possible repeated action."

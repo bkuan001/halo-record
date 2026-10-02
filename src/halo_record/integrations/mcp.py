@@ -20,8 +20,7 @@ the session already has, so this adapter has no dependency of its own and works
 across SDK versions. Recording is best-effort and never breaks the tool call.
 """
 
-import sys
-
+from ..session import recording_failed
 from ._common import record_tool_call
 
 _AGENT = {"id": "mcp", "name": "mcp-client"}
@@ -63,12 +62,16 @@ def record_mcp_call(recorder, name, arguments, *, response=None, error=None,
 
 
 def instrument_client_session(session, recorder, *, server="mcp", agent=None,
-                              session_id="local", subject=None, summaries=True):
+                              session_id="local", subject=None, summaries=True,
+                              strict_recording=None):
     """Wrap ``session.call_tool`` so every tool call is recorded. Returns the
     session (now instrumented). Idempotent: a session is only wrapped once.
 
     Works whether ``call_tool`` is async (the MCP SDK) or sync — the wrapper
-    mirrors the original's awaitability so the agent's ``await`` still works."""
+    mirrors the original's awaitability so the agent's ``await`` still works.
+    A recording failure is reported on stderr and the call's result or error
+    passes through unchanged; ``strict_recording=True`` (or
+    ``HALO_STRICT_RECORDING=1``) raises it instead."""
     import asyncio
     import functools
 
@@ -85,10 +88,7 @@ def instrument_client_session(session, recorder, *, server="mcp", agent=None,
                             session_id=session_id, subject=subject,
                             summaries=summaries, **kw)
         except Exception as exc:
-            sys.stderr.write(
-                "halo-record: could not record MCP tool call %r (%s: %s); the "
-                "call's result is returned unchanged\n"
-                % (kw.get("name"), type(exc).__name__, exc))
+            recording_failed(kw.get("name"), exc, strict_recording)
 
     if asyncio.iscoroutinefunction(original):
         @functools.wraps(original)
