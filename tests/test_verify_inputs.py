@@ -114,6 +114,14 @@ class TimestampOrderTest(unittest.TestCase):
         ok, text = _verify(path)
         self.assertNotIn("warning", text)
 
+    def test_timestamp_beyond_the_calendar_after_its_offset_is_not_compared(self):
+        # 9999-12-31T23:00-02:00 is past year 9999 in UTC: no instant, no raise.
+        path = self._chain(["9999-12-31T23:00:00-02:00", "0001-01-01T00:00:00+01:00",
+                            "2026-06-01T00:00:00Z"])
+        ok, text = _verify(path)
+        self.assertTrue(ok, text)
+        self.assertNotIn("warning", text)
+
     def test_ordered_chain_has_no_warning(self):
         ok, text = _verify(os.path.join(HERE, "valid.jsonl"))
         self.assertTrue(ok)

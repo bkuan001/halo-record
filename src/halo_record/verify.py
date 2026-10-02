@@ -129,7 +129,10 @@ def _instant(ts):
         return None
     if m.group(9):
         off = timedelta(hours=int(m.group(10)), minutes=int(m.group(11)))
-        dt = dt - off if m.group(9) == "+" else dt + off
+        try:
+            dt = dt - off if m.group(9) == "+" else dt + off
+        except OverflowError:
+            return None  # the instant falls outside years 1-9999
     nanos = int((m.group(7) or "").ljust(9, "0") or 0)
     return (dt, nanos)
 
