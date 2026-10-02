@@ -63,8 +63,13 @@ _LONE_SURROGATE_RE = re.compile("[\ud800-\udfff]")
 
 
 def _record_subject(r):
+    """A record's subject id as a comparable value; ids that are not plain
+    strings or numbers (chain data is untrusted) are serialized, never raised on."""
     s = r.get("subject")
-    return (s.get("id") or None) if isinstance(s, dict) else None
+    sid = (s.get("id") or None) if isinstance(s, dict) else None
+    if sid is None or isinstance(sid, (str, int, float, bool)):
+        return sid
+    return json.dumps(sid, sort_keys=True, default=str)
 
 
 def _subject_label(records):

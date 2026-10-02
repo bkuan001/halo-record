@@ -931,6 +931,12 @@ class TenantRecorder:
             safe = "%s~%s" % (safe, digest)
         return os.path.join(self.directory, safe + ".jsonl")
 
+    def chain_path_for(self, subject_id):
+        """The file this recorder actually appends to for ``subject_id`` — the
+        nominal ``path_for`` name, a reused legacy file, or a digested fallback
+        when the nominal file already holds other subjects."""
+        return self.recorder_for(subject_id).path
+
     @staticmethod
     def _file_subjects(path):
         """Subject IDs already present in a chain file (``None`` for subjectless)."""

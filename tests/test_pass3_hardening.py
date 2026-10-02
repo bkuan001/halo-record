@@ -90,6 +90,29 @@ class LoneSurrogateReportTest(unittest.TestCase):
         src = os.path.join(os.path.dirname(__file__), "fixtures", "differential", "lone_surrogate.jsonl")
         html, n = write_report(src, os.path.join(tempfile.mkdtemp(), "r.html"))
         self.assertEqual(n, 3)
+        self.assertIn("\ufffd", html)          # the split half renders as U+FFFD
+        self.assertNotIn("\ud83d", html)
+
+    def test_a_whole_emoji_is_kept(self):
+        d = tempfile.mkdtemp()
+        log = os.path.join(d, "c.jsonl")
+        Recorder(log).append(build("tool_call", "security", tool="t",
+                                   outcome={"status": "ok", "summary": "done \U0001F600"}))
+        html, _ = write_report(log, os.path.join(d, "r.html"))
+        self.assertIn("\U0001F600", html)
+
+    def test_object_subject_ids_fail_cleanly(self):
+        from halo_record.report import _subject_label
+        recs = [{"subject": {"id": ["a"]}}, {"subject": {"id": {"b": 1}}}]
+        self.assertEqual(_subject_label(recs), "2 subjects")
+
+    def test_chain_path_follows_a_fallback(self):
+        d = tempfile.mkdtemp()
+        tr = TenantRecorder(d)
+        Recorder(tr.path_for("initech")).append(build("tool_call", "security", tool="z", subject="acme-corp"))
+        tr.append(build("tool_call", "security", tool="q", subject="initech"))
+        with open(tr.chain_path_for("initech"), encoding="utf-8") as fh:
+            self.assertIn('"initech"', fh.read())
 
 
 class CollidedLegacyTenantTest(unittest.TestCase):
