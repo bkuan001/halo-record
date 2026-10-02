@@ -102,3 +102,41 @@ class SubjectIdentityTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class BuyerPinsTheSubjectTest(unittest.TestCase):
+    def _witnessed_then_rekeyed(self):
+        from halo_record.anchor import checkpoint
+        from halo_record.canon import GENESIS_PREV, compute_hash
+        d = tempfile.mkdtemp()
+        rec = Recorder(os.path.join(d, "c.jsonl"))
+        recs = [rec.append(build("tool_call", "security", tool="t%d" % i, subject="acme-corp"))
+                for i in range(4)]
+        cps = [checkpoint(recs)]
+        kept = [r for i, r in enumerate(recs) if i != 2]
+        prev = GENESIS_PREV
+        for r in kept:  # drop a record, re-key the subject, re-seal
+            r["subject"] = {"id": "acme-corp "}
+            r["integrity"]["prev_hash"] = prev
+            r["integrity"]["hash"] = compute_hash(r, prev)
+            prev = r["integrity"]["hash"]
+        return kept, cps
+
+    def test_pinned_subject_mismatch_is_a_failure(self):
+        from halo_record.anchor import verify_completeness
+        kept, cps = self._witnessed_then_rekeyed()
+        result = verify_completeness(kept, cps, expected_subject="acme-corp")
+        self.assertIs(result["ok"], False)
+
+    def test_witness_rejects_edge_and_double_spaces(self):
+        from halo_record.witness import _SUBJECT_RE
+        for bad in ("acme-corp ", " acme", "acme  corp", "acme\n", "acmе"):
+            self.assertIsNone(_SUBJECT_RE.fullmatch(bad), repr(bad))
+        self.assertIsNotNone(_SUBJECT_RE.fullmatch("acme corp"))
+
+    def test_report_refuses_a_chain_whose_subject_is_not_the_pinned_one(self):
+        d = tempfile.mkdtemp()
+        log = os.path.join(d, "c.jsonl")
+        Recorder(log).append(build("tool_call", "security", tool="t", subject="acrne-corp"))
+        with self.assertRaises(ValueError):
+            write_report(log, os.path.join(d, "r.html"), expected_subject="acme-corp")

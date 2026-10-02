@@ -91,3 +91,14 @@ class KeyNameScrubTest(unittest.TestCase):
     def test_secret_bearing_key_names_are_scrubbed(self):
         r = build("tool_call", "security", tool="t", data={SECRET: 1})
         self.assertNotIn(SECRET, json.dumps(r))
+
+
+class RemainingSealFieldsTest(unittest.TestCase):
+    def test_outcome_hash_must_look_like_a_hash(self):
+        r = build("tool_call", "security", tool="t", outcome={"status": "ok", "hash": SECRET})
+        self.assertNotIn(SECRET, json.dumps(r))
+
+    def test_ts_must_be_a_timestamp(self):
+        r = build("tool_call", "security", tool="t", ts="2026-06-01T12:00:00+00:00 " + SECRET)
+        self.assertNotIn(SECRET, json.dumps(r))
+

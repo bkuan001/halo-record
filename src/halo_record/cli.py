@@ -103,7 +103,7 @@ def _cmd_report(args):
     try:
         _, count = write_report(args.log, out, witness_log=args.witness,
                                 witness_url=args.witness_url, policy_path=args.policy,
-                                start=start, end=end)
+                                start=start, end=end, expected_subject=args.expect_subject)
     except ValueError as e:
         print("REFUSED: %s" % e)
         return 1
@@ -151,8 +151,9 @@ def _cmd_anchor(args):
                   "witness records its own time", file=sys.stderr)
         try:
             if args.check:
-                cps = fetch_checkpoints(args.remote, subject=_subject_id(records))
-                result = verify_completeness(records, cps)
+                pinned = args.expect_subject or _subject_id(records)
+                cps = fetch_checkpoints(args.remote, subject=pinned)
+                result = verify_completeness(records, cps, expected_subject=args.expect_subject)
                 status = {True: "COMPLETE", False: "INCOMPLETE", None: "UNWITNESSED"}[result["ok"]]
                 print("%s — %s" % (status, json.dumps(result)))
                 if result.get("subjectless_caveat"):
@@ -175,7 +176,8 @@ def _cmd_anchor(args):
         return 2
     notary = Notary(args.witness)
     if args.check:
-        result = verify_completeness(records, notary.checkpoints())
+        result = verify_completeness(records, notary.checkpoints(),
+                                     expected_subject=args.expect_subject)
         status = {True: "COMPLETE", False: "INCOMPLETE", None: "UNWITNESSED"}[result["ok"]]
         print("%s — %s" % (status, json.dumps(result)))
         if result.get("subjectless_caveat"):
@@ -310,6 +312,9 @@ def main(argv=None):
                                "date-windowed report covering only the review period")
     p_report.add_argument("--to", default=None,
                           help="window end (YYYY-MM-DD or RFC 3339; inclusive)")
+    p_report.add_argument("--expect-subject", default=None,
+                          help="the customer id you expect; the report is refused if the chain "
+                               "carries a different one")
     p_report.set_defaults(func=_cmd_report)
 
     p_policy = sub.add_parser(
@@ -339,6 +344,9 @@ def main(argv=None):
                           help="vendor bearer key for --remote anchoring")
     p_anchor.add_argument("--check", action="store_true",
                           help="verify completeness against existing witnesses instead of adding one")
+    p_anchor.add_argument("--expect-subject", default=None,
+                          help="with --check: the customer id you expect; a chain carrying a "
+                               "different id is INCOMPLETE")
     p_anchor.add_argument("--timestamp", action="store_true",
                           help="attach an RFC 3161 third-party time proof to the checkpoint "
                                "(binds the chain state to a time the operator can't set)")

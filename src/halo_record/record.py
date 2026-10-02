@@ -522,8 +522,12 @@ def build(action_type, category, tool=None, tool_input=None, *,
             if isinstance(h, str) and _OUTCOME_HASH_RE.fullmatch(h):
                 kept["hash"] = h
             outcome = kept
-        elif outcome_summary_raw is not None:
-            outcome["summary"] = redact_text(outcome_summary_raw)[:200]
+        else:
+            if outcome_summary_raw is not None:
+                outcome["summary"] = redact_text(outcome_summary_raw)[:200]
+            h = outcome.get("hash")
+            if h is not None and not (isinstance(h, str) and _OUTCOME_HASH_RE.fullmatch(h)):
+                outcome.pop("hash")  # only a hash-shaped value is kept under that name
 
     if findings is None:
         findings = []
@@ -546,7 +550,7 @@ def build(action_type, category, tool=None, tool_input=None, *,
         "schema_version": SCHEMA_VERSION,
         "record_id": str(uuid.uuid4()),
         "session_id": session_id,
-        "ts": ts or _now(),
+        "ts": _valid_ts(ts),
         "agent": agent or {"id": "unknown", "name": "unknown"},
         "action": action,
         "severity": top_severity(findings),
@@ -603,6 +607,22 @@ _SCRUB_SKIP = {"schema_version", "record_id", "ts", "integrity",
 _IDENTITY_PATHS = {("action", "authorization", "approver"), ("subject", "name")}
 
 
+_TS_RE = re.compile(
+    r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})")
+
+
+def _valid_ts(ts):
+    """A caller-supplied timestamp is kept only if it is RFC 3339; anything else
+    is replaced with the current time (and said aloud) rather than sealed."""
+    if ts is None:
+        return _now()
+    if isinstance(ts, str) and _TS_RE.fullmatch(ts):
+        return ts
+    import sys as _sys
+    _sys.stderr.write("halo-record: ts is not an RFC 3339 timestamp; recorded the current time\n")
+    return _now()
+
+
 def _scrub_fields(record):
     def walk(node, path):
         if isinstance(node, dict):
@@ -626,7 +646,7 @@ def _scrub_fields(record):
         if isinstance(node, list):
             return [walk(v, path) for v in node]
         if isinstance(node, str):
-            if _OPAQUE_ID.fullmatch(node):
+            if path and path[-1] in _ID_NAMES and _OPAQUE_ID.fullmatch(node):
                 return node  # a UUID or hex id carries no secret; patterns can misfire on it
             if path in _IDENTITY_PATHS or (path and path[0] == "principal"):
                 return mask_secrets_only(node)
@@ -637,6 +657,7 @@ def _scrub_fields(record):
     record.update(scrubbed)
 
 
+_ID_NAMES = {"id", "session_id", "parent_id", "record_id", "snapshot_id", "ref", "policy_ref"}
 _OPAQUE_ID = re.compile(
     r"[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}|[0-9A-Fa-f]{16,64}")
 

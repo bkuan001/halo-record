@@ -222,7 +222,7 @@ def _matches(cp, records):
     return cp.get("chain_root") == chain_root(records)
 
 
-def verify_completeness(records, checkpoints):
+def verify_completeness(records, checkpoints, expected_subject=None):
     """Check a presented chain against what the notary independently witnessed.
 
     Returns a dict:
@@ -245,6 +245,14 @@ def verify_completeness(records, checkpoints):
                 "subject to records for a stable witness key")
         return d
 
+    if expected_subject is not None:
+        # The buyer names the customer it expects. The id inside the records is
+        # the vendor's to write, so a re-keyed chain must not pick its own lookup.
+        found = _subject_id(records)
+        if found != expected_subject:
+            return _out({"ok": False, "witnessed": 0,
+                         "why": "chain subject id %s differs from the expected %s"
+                                % (json.dumps(found), json.dumps(expected_subject))})
     relevant = [c for c in checkpoints if _matches(c, records)]
     if not relevant:
         return _out({"ok": None, "why": "no witnesses for this chain", "witnessed": 0})

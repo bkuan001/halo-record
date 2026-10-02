@@ -47,6 +47,8 @@ def _subject_note(records):
         return ""
     sid = str(sid)
     odd = [c for c in sid if ord(c) > 126 or unicodedata.category(c)[0] in ("C", "Z") and c != " "]
+    if sid != sid.strip() or "  " in sid:
+        odd.append(" ")
     label = _subject_label(records)
     if not odd and label == sid:
         return ""
@@ -1311,7 +1313,7 @@ def render(records, checkpoints=None, *, witness_url=None, policy=None, window=N
 
 
 def write_report(log_path, out_path=None, witness_log=None, witness_url=None,
-                 policy_path=None, start=None, end=None):
+                 policy_path=None, start=None, end=None, expected_subject=None):
     """Render ``log_path`` to HTML. ``witness_log`` embeds a local notary's
     checkpoints (offline fallback / static report). ``witness_url`` points the
     page at a hosted Halo witness it fetches live, so completeness is checked
@@ -1341,6 +1343,9 @@ def write_report(log_path, out_path=None, witness_log=None, witness_url=None,
     if policy_path:
         from .policy import load_policy
         policy = load_policy(policy_path)
+    if expected_subject is not None and _subject_id(records) != expected_subject:
+        raise ValueError("%s: chain subject id %s is not the expected %s; refusing to render"
+                         % (log_path, json.dumps(_subject_id(records)), json.dumps(expected_subject)))
     from .verify import verify_records
     chain_ok = verify_records(records)
     window = None

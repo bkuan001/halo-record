@@ -286,7 +286,8 @@ class HyphenatedApiKeys(unittest.TestCase):
 class ExportWindowSemantics(unittest.TestCase):
     def test_unparseable_ts_included_in_unbounded_export(self):
         from halo_record.export import in_window
-        rec = build("tool_call", "security", tool="x", ts="yesterday-ish")
+        rec = build("tool_call", "security", tool="x")
+        rec["ts"] = "yesterday-ish"  # a hand-edited record; build itself only seals RFC 3339
         self.assertTrue(in_window(rec))
         import datetime
         self.assertFalse(in_window(rec, start=datetime.datetime(2026, 1, 1,

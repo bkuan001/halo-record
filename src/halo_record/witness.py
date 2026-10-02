@@ -48,7 +48,9 @@ MAX_BODY = 8192
 DEFAULT_PORT = 8730
 
 _HEX64 = re.compile(r"^[0-9a-f]{64}$")
-_SUBJECT_RE = re.compile(r"^[\w.\- ]{1,200}$")
+# ASCII only, single internal spaces, no leading/trailing space: ids that differ
+# only by invisible or lookalike characters cannot be anchored separately.
+_SUBJECT_RE = re.compile(r"(?=.{1,200}\Z)[A-Za-z0-9._-]+(?: [A-Za-z0-9._-]+)*\Z")
 
 
 def load_keys(store):
@@ -127,7 +129,7 @@ def _clean_checkpoint(payload):
         raise ValueError("checkpoint must be a JSON object")
     subject = payload.get("subject")
     if subject is not None:
-        if not isinstance(subject, str) or not _SUBJECT_RE.match(subject):
+        if not isinstance(subject, str) or not _SUBJECT_RE.fullmatch(subject):
             raise ValueError("invalid subject")
     count = payload.get("count")
     if not isinstance(count, int) or isinstance(count, bool) or count < 1:
