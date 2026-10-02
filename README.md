@@ -368,7 +368,8 @@ halo report   render a chain as an HTML Runtime Report that re-verifies its hash
               (--from/--to: a date-windowed report covering only the review period;
                -w/--witness or --witness-url: completeness checked at generation;
                exit 1 INCOMPLETE or refused — chain (or window) does not verify, unexpected
-               subject, or unreachable witness — 3 unwitnessed or empty; --expect-subject pins the customer id)
+               subject, or unreachable witness — 2 local witness file missing or damaged,
+               3 unwitnessed or empty; --expect-subject pins the customer id)
 halo policy   corroborate a chain against a declarative policy pack
               (per-rule pass / violation / evidence-gap; exit 1 violated, 2 refused —
                invalid policy, unverifiable chain, or unexpected subject — 3 nothing in scope;
@@ -376,14 +377,15 @@ halo policy   corroborate a chain against a declarative policy pack
 halo serve    serve per-tenant reports over HTTP, access-scoped per customer
 halo grant    designate a report recipient (email or domain)
 halo viewers  list who has unlocked a gated report
-halo anchor   witness a chain head, or --check completeness (exit 1 incomplete, 3 unwitnessed;
-              --remote --check needs no vendor key)
+halo anchor   witness a chain head, or --check completeness (exit 1 incomplete, 2 local witness
+              file missing or damaged, 3 unwitnessed; --remote --check needs no vendor key)
 halo witness-serve  run a witness over HTTP: vendors anchor chain heads, viewers fetch checkpoints
 halo demo     scaffold the full vendor demo (record -> witness -> gated report)
 halo export   date-bounded evidence export: CSV + manifest tied to the chain head
               (--witness/--witness-url/--expect-subject: completeness in the manifest;
                exit 1 refused — chain fails verification, INCOMPLETE, unexpected subject,
-               or unreachable witness — 2 unreadable file, 3 empty chain or unwitnessed)
+               or unreachable witness — 2 unreadable chain, local witness file missing or
+               damaged, or output directory missing — 3 empty chain or unwitnessed)
 halo sample   emit a valid example log
 halo hash     canonical sha256 of a JSON value
 halo hook     Claude Code PostToolUse hook

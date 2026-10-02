@@ -1262,8 +1262,9 @@ def write_report(log_path, out_path=None, witness_log=None, witness_url=None,
     ``anchor.verify_completeness`` result, or None when no witness was named)
     and ``chain_records``."""
     if witness_log and not os.path.isfile(os.path.expanduser(str(witness_log))):
-        raise ValueError("witness file %s does not exist; refusing to render a report "
-                         "that would read as not anchored" % witness_log)
+        from .anchor import WitnessFileError
+        raise WitnessFileError("witness file %s does not exist; refusing to render a report "
+                               "that would read as not anchored" % witness_log)
     records = _load(log_path)
     checkpoints = None
     if witness_log:

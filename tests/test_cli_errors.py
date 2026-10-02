@@ -64,13 +64,14 @@ class AnchorErrorsTest(_Chain):
                     self.assertIn(os.path.basename(path), err)
                     self.assertNotIn("COMPLETE", out)
 
-    def test_anchor_skips_an_unreadable_witness_line(self):
+    def test_anchor_refuses_an_unreadable_witness_line(self):
         bad = self._variant("w-bad.jsonl", '{"subject": "acme", "count": ' + "9" * 5000 + "}\n")
-        # A damaged witness line is skipped (it never hides the rest), so the
-        # chain reads as not witnessed, the same in every Python version.
+        # A damaged witness line is refused (exit 2, as for a missing witness
+        # file), the same in every Python version; it never reads as unwitnessed.
         code, out, err = _run(["anchor", self.log, bad, "--check"])
-        self.assertEqual(code, 3)
-        self.assertIn("UNWITNESSED", out)
+        self.assertEqual(code, 2)
+        self.assertIn("damaged", err)
+        self.assertNotIn("UNWITNESSED", out)
 
 
 class WitnessServePortTest(unittest.TestCase):
@@ -100,7 +101,7 @@ class ExportMissingWitnessTest(_Chain):
         typo = os.path.join(self.d, "typo.jsonl")
         out = os.path.join(self.d, "r.html")
         code, so, err = _run(["report", self.log, "-o", out, "-w", typo])
-        self.assertEqual(code, 1)
+        self.assertEqual(code, 2)  # the same code as anchor and export
         self.assertIn("REFUSED", so)
         self.assertFalse(os.path.exists(out))
         code, so, err = _run(["anchor", self.log, typo, "--check"])
