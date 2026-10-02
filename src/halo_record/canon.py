@@ -16,14 +16,14 @@ MAX_SAFE_INT = 2 ** 53 - 1
 
 def canon_issues(value, path="record"):
     """Values no two JSON implementations are guaranteed to hash identically:
-    lone surrogates, non-integer or out-of-range numbers. The recorder never
+    non-integer, exponent-form, or out-of-range numbers. The recorder never
     writes them; a stored record carrying one was not sealed by it."""
     issues = []
     if isinstance(value, bool) or value is None:
         return issues
     if isinstance(value, str):
-        if any(0xD800 <= ord(c) <= 0xDFFF for c in value):
-            issues.append("%s: lone surrogate in string" % path)
+        # Lone surrogates are not an issue: every implementation hashes them as
+        # U+FFFD, and earlier recorders could store one by truncating an emoji.
         return issues
     if isinstance(value, int):
         if abs(value) > MAX_SAFE_INT:

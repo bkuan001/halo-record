@@ -217,7 +217,7 @@ def evaluate(records, policy):
 
 def load_records(path):
     with open(path, "r", encoding="utf-8") as fh:
-        return [json.loads(ln) for ln in fh.read().splitlines() if ln.strip()]
+        return [json.loads(ln) for ln in fh.read().split("\n") if ln.strip()]
 
 
 def load_policy(path):

@@ -63,10 +63,24 @@ def validate_record(record, schema=None):
     return errors
 
 
+def verify_records(records, schema=None, out=None):
+    """verify_log for records already in memory (reports, policy, serving):
+    the same schema, canonical-form, duplicate-id, and chain checks."""
+    import json as _json
+    lines = [_json.dumps(r, separators=(",", ":")) for r in records]
+    return _verify_lines(lines, schema, out or (lambda *_a, **_k: None))
+
+
 def verify_log(path, schema=None, out=print):
-    schema = schema or load_schema()
+    # JSON Lines are separated by "\n" only; U+2028/U+2029/U+0085 are legal
+    # inside JSON strings and must not split a record.
     with open(path, "r", encoding="utf-8") as fh:
-        lines = [ln for ln in fh.read().splitlines() if ln.strip()]
+        lines = [ln for ln in fh.read().split("\n") if ln.strip()]
+    return _verify_lines(lines, schema, out)
+
+
+def _verify_lines(lines, schema, out):
+    schema = schema or load_schema()
 
     ok = True
     chain_ok = True           # hash-chain/sequence integrity, distinct from schema

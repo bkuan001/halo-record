@@ -259,6 +259,11 @@ class _Handler(BaseHTTPRequestHandler):
         records = _load(path)
         subjects = {(r.get("subject") or {}).get("id") if isinstance(r.get("subject"), dict)
                     else None for r in records}
+        from .verify import verify_records
+        if records and not verify_records(records):
+            return ('<!doctype html><meta charset="utf-8"><title>Report withheld</title>'
+                    '<p>This chain does not verify, so the report is withheld. '
+                    'Run <code>halo verify</code> on it for details.</p>')
         if len(subjects) > 1:
             # One page, one customer: a file holding several subjects is withheld
             # rather than shown to the holder of any one tenant's link.

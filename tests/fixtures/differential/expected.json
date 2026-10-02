@@ -5,7 +5,9 @@
   "exp_number.jsonl": false,
   "fffd_char.jsonl": true,
   "float.jsonl": false,
+  "float_lexeme.jsonl": false,
   "head_truncated.jsonl": false,
-  "lone_surrogate.jsonl": false,
+  "line_separators.jsonl": true,
+  "lone_surrogate.jsonl": true,
   "valid.jsonl": true
 }

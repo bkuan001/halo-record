@@ -119,3 +119,44 @@ class ReportScriptHygieneTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ReportVerifiesWholeChainTest(unittest.TestCase):
+    FIX = os.path.join(os.path.dirname(__file__), "fixtures", "differential")
+
+    def test_non_windowed_report_refuses_a_chain_verify_rejects(self):
+        for name in ("float.jsonl", "big_int.jsonl", "dup_id.jsonl", "float_lexeme.jsonl"):
+            with self.subTest(fixture=name):
+                with self.assertRaises(ValueError):
+                    write_report(os.path.join(self.FIX, name), os.path.join(tempfile.mkdtemp(), "r.html"))
+
+    def test_embedded_policy_is_non_attestable_when_the_chain_is_broken(self):
+        d = tempfile.mkdtemp()
+        log = os.path.join(d, "c.jsonl")
+        recs = _chain(log, 5)
+        recs[0]["action"]["tool"] = "edited-after-sealing"  # break outside the window
+        _write(log, recs)
+        pol = os.path.join(d, "p.json")
+        with open(pol, "w") as fh:
+            json.dump([{"id": "r1", "match": {"category": "security"},
+                        "require": {"category": "security"}}], fh)
+        html, _ = write_report(log, os.path.join(d, "r.html"), policy_path=pol,
+                               start=parse_bound("2026-06-03", end=False),
+                               end=parse_bound("2026-06-05", end=True))
+        self.assertIn("NON-ATTESTABLE", html)
+        self.assertNotIn(">COMPLIANT<", html)
+
+    def test_window_must_link_to_the_record_before_it(self):
+        d = tempfile.mkdtemp()
+        log = os.path.join(d, "c.jsonl")
+        recs = _chain(log, 4)
+        prev = "ab" * 32  # fabricated anchor for records 3-4
+        for r in recs[2:]:
+            r["integrity"]["prev_hash"] = prev
+            r["integrity"]["hash"] = compute_hash(r, prev)
+            prev = r["integrity"]["hash"]
+        _write(log, recs)
+        with self.assertRaises(ValueError):
+            write_report(log, os.path.join(d, "w.html"),
+                         start=parse_bound("2026-06-03", end=False),
+                         end=parse_bound("2026-06-04", end=True))

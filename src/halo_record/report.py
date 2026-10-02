@@ -25,7 +25,7 @@ from .anchor import chain_root as _chain_root
 
 def _load(path):
     with open(path, "r", encoding="utf-8") as fh:
-        lines = [ln for ln in fh.read().splitlines() if ln.strip()]
+        lines = [ln for ln in fh.read().split("\n") if ln.strip()]
     records = []
     for n, ln in enumerate(lines, start=1):
         try:
@@ -1039,7 +1039,7 @@ footer a{color:var(--gold);text-decoration:none}
 """
 
 
-def _policy_block(records, policy, subject):
+def _policy_block(records, policy, subject, chain_verified=True):
     """Render the deterministic policy-corroboration verdict for the report.
 
     ``policy`` is a list of rule dicts. The verdict panel is computed by
@@ -1050,6 +1050,9 @@ def _policy_block(records, policy, subject):
         return ""
     from .policy import evaluate, verdict_panel
     result = evaluate(records, policy)
+    result["chain_verified"] = bool(chain_verified)
+    if not chain_verified:
+        result["compliant"] = False
     return ('<h2>Policy corroboration</h2>\n<div style="margin:0 0 30px">%s</div>'
             % verdict_panel(result, subject=subject))
 
@@ -1134,7 +1137,12 @@ def render(records, checkpoints=None, *, witness_url=None, policy=None, window=N
             % (prov_panel, prov_note))
     else:
         provenance_block = ""
-    policy_block = _policy_block(records, policy, subject)
+    if window is not None:
+        chain_verified = window.get("chain_verified", True)
+    else:
+        from .verify import verify_records
+        chain_verified = verify_records(records)
+    policy_block = _policy_block(records, policy, subject, chain_verified)
     scope_pills = "".join('<span class="pill">%s</span>' % _esc(s) for s in stats["scopes"]) \
         or '<span class="dim">none</span>'
     # Escape "<" so a record value containing "</script>" can't break out of
@@ -1333,7 +1341,13 @@ def write_report(log_path, out_path=None, witness_log=None, witness_url=None,
     if policy_path:
         from .policy import load_policy
         policy = load_policy(policy_path)
+    from .verify import verify_records
+    chain_ok = verify_records(records)
     window = None
+    if start is None and end is None and not chain_ok:
+        raise ValueError(
+            "%s: the chain does not verify (run halo verify); refusing to render a report "
+            "whose in-page check could read as passing" % log_path)
     if start is not None or end is not None:
         from .export import in_window
         total = len(records)
@@ -1357,6 +1371,17 @@ def write_report(log_path, out_path=None, witness_log=None, witness_url=None,
         head_cut = bool(records) and (records[0].get("integrity") or {}).get("prev_hash") != GENESIS_PREV
         if head_cut and first == 0:
             win_breaks = [0] + win_breaks
+        # A window that starts mid-chain must link to the record before it;
+        # otherwise its anchor is whatever the window claims.
+        if first > 0 and anchor != (records[first - 1].get("integrity") or {}).get("hash"):
+            win_breaks = [0] + win_breaks
+        # Records inside the window must pass the same per-record checks verify does.
+        if win_records and not verify_records(win_records, out=None) and not win_breaks:
+            from .canon import canon_issues
+            from .verify import validate_record
+            bad = [n for n, r in enumerate(win_records)
+                   if canon_issues(r) or validate_record(r)]
+            win_breaks = bad or win_breaks
         if win_breaks:
             raise ValueError(
                 "%s: the requested window fails verification at record(s) %s; "
@@ -1372,6 +1397,7 @@ def write_report(log_path, out_path=None, witness_log=None, witness_url=None,
                   "outside_breaks": len(outside),
                   "outside_first_ts": (records[outside[0]].get("ts") if outside else None),
                   "outside_last_ts": (records[outside[-1]].get("ts") if outside else None),
+                  "chain_verified": chain_ok,
                   "from": start.isoformat() if start else None,
                   "to": end.isoformat() if end else None}
         records = win_records

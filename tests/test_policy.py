@@ -218,7 +218,11 @@ class TestReportIntegration(unittest.TestCase):
 
     def test_render_includes_policy_panel(self):
         from halo_record.report import render
-        doc = render(CHAIN, policy=[dict(REFUND_RULE, source="vendor policy")])
+        d = tempfile.mkdtemp()
+        sealed = os.path.join(d, "c.jsonl")
+        _seal(sealed, CHAIN)
+        from halo_record.report import _load
+        doc = render(_load(sealed), policy=[dict(REFUND_RULE, source="vendor policy")])
         self.assertIn("Policy corroboration", doc)
         self.assertIn("hp-card", doc)
         self.assertIn("NON-COMPLIANT", doc)
@@ -233,9 +237,7 @@ class TestReportIntegration(unittest.TestCase):
     def test_report_cli_with_policy(self):
         d = tempfile.mkdtemp()
         log = os.path.join(d, "chain.jsonl")
-        with open(log, "w", encoding="utf-8") as fh:
-            for rec in CHAIN:
-                fh.write(json.dumps(rec) + "\n")
+        _seal(log, CHAIN)
         pol = os.path.join(d, "policy.json")
         with open(pol, "w", encoding="utf-8") as fh:
             json.dump([REFUND_RULE], fh)

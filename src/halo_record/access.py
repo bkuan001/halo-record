@@ -120,7 +120,7 @@ def read_leads(directory):
     if not os.path.exists(path):
         return []
     with open(path, "r", encoding="utf-8") as fh:
-        return [json.loads(ln) for ln in fh.read().splitlines() if ln.strip()]
+        return [json.loads(ln) for ln in fh.read().split("\n") if ln.strip()]
 
 
 def make_session(secret, chain, email, ttl=SESSION_TTL):

@@ -192,7 +192,7 @@ class Notary:
         if not os.path.exists(self.path):
             return []
         with open(self.path, "r", encoding="utf-8") as fh:
-            cps = [json.loads(ln) for ln in fh.read().splitlines() if ln.strip()]
+            cps = [json.loads(ln) for ln in fh.read().split("\n") if ln.strip()]
         if subject is not None:
             cps = [c for c in cps if c.get("subject") == subject]
         elif chain_root is not None:
