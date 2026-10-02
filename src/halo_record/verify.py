@@ -7,7 +7,7 @@ confirms the RFC 8785 + SHA-256 hash chain is intact.
 import json
 import os
 
-from .canon import GENESIS_PREV, compute_hash
+from .canon import GENESIS_PREV, canon_issues, compute_hash
 
 _SCHEMA_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                             "halo-record.schema.json")
@@ -87,10 +87,21 @@ def verify_log(path, schema=None, out=print):
             out("record %d: schema: %s" % (n, err))
             ok = False
 
+        for issue in canon_issues(record):
+            out("record %d: canonical form: %s" % (n, issue))
+            ok = False
         integ = record.get("integrity", {})
         declared_prev = integ.get("prev_hash")
         declared_hash = integ.get("hash")
-        recomputed = compute_hash(record, prev_hash)
+        try:
+            recomputed = compute_hash(record, prev_hash)
+        except (ValueError, TypeError) as e:
+            out("record %d: chain: cannot be hashed canonically (%s)" % (n, e))
+            ok = False
+            chain_ok = False
+            if chain_broken_at is None:
+                chain_broken_at = n
+            recomputed = "!unhashable!%d" % n
 
         # After the first break, a per-record check here is uninformative (see
         # the summary line below) -- LIMITS.md section 9 already covers why.

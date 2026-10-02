@@ -116,7 +116,11 @@ def chain_breaks(records):
     for i, r in enumerate(records):
         integ = r.get("integrity") or {}
         declared_prev = integ.get("prev_hash")
-        if integ.get("hash") != compute_hash(r, declared_prev):
+        try:
+            recomputed = compute_hash(r, declared_prev)
+        except (ValueError, TypeError):
+            recomputed = None
+        if recomputed is None or integ.get("hash") != recomputed:
             bad.append(i)
         elif i and declared_prev != ((records[i - 1].get("integrity") or {}).get("hash")):
             bad.append(i)

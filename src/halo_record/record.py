@@ -245,11 +245,22 @@ def _canon_safe(value):
                 return as_int
             return str(as_int)
         return str(value)
+    if isinstance(value, str):
+        return _no_lone_surrogates(value)
     if isinstance(value, dict):
-        return {k: _canon_safe(v) for k, v in value.items()}
+        return {_no_lone_surrogates(k) if isinstance(k, str) else k: _canon_safe(v)
+                for k, v in value.items()}
     if isinstance(value, (list, tuple)):
         return [_canon_safe(v) for v in value]
     return value
+
+
+def _no_lone_surrogates(s):
+    """Replace lone surrogates (no valid UTF-8 form) with U+FFFD so the stored
+    record is what was hashed, in every implementation."""
+    if any(0xD800 <= ord(c) <= 0xDFFF for c in s):
+        return "".join("\ufffd" if 0xD800 <= ord(c) <= 0xDFFF else c for c in s)
+    return s
 
 
 _PURPOSE_MAX = 500
@@ -601,11 +612,17 @@ def _scrub_fields(record):
         if isinstance(node, list):
             return [walk(v, path) for v in node]
         if isinstance(node, str):
+            if _OPAQUE_ID.fullmatch(node):
+                return node  # a UUID or hex id carries no secret; patterns can misfire on it
             if path in _IDENTITY_PATHS or (path and path[0] == "principal"):
                 return mask_secrets_only(node)
             return mask_known_secrets(node) if _identifier_like(path) else redact_text(node)
         return node
     walk(record, ())
+
+
+_OPAQUE_ID = re.compile(
+    r"[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}|[0-9A-Fa-f]{16,64}")
 
 
 def _identifier_like(path):
@@ -658,8 +675,13 @@ class Recorder:
     whenever the file has grown underneath the cache.
     """
 
-    def __init__(self, path):
+    def __init__(self, path, *, expected_subjects=None):
         self.path = os.path.expanduser(path)
+        # When set (TenantRecorder does), each append re-checks under the file
+        # lock that the chain's last record belongs to one of these subjects, so
+        # two writers that opened the same file cannot interleave tenants.
+        self._expected_subjects = (set(expected_subjects)
+                                   if expected_subjects is not None else None)
         self._lock = threading.Lock()
         self._last_hash = None
         self._last_record_id = None
@@ -775,10 +797,26 @@ class Recorder:
                   % snapshot_id, file=sys.stderr)
         return snapshot_id, content_hash
 
+    def _check_tail_subject(self):
+        line = _read_last_line(self.path)
+        if not line:
+            return
+        try:
+            rec = json.loads(line)
+        except ValueError:
+            return
+        subj = rec.get("subject") if isinstance(rec, dict) else None
+        sid = (subj.get("id") or None) if isinstance(subj, dict) else None
+        if sid not in self._expected_subjects:
+            raise ValueError("halo-record: %s holds records for another subject; "
+                             "refusing to mix tenants in one chain" % self.path)
+
     def append(self, record):
         with self._lock:
             flock = self._acquire_flock()
             try:
+                if self._expected_subjects is not None:
+                    self._check_tail_subject()
                 prev, prev_snapshot_id, prev_authority_hash = self._current_tail()
                 authority_snapshot_id, authority_hash = self._dedupe_authority(
                     record, prev_snapshot_id, prev_authority_hash)
@@ -796,6 +834,10 @@ class Recorder:
             finally:
                 self._release_flock(flock)
         return record
+
+
+_ASCII_NAME_CHARS = frozenset(
+    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_.")
 
 
 class TenantRecorder:
@@ -816,8 +858,16 @@ class TenantRecorder:
 
     @staticmethod
     def _safe(name):
+        """Filename cleaning used before 0.2.46; kept to find existing chains."""
         cleaned = "".join(
             c if (c.isalnum() or c in "-_.") else "_" for c in str(name)
+        ).strip("._")
+        return cleaned or "tenant"
+
+    @staticmethod
+    def _safe_ascii(name):
+        cleaned = "".join(
+            c if (c in _ASCII_NAME_CHARS) else "_" for c in str(name)
         ).strip("._")
         return cleaned or "tenant"
 
@@ -834,10 +884,12 @@ class TenantRecorder:
         can never share a file (``acme/a`` and ``acme_a`` stay apart). ``~`` is
         never produced by cleaning, so a plain name cannot imitate a digested one."""
         raw = str(subject_id)
-        safe = self._safe(raw)
+        safe = self._safe_ascii(raw)
         # The default (subjectless) chain keeps its established name; a real
         # subject that cleans to the same name is refused by the mixed-file check.
-        if safe != raw and subject_id != self.default:
+        # Uppercase also takes a digest: case-insensitive filesystems (macOS,
+        # Windows) would otherwise store "ACME" and "acme" in one file.
+        if (safe != raw or raw != raw.lower()) and subject_id != self.default:
             digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()[:24]
             safe = "%s~%s" % (safe, digest)
         return os.path.join(self.directory, safe + ".jsonl")
@@ -886,7 +938,7 @@ class TenantRecorder:
                 raise ValueError(
                     "halo-record: %s already holds records for another subject; "
                     "refusing to mix tenants in one chain" % path)
-            self._recorders[subject_id] = Recorder(path)
+            self._recorders[subject_id] = Recorder(path, expected_subjects=expected)
         return self._recorders[subject_id]
 
     def append(self, record):

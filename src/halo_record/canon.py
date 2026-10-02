@@ -11,6 +11,37 @@ import json
 GENESIS_PREV = "0" * 64
 
 
+MAX_SAFE_INT = 2 ** 53 - 1
+
+
+def canon_issues(value, path="record"):
+    """Values no two JSON implementations are guaranteed to hash identically:
+    lone surrogates, non-integer or out-of-range numbers. The recorder never
+    writes them; a stored record carrying one was not sealed by it."""
+    issues = []
+    if isinstance(value, bool) or value is None:
+        return issues
+    if isinstance(value, str):
+        if any(0xD800 <= ord(c) <= 0xDFFF for c in value):
+            issues.append("%s: lone surrogate in string" % path)
+        return issues
+    if isinstance(value, int):
+        if abs(value) > MAX_SAFE_INT:
+            issues.append("%s: integer beyond 2^53-1" % path)
+        return issues
+    if isinstance(value, float):
+        issues.append("%s: non-integer or exponent-form number" % path)
+        return issues
+    if isinstance(value, dict):
+        for k, v in value.items():
+            issues.extend(canon_issues(k, path + ".<key>"))
+            issues.extend(canon_issues(v, "%s.%s" % (path, k)))
+    elif isinstance(value, list):
+        for i, v in enumerate(value):
+            issues.extend(canon_issues(v, "%s[%d]" % (path, i)))
+    return issues
+
+
 def canon(value):
     """Return the RFC 8785 canonical JSON serialization of ``value`` as a str."""
     if value is True:
@@ -24,6 +55,9 @@ def canon(value):
     if isinstance(value, bool):
         return "true" if value else "false"
     if isinstance(value, int):
+        if abs(value) > MAX_SAFE_INT:
+            raise ValueError("integer %d exceeds 2^53-1; JSON readers that parse numbers "
+                             "as doubles would hash it differently" % value)
         return str(value)
     if isinstance(value, float):
         return _canon_number(value)
@@ -55,6 +89,11 @@ def _canon_string(s):
             out.append("\\r")
         elif o < 0x20:
             out.append("\\u%04x" % o)
+        elif 0xD800 <= o <= 0xDFFF:
+            # A lone surrogate has no UTF-8 encoding; hash it as U+FFFD, the
+            # same bytes every UTF-8 encoder (Node's included) produces, so the
+            # recorder never raises. Verification rejects stored lone surrogates.
+            out.append("\ufffd")
         else:
             out.append(ch)
     out.append('"')

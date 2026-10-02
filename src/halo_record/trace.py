@@ -40,6 +40,17 @@ def _safe(name):
     return cleaned or "agent"
 
 
+def _profile_log_name(profile):
+    """Log filename for a profile. A profile whose name cleaning would alter
+    gets a digest suffix, so two profiles never share a log."""
+    import hashlib
+    raw = str(profile)
+    safe = _safe(raw)
+    if safe != raw:
+        safe = "%s~%s" % (safe, hashlib.sha256(raw.encode("utf-8")).hexdigest()[:24])
+    return safe + ".jsonl"
+
+
 def _make_recorder(profile, log, directory):
     if directory is not None:
         directory = os.path.expanduser(directory)
@@ -48,7 +59,10 @@ def _make_recorder(profile, log, directory):
     if log is None:
         home = os.path.expanduser(DEFAULT_HOME)
         os.makedirs(home, exist_ok=True)
-        log = os.path.join(home, _safe(profile) + ".jsonl")
+        log = os.path.join(home, _profile_log_name(profile))
+        legacy = os.path.join(home, _safe(profile) + ".jsonl")
+        if not os.path.exists(log) and os.path.exists(legacy) and legacy != log:
+            log = legacy  # keep appending to a log written before digested names
     else:
         log = os.path.expanduser(log)
         parent = os.path.dirname(log)

@@ -46,6 +46,11 @@ class FieldCoverageTest(unittest.TestCase):
         self.assertEqual(r["action"]["authorization"]["approver"], "alice@example.com")
         self.assertEqual(r["principal"]["human_id"], "alice@example.com")
 
+    def test_uuid_parent_ids_are_never_masked(self):
+        for _ in range(300):
+            parent = build("tool_call", "security", tool="a")["record_id"]
+            self.assertEqual(build("write", "safety", tool="b", parent_id=parent)["parent_id"], parent)
+
     def test_subject_id_is_not_rewritten(self):
         r = build("tool_call", "security", tool="t", subject="acme-corp")
         self.assertEqual(r["subject"]["id"], "acme-corp")

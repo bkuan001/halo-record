@@ -189,3 +189,37 @@ class PurposeRedactionTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class FilenameParityTest(unittest.TestCase):
+    """Tenant filenames follow one rule in both packages and on every filesystem."""
+
+    def test_case_variants_never_share_a_file(self):
+        tr = TenantRecorder(tempfile.mkdtemp())
+        self.assertNotEqual(tr.path_for("ACME").lower(), tr.path_for("acme").lower())
+
+    def test_non_ascii_ids_get_a_digest_like_typescript(self):
+        tr = TenantRecorder(tempfile.mkdtemp())
+        self.assertIn("~", os.path.basename(tr.path_for("München")))
+
+    def test_existing_non_ascii_chain_keeps_receiving_records(self):
+        d = tempfile.mkdtemp()
+        legacy = os.path.join(d, "München.jsonl")
+        Recorder(legacy).append(build("tool_call", "security", tool="a", subject="München"))
+        TenantRecorder(d).append(build("tool_call", "security", tool="b", subject="München"))
+        with open(legacy, encoding="utf-8") as fh:
+            self.assertEqual(sum(1 for l in fh if l.strip()), 2)
+
+    def test_append_rechecks_the_file_under_its_lock(self):
+        d = tempfile.mkdtemp()
+        path = os.path.join(d, "x.jsonl")
+        guarded = Recorder(path, expected_subjects={"acme"})
+        Recorder(path).append(build("tool_call", "security", tool="a", subject="initech"))
+        with self.assertRaises(ValueError):
+            guarded.append(build("tool_call", "security", tool="b", subject="acme"))
+
+    def test_trace_profiles_do_not_collide(self):
+        import importlib
+        trace_mod = importlib.import_module("halo_record.trace")
+        self.assertNotEqual(trace_mod._profile_log_name("acme/support"),
+                            trace_mod._profile_log_name("acme:support"))

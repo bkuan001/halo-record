@@ -1,0 +1,11 @@
+{
+  "astral.jsonl": true,
+  "big_int.jsonl": false,
+  "dup_id.jsonl": false,
+  "exp_number.jsonl": false,
+  "fffd_char.jsonl": true,
+  "float.jsonl": false,
+  "head_truncated.jsonl": false,
+  "lone_surrogate.jsonl": false,
+  "valid.jsonl": true
+}
