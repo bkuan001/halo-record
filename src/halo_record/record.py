@@ -803,15 +803,21 @@ class TenantRecorder:
         found = set()
         if not os.path.exists(path):
             return found
-        with open(path, "r", encoding="utf-8") as fh:
+        with open(path, "r", encoding="utf-8", errors="replace") as fh:
             for line in fh:
                 if not line.strip():
                     continue
                 try:
-                    subj = json.loads(line).get("subject")
+                    rec = json.loads(line)
                 except ValueError:
                     continue
-                found.add(subj.get("id") if isinstance(subj, dict) else None)
+                if not isinstance(rec, dict):
+                    continue
+                subj = rec.get("subject")
+                sid = subj.get("id") if isinstance(subj, dict) else None
+                if sid is not None and not isinstance(sid, (str, int, float, bool)):
+                    sid = json.dumps(sid, sort_keys=True)
+                found.add(sid)
         return found
 
     def recorder_for(self, subject_id):
@@ -819,15 +825,16 @@ class TenantRecorder:
             if not os.path.isdir(self.directory):
                 os.makedirs(self.directory, exist_ok=True)
             path = self.path_for(subject_id)
-            expected = None if subject_id == self.default else subject_id
+            expected = {subject_id} | ({None} if subject_id == self.default else set())
             # Continuity for chains written before digested names: if the plain
             # file exists and holds only this subject, keep appending there.
             legacy = os.path.join(self.directory, self._safe(subject_id) + ".jsonl")
             if (legacy != path and not os.path.exists(path)
                     and os.path.exists(legacy)
-                    and self._file_subjects(legacy) == {expected}):
+                    and self._file_subjects(legacy)
+                    and self._file_subjects(legacy) <= expected):
                 path = legacy
-            others = self._file_subjects(path) - {expected}
+            others = self._file_subjects(path) - expected
             if others:
                 raise ValueError(
                     "halo-record: %s already holds records for another subject; "

@@ -41,6 +41,26 @@ class TenantIsolationTest(unittest.TestCase):
         tr = TenantRecorder(tempfile.mkdtemp())
         self.assertEqual(os.path.basename(tr.path_for("acme-corp")), "acme-corp.jsonl")
 
+    def test_existing_plain_named_chain_keeps_receiving_records(self):
+        d = tempfile.mkdtemp()
+        legacy = os.path.join(d, "acme_corp.jsonl")
+        Recorder(legacy).append(build("tool_call", "security", tool="a", subject="acme corp"))
+        TenantRecorder(d).append(build("tool_call", "security", tool="b", subject="acme corp"))
+        with open(legacy, encoding="utf-8") as fh:
+            self.assertEqual(sum(1 for l in fh if l.strip()), 2)
+        self.assertEqual([f for f in os.listdir(d) if f.endswith(".jsonl")], ["acme_corp.jsonl"])
+
+    def test_malformed_lines_do_not_break_routing(self):
+        d = tempfile.mkdtemp()
+        tr = TenantRecorder(d)
+        with open(tr.path_for("acme-corp"), "w", encoding="utf-8") as fh:
+            fh.write('[1, 2]\n"text"\nnot json\n{"subject": {"id": {"x": 1}}}\n')
+        with self.assertRaises(ValueError):  # the dict-id line is another subject
+            tr.append(build("tool_call", "security", tool="a", subject="acme-corp"))
+        with open(tr.path_for("initech"), "wb") as fh:
+            fh.write(b'\xff\xfe[]\n')
+        TenantRecorder(d).append(build("tool_call", "security", tool="b", subject="initech"))
+
     def test_refuses_a_file_holding_another_subject(self):
         d = tempfile.mkdtemp()
         tr = TenantRecorder(d)

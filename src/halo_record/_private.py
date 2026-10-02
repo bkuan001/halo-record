@@ -16,6 +16,10 @@ def open_private(path, mode="w", encoding="utf-8"):
         os.fchmod(fd, 0o600)
     except (AttributeError, OSError):
         pass
-    if "b" in mode:
-        return os.fdopen(fd, mode)
-    return os.fdopen(fd, mode, encoding=encoding)
+    try:
+        if "b" in mode:
+            return os.fdopen(fd, mode)
+        return os.fdopen(fd, mode, encoding=encoding)
+    except Exception:
+        os.close(fd)
+        raise

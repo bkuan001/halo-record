@@ -142,6 +142,8 @@ def _clean_checkpoint(payload):
     if chain_root is not None and not (
             isinstance(chain_root, str) and _HEX64.match(chain_root)):
         raise ValueError("chain_root must be a 64-char sha-256 hex digest")
+    if subject is None and chain_root is None:
+        raise ValueError("checkpoint needs a subject or a chain_root")
     return {
         "chain_root": chain_root,
         "subject": subject,
@@ -273,7 +275,7 @@ class _Handler(BaseHTTPRequestHandler):
             return hmac.compare_digest(held, fp)
         owners[owner_id] = fp
         tmp = path + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as fh:
+        with open_private(tmp, "w") as fh:
             json.dump(owners, fh, separators=(",", ":"), sort_keys=True)
         os.replace(tmp, path)
         return True
