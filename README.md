@@ -284,7 +284,8 @@ A hosted, recognized witness is how this project will sustain itself. Early acce
 The chain is append-only: anything sealed into a record stays there, because
 removing it would break verification for everything after it. Tool arguments are
 already handled — stored as a hash plus a redacted summary capped at 200 characters
-(hash-only mode keeps no summary).
+(hash-only mode keeps no summary, and replaces secret-shaped tokens in id fields
+with a digest — all but `subject.id`, which routes the record to its tenant's chain).
 
 Note the limit in that sentence: *redacted*, not removed. [LIMITS.md](https://github.com/bkuan001/halo-record/blob/main/LIMITS.md)
 section 6 is explicit that a name or a postal address has no reliable pattern, so
@@ -320,6 +321,11 @@ record_model_call(rec, provider="anthropic", model="claude-sonnet-4-6",
                   zdr=True, purpose="draft support reply",
                   subject="acme")   # tool=model.generate, scope=model:anthropic
 ```
+
+The model is also sealed as `agent.model` and the retention terms as `data.zdr`,
+so the export's model column and policy rules can read them, and both survive
+`summaries=False`. Pass `messages=` and the record stores how many there were — a
+count, never their content.
 
 ## Where this sits in a compliance stack
 
@@ -360,8 +366,9 @@ A native push integration — evidence landing in your platform automatically �
 halo verify   validate schema + hash chain (exit 1 broken, 3 empty chain; CI-friendly)
 halo report   render a chain as an HTML Runtime Report that re-verifies its hash chain in the browser (`halo verify` also checks the record format)
               (--from/--to: a date-windowed report covering only the review period;
-               -w/--witness-url: completeness checked at generation — exit 1 incomplete, 3 unwitnessed
-               or empty, unreachable witness refused; --expect-subject pins the customer id)
+               -w/--witness or --witness-url: completeness checked at generation;
+               exit 1 INCOMPLETE or refused — chain (or window) does not verify, unexpected
+               subject, or unreachable witness — 3 unwitnessed or empty; --expect-subject pins the customer id)
 halo policy   corroborate a chain against a declarative policy pack
               (per-rule pass / violation / evidence-gap; exit 1 violated, 2 refused —
                invalid policy, unverifiable chain, or unexpected subject — 3 nothing in scope;
@@ -374,7 +381,9 @@ halo anchor   witness a chain head, or --check completeness (exit 1 incomplete, 
 halo witness-serve  run a witness over HTTP: vendors anchor chain heads, viewers fetch checkpoints
 halo demo     scaffold the full vendor demo (record -> witness -> gated report)
 halo export   date-bounded evidence export: CSV + manifest tied to the chain head
-              (--witness/--witness-url/--expect-subject: completeness in the manifest; INCOMPLETE refused)
+              (--witness/--witness-url/--expect-subject: completeness in the manifest;
+               exit 1 refused — chain fails verification, INCOMPLETE, unexpected subject,
+               or unreachable witness — 2 unreadable file, 3 empty chain or unwitnessed)
 halo sample   emit a valid example log
 halo hash     canonical sha256 of a JSON value
 halo hook     Claude Code PostToolUse hook

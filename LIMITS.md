@@ -53,6 +53,21 @@ rules; a hosted witness would bound it by publishing its own received-at time
 for each checkpoint — which is then the witness's assertion, not the
 operator's.)
 
+**Who can read the witness.** `halo witness-serve` serves
+`GET /v1/checkpoints?subject=<id>` without credentials by default, so a
+buyer's browser can fetch checkpoints while it re-verifies a Runtime Report,
+and a reviewer can check completeness with no account and no key the vendor
+hands out (`halo anchor --remote --check` needs no vendor key). The cost is
+disclosure: anyone who guesses a subject id learns that it is anchored and its
+record count. Setting `HALO_WITNESS_READ_KEYS` (`key=subject-glob|…`, every
+read key scoped) makes per-subject reads require a bearer key scoped to that
+subject (401 without one, 403 out of scope); reads by `chain_root` — a 64-hex
+fingerprint, not a guessable name — stay open. `halo anchor --remote --check
+--key <read key>` carries one; `halo report --witness-url`, `halo export
+--witness-url`, and a report page's live fetch do not, so with read keys on
+they cannot read a subject's checkpoints (report and export then refuse rather
+than render or export an unchecked result).
+
 **What you say to a reviewer:** "The chain is tamper-evident against everyone
 except the party that operates the recorder. Completeness against the operator
 requires the external witness, and until one holds checkpoints for this chain,
@@ -141,6 +156,43 @@ severity-weighted: LOW notes are counted separately. Masks hide the credential,
 not always its context: the connection-string mask removes the password only,
 so a DSN's username and internal hostname survive into the summary. If you find a path that
 does, that is a vulnerability report we want (see SECURITY.md).
+
+The credential coverage, by finding type:
+
+- `db_conn` — connection strings with the schemes `postgres`/`postgresql`,
+  `mysql`, `mariadb`, `mongodb`/`mongodb+srv`, `redis`/`rediss`,
+  `amqp`/`amqps`, `mssql`, and `sqlserver`; the password is masked.
+- `private_key` — PEM and PGP armor blocks of any private-key label (RSA, EC,
+  DSA, OPENSSH, `ENCRYPTED PRIVATE KEY`, `PGP PRIVATE KEY BLOCK`), masked
+  whole; a block cut off before its footer has its body lines masked too.
+- `password` — a password assigned in text: `password=…`, `DB_PASSWORD: …`, a
+  JSON `"password": "…"` pair (also `passwd`, `passphrase`, `pwd`).
+- `credential_field` — a value under a credential-named key (`password`,
+  `passwd`, `passphrase`, `secret`, `token`, `api_key`, `private_key`,
+  `secret_key`, `auth`, `authorization`, `credential(s)`, `pass`, `pwd`,
+  including suffixed forms like `db_password` or `db_pass`) is masked whole
+  as `****` whatever its shape — `{"password": "hunter2"}` is masked though
+  `hunter2` matches no pattern. A number under a password-named key is masked
+  the same way.
+
+Known gaps in that coverage: a password in free prose with no assignment —
+`pw hunter2`, `login with password hunter2` — is not detected. Card numbers
+are matched at 13–17 digits on the Visa, Mastercard 51–55, American Express,
+and Discover 6011/65 prefixes; other ranges (Mastercard 2-series, UnionPay,
+JCB, Maestro) are not matched. A 19-digit card number is not detected as a
+whole: undelimited it passes through unmasked, and grouped at most a leading
+16-digit run is masked, leaving its last digits readable.
+
+**Hash-only mode** (`summaries=False`) also covers identifier fields: in
+`session_id`, `parent_id`, `version`, `ref`, `policy_ref`, any `id`, and the
+`agent` and `threats` blocks, each secret-shaped token is replaced by
+`sha256:` plus 16 hex digits of its digest — deterministic, so equal ids still
+group and link — while UUIDs and hex ids are kept as written. `subject.id` is
+the exception: it is stored as given, because it routes the record to its
+tenant's chain. With summaries on, those identifier fields skip the
+high-entropy catch-all (it would mangle legitimate opaque ids) and get named
+formats masked only, so a random-looking secret used as an id is stored as
+written.
 
 The `authority` block gets a narrower pass than summaries: known secret formats
 (API keys, tokens, private-key blocks, connection strings) are masked at seal
@@ -426,3 +478,74 @@ matter; whitespace and the float-vs-string distinction do.
 
 This trade was chosen so that an untampered chain verifies identically in every
 reader, and so that no caller-supplied number can crash the recorder mid-run.
+
+---
+
+## 15. Timestamps are declared; the sealed order is the chain order
+
+A record's `ts` is the recording host's clock, as the producer declared it.
+The order the chain proves is the order records were sealed — each record's
+`prev_hash` commits to the one before it — not the order of their timestamps.
+`halo verify` compares each parseable `ts` with the previous record's (offsets
+applied, to the nanosecond) and, when one is earlier, prints a warning naming
+both records' timestamps and a summary count:
+
+```
+record 3: warning: ts 2026-06-01T11:00:00Z is earlier than the previous record's ts 2026-06-01T12:00:00Z
+warning: 1 record(s) carry a ts earlier than the record before them; ts is declared by the producer, and the sealed order is the chain order (see LIMITS.md).
+```
+
+The warning does not fail verification: clock adjustments, retries, and
+records built ahead of their append all produce it legitimately. It can also
+mean a backdated record, and the chain alone cannot tell the two apart. What
+bounds time from outside is an RFC 3161 timestamp on a witness checkpoint
+(§1).
+
+**What you say to a reviewer:** "Order is proven by the hash links; time is
+the producer's statement. A timestamp that runs backwards is surfaced on every
+verification, and the external time proof is the anchored checkpoint."
+
+---
+
+## 16. A torn or truncated tail is kept, reported, and fails verification
+
+A crash mid-write, a full disk, or a truncated copy can leave the last line of
+a chain file incomplete. The recorder does not repair or remove it. On the
+next append it keeps those bytes in place, prints a stderr warning (`N line(s)
+at the end of <file> are not a complete record (a torn write or a
+truncation); they are kept in place, the next record links to the last
+complete record, and halo verify will report them`), ends the torn line, and
+writes the new record on its own line, linked to the last complete record. A
+file with no complete record at all keeps its bytes too, and the chain starts
+after them.
+
+`halo verify` reports each line that is not a complete JSON record separately
+(`record N: not valid JSON: …`); such a line is not a link in the chain, so the
+records around it are checked against each other. The file still fails, with
+its own summary — `N line(s) are not complete records (a torn write or a
+truncation; see above); the hash chain of the remaining records is intact` —
+distinct from a broken link. A torn line is evidence that a write did not
+complete; whether a record was lost there is what a witness checkpoint
+answers (§1).
+
+`halo verify`, `halo report`, `halo export`, `halo policy`, and the witness's
+checkpoint log split a file the same way: on `\n` only, with a carriage return
+treated as JSON whitespace and a leading byte-order mark skipped, so each sees
+the records `halo verify` checked.
+
+---
+
+## 17. One chain file per subject
+
+`TenantRecorder` writes one file per subject id. Records with no subject go
+to the default chain; a record whose subject id is literally the default's
+name (`_local` unless configured otherwise) is a real tenant and gets its own chain file, never the
+subjectless one.
+
+**Upgrading over files from an earlier version.** An earlier version could
+leave several subjects in one file. When a subject's earlier records share a
+file with other subjects, they cannot be continued without mixing tenants:
+those records stay where they are, the subject's new records start their own
+chain in its digested file (`<name>~<digest>.jsonl`), and the recorder says so
+on stderr, naming both files. Verify and report the two files separately; the
+new chain starts at genesis and does not link to the earlier records.
