@@ -7,6 +7,7 @@ and the verifier both call into it so emitted records and verification agree.
 
 import hashlib
 import json
+import re
 
 GENESIS_PREV = "0" * 64
 
@@ -72,35 +73,26 @@ def canon(value):
     raise TypeError("cannot canonicalize %r" % type(value))
 
 
+_ESCAPES = {'"': '\\"', "\\": "\\\\", "\b": "\\b", "\t": "\\t", "\n": "\\n",
+            "\f": "\\f", "\r": "\\r"}
+# Characters RFC 8785 escapes, plus lone surrogates: those have no UTF-8
+# encoding, so they are hashed as U+FFFD, the bytes every UTF-8 encoder (Node's
+# included) produces, and the recorder never raises. Verification rejects
+# stored lone surrogates.
+_NEEDS_ESCAPE = re.compile('[\x00-\x1f"\\\\\ud800-\udfff]')
+
+
+def _escape(m):
+    ch = m.group(0)
+    if ch in _ESCAPES:
+        return _ESCAPES[ch]
+    if ch >= "\ud800":
+        return "\ufffd"
+    return "\\u%04x" % ord(ch)
+
+
 def _canon_string(s):
-    out = ['"']
-    for ch in s:
-        o = ord(ch)
-        if ch == '"':
-            out.append('\\"')
-        elif ch == "\\":
-            out.append("\\\\")
-        elif ch == "\b":
-            out.append("\\b")
-        elif ch == "\t":
-            out.append("\\t")
-        elif ch == "\n":
-            out.append("\\n")
-        elif ch == "\f":
-            out.append("\\f")
-        elif ch == "\r":
-            out.append("\\r")
-        elif o < 0x20:
-            out.append("\\u%04x" % o)
-        elif 0xD800 <= o <= 0xDFFF:
-            # A lone surrogate has no UTF-8 encoding; hash it as U+FFFD, the
-            # same bytes every UTF-8 encoder (Node's included) produces, so the
-            # recorder never raises. Verification rejects stored lone surrogates.
-            out.append("\ufffd")
-        else:
-            out.append(ch)
-    out.append('"')
-    return "".join(out)
+    return '"' + _NEEDS_ESCAPE.sub(_escape, s) + '"'
 
 
 def _canon_number(f):

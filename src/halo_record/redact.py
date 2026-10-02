@@ -46,7 +46,10 @@ PATTERNS = [
     # A password assigned in text ("password=...", "DB_PASSWORD: ...", a JSON
     # "password": "..." pair). Bounded value length keeps it linear.
     ("password",     "CRITICAL", re.compile(r'(?i)(?<![A-Za-z0-9])(?:password|passwd|passphrase|pwd)["\']?[ \t]{0,3}[=:][ \t]{0,3}["\']?[^\s"\',;<>]{1,256}')),
-    ("jwt",          "HIGH",     re.compile(r'eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}')),
+    # A JWT starts a token (the lookbehind), so a run like "eyJeyJeyJ..." is
+    # tried once rather than from every "eyJ" in it, and each segment is
+    # bounded: matching stays linear on hostile text.
+    ("jwt",          "HIGH",     re.compile(r'(?<![A-Za-z0-9_-])eyJ[A-Za-z0-9_-]{10,8192}\.[A-Za-z0-9_-]{10,8192}\.[A-Za-z0-9_-]{10,8192}')),
     # IBAN runs BEFORE credit_card: an IBAN whose digit body happens to Luhn-
     # check would otherwise be card-masked first, leaving country/check digits
     # and the tail exposed. Shape-tolerant (case, space/dot/hyphen groups) and
@@ -64,6 +67,40 @@ PATTERNS = [
     ("ip_internal",  "MEDIUM",   re.compile(r'\b(10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(?:1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3})\b')),
     ("phone",        "MEDIUM",   re.compile(r'\b(?:\+?1[-.\s])?\(?\d{3}\)?[-.\s]\d{3}[-.\s]\d{4}\b')),
 ]
+
+# Text each pattern cannot match without (case-folded for the case-insensitive
+# patterns). A pattern whose required text is absent is skipped: on long input
+# that saves a full pass. Patterns not listed always run.
+_REQUIRED = {
+    "api_key": (("sk-", "AKIA", "xox"), False),
+    "gcp_api_key": (("AIza",), False),
+    "aws_secret_key": (("aws_secret_access_key",), True),
+    "webhook_url": (("https://",), False),
+    "stripe_key": (("_live_", "_test_"), False),
+    "github_token": (("ghp_", "gho_", "ghs_", "ghu_", "github_pat_"), False),
+    "private_key": (("-----BEGIN ",), False),
+    "db_conn": (("://",), False),
+    "password": (("pass", "pwd"), True),
+    "jwt": (("eyJ",), False),
+    "bot_token": ((":",), False),
+    "bearer_token": (("Bearer",), False),
+    "email": (("@",), False),
+}
+
+
+def _fold(text):
+    # str.lower() leaves the long s as is, but the case-insensitive patterns
+    # match it as "s" (as they match the Kelvin sign as "k", which lower() folds).
+    return text.lower().replace("\u017f", "s")
+
+
+def _may_match(name, text, folded):
+    req = _REQUIRED.get(name)
+    if req is None:
+        return True
+    hay = folded if req[1] else text
+    return any(lit in hay for lit in req[0])
+
 
 SEVERITY_RANK = {"CRITICAL": 4, "HIGH": 3, "MEDIUM": 2, "LOW": 1, "INFO": 0}
 
@@ -194,23 +231,42 @@ def _iban_ok(value):
     return n % 97 == 1
 
 
+_IBAN_TR = str.maketrans({chr(c): str(c - 55) for c in range(ord("A"), ord("Z") + 1)})
+
+
 def _iban_prefix(match_text):
-    """The longest block-aligned prefix of ``match_text`` that passes mod-97,
-    or None. A regex match can run past the account number into whatever
-    follows it ("DE89 … 00 EUR"); the gate must not let that trailing text
-    disarm the mask, so it retries shorter candidates before giving up."""
+    """The longest prefix of ``match_text`` that passes mod-97, or None. A
+    regex match can run past the account number into whatever follows it
+    ("DE89 … 00 EUR"); the gate must not let that trailing text disarm the
+    mask, so shorter candidates are tried too — separator-aligned or not, so a
+    compact IBAN glued to a suffix ("…013000EUR") is still found. At most ~20
+    candidate lengths, each one integer remainder."""
     t = str(match_text)
-    if _iban_ok(t):
-        return t
-    # Try every shorter endpoint, longest first — separator-aligned or not, so
-    # a compact IBAN glued to a suffix ("…013000EUR") is still found. At most
-    # ~30 mod-97 checks per match.
-    for end in range(len(t) - 1, 0, -1):
-        cand = t[:end].rstrip(" .-\t\u00a0")
-        if len(_IBAN_SEP.sub('', cand)) < 15:
-            break
-        if _iban_ok(cand):
-            return cand
+    v = _IBAN_SEP.sub('', t).upper()
+    if len(v) < 15 or not v[:2].isalpha() or not v[2:4].isdigit():
+        return None
+    head = v[:4].translate(_IBAN_TR)
+    body = v[4:34]
+    digits = body.translate(_IBAN_TR)
+    if not (head.isdigit() and digits.isdigit() and digits.isascii()):
+        return None
+    shift = 10 ** len(head)
+    head_n = int(head)
+    k = len(body)            # body characters in the candidate
+    d = len(digits)          # their digit count
+    while k + 4 >= 15:
+        if (int(digits[:d]) * shift + head_n) % 97 == 1:
+            if k + 4 == len(v):
+                return t
+            # the candidate ends at the (k + 4)-th non-separator character
+            seen = 0
+            for i, c in enumerate(t):
+                if not _IBAN_SEP.match(c):
+                    seen += 1
+                    if seen == k + 4:
+                        return t[:i + 1]
+        k -= 1
+        d -= 2 if body[k].isalpha() else 1
     return None
 
 
@@ -257,15 +313,73 @@ _ZW_HINT_RE = re.compile('[' + _INVISIBLE_CLASS + ']')
 
 def normalize_invisible(text):
     """``text`` with invisible characters inside tokens removed."""
-    return _ZW_IN_TOKEN_RE.sub("", text) if _ZW_HINT_RE.search(text) else text
+    if text.isascii() or not _ZW_HINT_RE.search(text):
+        return text
+    return _ZW_IN_TOKEN_RE.sub("", text)
 
 
-def _apply_patterns(text):
+# Text from a tool is untrusted and can be huge (an echoed prompt injection, a
+# multi-megabyte error), and the recorder runs inside the agent. Masking works
+# on at most REDACT_MAX characters and withholds the rest wholesale; findings
+# cover the whole text, scanned in SCAN_WINDOW-sized windows that overlap by
+# SCAN_OVERLAP so a match straddling a window edge is still seen whole.
+REDACT_MAX = 65536
+SCAN_WINDOW = 65536
+SCAN_OVERLAP = 4096
+_WITHHELD = "[\u2026 %d more characters withheld]"
+_TOKEN_CHARS = frozenset("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=_-")
+
+
+def _capped(text):
+    """``text`` cut to at most REDACT_MAX characters, plus the marker naming
+    what was withheld. The cut lands on whitespace when it can, else after the
+    last character that cannot be part of a token, so no fragment of a secret
+    is kept for the patterns to miss; with neither, nothing is kept."""
+    if len(text) <= REDACT_MAX:
+        return text, ""
+    cut = text[:REDACT_MAX]
+    i = max(cut.rfind(" "), cut.rfind("\n"), cut.rfind("\t"))
+    if i < REDACT_MAX // 2:
+        i = len(cut) - 1
+        while i >= 0 and cut[i] in _TOKEN_CHARS:
+            i -= 1
+    keep = cut[:i + 1] if i >= 0 else ""
+    return keep, " " + _WITHHELD % (len(text) - len(keep))
+
+
+def _windows(n):
+    """(start, accept_end, scan_end) for each scan window over ``n`` characters.
+    A window accepts matches that start before accept_end and may read up to
+    scan_end."""
+    if n <= SCAN_WINDOW + SCAN_OVERLAP:
+        return [(0, n, n)]
+    out = []
+    start = 0
+    while start < n:
+        accept = min(start + SCAN_WINDOW, n)
+        out.append((start, accept, min(accept + SCAN_OVERLAP, n)))
+        start = accept
+    return out
+
+
+def _cached_span(name, text, cache):
+    """``_validated_span`` remembered per call, so a repeated match is checked once."""
+    if cache is None:
+        return _validated_span(name, text)
+    key = (name, text)
+    if key not in cache:
+        cache[key] = _validated_span(name, text)
+    return cache[key]
+
+
+def _apply_patterns(text, cache=None):
     out = normalize_invisible(text)
     for name, _sev, pattern in PATTERNS:
+        if not _may_match(name, out, _fold(out) if _REQUIRED.get(name, ((), False))[1] else None):
+            continue
         if name in _VALIDATORS:
             def _sub(m, n=name):
-                span = _validated_span(n, m.group(0))
+                span = _cached_span(n, m.group(0), cache)
                 if span is None:
                     return m.group(0)
                 return redact_sample(n, span) + m.group(0)[len(span):]
@@ -280,7 +394,8 @@ def mask_known_secrets(text):
     catch-all. For fields whose legitimate values ARE high-entropy (authority
     hashes and refs), where the catch-all would mangle the very thing the field
     exists to carry."""
-    return _apply_patterns(str(text))
+    keep, rest = _capped(str(text))
+    return _apply_patterns(keep) + rest
 
 
 # Personal-data patterns that legitimately identify a person in identity
@@ -292,9 +407,12 @@ _IDENTITY_OK = {"email", "phone", "ip_internal"}
 def mask_secrets_only(text):
     """Mask credentials and financial identifiers but keep the personal-data
     patterns an identity field exists to carry (email, phone, internal IP)."""
-    out = normalize_invisible(str(text))
+    out, rest = _capped(str(text))
+    out = normalize_invisible(out)
     for name, _sev, pattern in PATTERNS:
         if name in _IDENTITY_OK:
+            continue
+        if not _may_match(name, out, _fold(out) if _REQUIRED.get(name, ((), False))[1] else None):
             continue
         if name in _VALIDATORS:
             def _sub(m, n=name):
@@ -307,7 +425,7 @@ def mask_secrets_only(text):
             out = pattern.sub(lambda m, n=name: redact_sample(n, m.group(0)), out)
     return TOKEN_RE.sub(
         lambda m: redact_sample(HIGH_ENTROPY_TYPE, m.group(0))
-        if _looks_like_secret(m.group(0)) else m.group(0), out)
+        if _looks_like_secret(m.group(0)) else m.group(0), out) + rest
 
 
 def redact_text(text, entropy=True):
@@ -315,14 +433,16 @@ def redact_text(text, entropy=True):
     # patterns did not cover (running on the residual avoids re-masking "****").
     # ``entropy=False`` keeps the named patterns and skips the catch-all: used
     # for path-typed argument fields, whose legitimate values look like secrets.
-    after = _apply_patterns(str(text))
+    # Text past REDACT_MAX is withheld, not masked (see ``_capped``).
+    keep, rest = _capped(str(text))
+    after = _apply_patterns(keep, {})
     if not entropy:
-        return after
+        return after + rest
     return TOKEN_RE.sub(
         lambda m: redact_sample(HIGH_ENTROPY_TYPE, m.group(0))
         if _looks_like_secret(m.group(0)) else m.group(0),
         after,
-    )
+    ) + rest
 
 
 def scan(text, entropy=True):
@@ -330,44 +450,64 @@ def scan(text, entropy=True):
 
     Emits one finding per distinct match (deduped on the redacted sample,
     capped per type) so counts reflect reality instead of collapsing to
-    one-per-kind.
+    one-per-kind. Long text is scanned whole, window by window (``_windows``),
+    so the work stays linear in its length.
     """
+    import bisect
     s = normalize_invisible(str(text))
     findings = []
     seen = set()
+    windows = _windows(len(s))
+    cache = {}
+    folded = _fold(s)
 
-    iban_spans = []  # accepted IBAN intervals; a card match inside one is the same number
+    iban_starts, iban_ends = [], []  # accepted IBAN intervals, in order
     for name, severity, pattern in PATTERNS:
+        if not _may_match(name, s, folded):
+            continue
         n = 0
-        for m in pattern.finditer(s):
-            raw = m.group(0)
-            if name in _VALIDATORS:
-                span = _validated_span(name, raw)
-                if span is None:
+        last_end = 0
+        done = False
+        for start, accept, end in windows:
+            for m in pattern.finditer(s, max(start, last_end), end):
+                if m.start() >= accept:
+                    break
+                last_end = m.end()
+                raw = m.group(0)
+                if name in _VALIDATORS:
+                    span = _cached_span(name, raw, cache)
+                    if span is None:
+                        continue
+                    if name == "iban":
+                        iban_starts.append(m.start())
+                        iban_ends.append(m.start() + len(span))
+                    elif name == "credit_card":
+                        # a card-shaped run inside an accepted IBAN is the IBAN
+                        k = bisect.bisect_right(iban_starts, m.start()) - 1
+                        if k >= 0 and m.start() < iban_ends[k]:
+                            continue
+                    raw = span
+                # A connection string's password can sit past the excerpt cut, so
+                # its sample is masked whole first, then cut.
+                sample = (redact_sample(name, str(raw))[:120] if name == "db_conn"
+                          else redact_sample(name, str(raw)[:120]))
+                key = name + ":" + sample
+                if key in seen:
                     continue
-                if name == "iban":
-                    iban_spans.append((m.start(), m.start() + len(span)))
-                elif name == "credit_card" and any(a <= m.start() < b for a, b in iban_spans):
-                    continue
-                raw = span
-            # A connection string's password can sit past the excerpt cut, so
-            # its sample is masked whole first, then cut.
-            sample = (redact_sample(name, str(raw))[:120] if name == "db_conn"
-                      else redact_sample(name, str(raw)[:120]))
-            key = name + ":" + sample
-            if key in seen:
-                continue
-            seen.add(key)
-            findings.append({"type": name, "severity": severity, "sample": sample})
-            n += 1
-            if n >= MAX_PER_TYPE:
+                seen.add(key)
+                findings.append({"type": name, "severity": severity, "sample": sample})
+                n += 1
+                if n >= MAX_PER_TYPE:
+                    done = True
+                    break
+            if done:
                 break
 
     # High-entropy catch-all over the pattern-redacted residual, so tokens
     # already flagged above are not double-counted.
     if not entropy:
         return findings
-    findings += _entropy_findings(s, seen)
+    findings += _entropy_findings(s, seen, cache=cache)
 
     return findings
 
@@ -412,22 +552,52 @@ def path_value(key, value):
                 or any(c in value for c in _GLOB_CHARS))
 
 
-def _entropy_findings(text, seen, ftype=HIGH_ENTROPY_TYPE, severity="HIGH"):
+def _has_new_candidate(text, start, end, cont, ftype, seen):
+    """Whether the raw window holds a secret-looking token whose sample is not
+    yet reported. Masking only removes or shortens tokens, so a window
+    without one cannot add an entropy finding, and its residual is skipped."""
+    checked = set()
+    for m in TOKEN_RE.finditer(text, start, end):
+        if cont and m.start() == start:
+            continue
+        tok = m.group(0)
+        if ftype + ":" + redact_sample(HIGH_ENTROPY_TYPE, tok) in seen or tok in checked:
+            continue
+        checked.add(tok)
+        if _looks_like_secret(tok):
+            return True
+    return False
+
+
+def _entropy_findings(text, seen, ftype=HIGH_ENTROPY_TYPE, severity="HIGH", cache=None):
     out = []
-    residual = _apply_patterns(str(text))
+    text = str(text)
     e = 0
-    for tok in TOKEN_RE.findall(residual):
-        if not _looks_like_secret(tok):
+    cache = {} if cache is None else cache
+    for start, _accept, end in _windows(len(text)):
+        # A token cut at the slice start belongs to the previous window and is
+        # skipped; tokens in the overlap are seen by two windows and the
+        # sample dedupe below counts them once.
+        cont = start > 0 and text[start - 1] in _TOKEN_CHARS
+        if not _has_new_candidate(text, start, end, cont, ftype, seen):
             continue
-        sample = redact_sample(HIGH_ENTROPY_TYPE, tok)
-        key = ftype + ":" + sample
-        if key in seen:
-            continue
-        seen.add(key)
-        out.append({"type": ftype, "severity": severity, "sample": sample})
-        e += 1
-        if e >= MAX_PER_TYPE:
-            break
+        # Each window's residual is computed on its own slice.
+        residual = _apply_patterns(text[start:end], cache)
+        for m in TOKEN_RE.finditer(residual):
+            if cont and m.start() == 0:
+                continue
+            tok = m.group(0)
+            if not _looks_like_secret(tok):
+                continue
+            sample = redact_sample(HIGH_ENTROPY_TYPE, tok)
+            key = ftype + ":" + sample
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append({"type": ftype, "severity": severity, "sample": sample})
+            e += 1
+            if e >= MAX_PER_TYPE:
+                return out
     return out
 
 
