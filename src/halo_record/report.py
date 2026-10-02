@@ -239,16 +239,32 @@ async function haloBind(records, cfg){
   // Re-render everything the page derives from its records, from the records
   // this script just verified, so edited static HTML cannot show under the badge.
   if (typeof HaloView === "undefined") return false;
+  // The page carries the policy file's exact text; its SHA-256 is what
+  // `shasum -a 256 <policy file>` prints, and the rules are parsed from it here.
   const polEl = document.getElementById("halo-policy");
-  const rules = polEl ? JSON.parse(polEl.textContent || "null") : null;
+  let text = null, rules = null, digest = null, polErr = null;
+  try {
+    text = polEl ? JSON.parse(polEl.textContent || "null") : null;
+    if (text !== null){
+      if (typeof text !== "string") throw new Error("the embedded policy is not policy text");
+      digest = hex(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text)));
+      const parsed = JSON.parse(text);
+      rules = (parsed && typeof parsed === "object" && !Array.isArray(parsed)) ? parsed.rules : parsed;
+      if (rules === null || rules === undefined) rules = [];
+    }
+  } catch (e){ polErr = e.message; rules = null; }
   const chainOk = WINDOW ? cfg.chainVerified !== false : true;
-  let digest = null;
-  if (rules){
-    try {
-      digest = hex(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(canon(rules))));
-    } catch (e){ digest = null; }
-  }
   const R = HaloView.regions(records, rules, chainOk, digest);
+  let policy = "none";
+  if (polErr !== null){
+    R.policy = "<div class='verdict fail'>Policy verdict withheld &mdash; the policy embedded in this page " +
+               "is not a valid policy (" + haloEsc(polErr) + ").</div>";
+    policy = "invalid";
+  } else if (text === null){
+    R.policy = "<div class='verdict neutral'>No policy is embedded in this page; no policy verdict is shown.</div>";
+  } else {
+    policy = R.policyEvaluated ? "ok" : "invalid";
+  }
   haloSet("r-h1", R.h1);
   haloSet("r-meta", R.meta);
   haloSet("r-subject-note", R.subject_note);
@@ -260,7 +276,7 @@ async function haloBind(records, cfg){
   try { document.title = R.title + " — Runtime Report"; } catch (e){}
   if (typeof window.__haloSetRows === "function") window.__haloSetRows(R.rows);
   else haloSet("activity-body", R.rows.join("\n"));
-  return true;
+  return {policy: policy, digest: digest};
 }
 function haloWithhold(why){
   // Nothing derived from unverified records is presented as if it verified.
@@ -386,9 +402,14 @@ async function haloCompleteness(records, embedded, cfg, pinned){
       return;
     }
     const bound = await haloBind(records, cfg);
-    const shown = bound
-      ? " The heading, period, counts, table and policy verdict below were re-rendered from these verified records."
-      : "";
+    let shown = "";
+    if (bound){
+      shown = " The heading, period, counts and table below were re-rendered from these verified records.";
+      if (bound.policy === "ok")
+        shown += " The policy verdict was re-computed from them under the policy embedded in this page " +
+                 "by whoever generated it (sha256 <span class='mono'>" + bound.digest.slice(0, 16) +
+                 "&hellip;</span>; compare with <span class='mono'>shasum -a 256</span> of the policy file you hold).";
+    }
     const limit = " <span class='dim'>Integrity relative to this head only: compare it with a head you hold " +
       "(a witness checkpoint, or <span class='mono'>halo verify</span> on the JSONL). This page runs code " +
       "supplied with the report.</span>";
@@ -955,7 +976,7 @@ footer a{color:var(--gold);text-decoration:none}
 
 
 def render(records, checkpoints=None, *, witness_url=None, policy=None, window=None,
-           expected_subject=None):
+           expected_subject=None, policy_text=None):
     """Return the full HTML for a runtime-record report over ``records``.
 
     If ``checkpoints`` (a list of notary witnesses for this chain) is given, the
@@ -966,7 +987,10 @@ def render(records, checkpoints=None, *, witness_url=None, policy=None, window=N
 
     If ``policy`` (a list of rule dicts) is given, a deterministic
     policy-corroboration verdict is rendered beside the integrity/completeness
-    verdicts.
+    verdicts. ``policy_text`` is the policy file's exact text: the page carries
+    it, re-reads the rules from it, and names its SHA-256 (what ``shasum -a 256``
+    prints for the file). Without it, the rules' RFC 8785 canonical JSON is the
+    text carried.
 
     Everything the page derives from the records (heading, period, counts,
     scopes, provenance, the activity table, the policy verdict) is rendered here
@@ -985,15 +1009,22 @@ def render(records, checkpoints=None, *, witness_url=None, policy=None, window=N
     if len(ids) != len(set(ids)):
         raise ValueError("halo-record: duplicate record_id in chain; refusing to render "
                          "a report whose rows could not be told apart")
+    policy_digest = None
     if policy:
-        from .policy import validate_policy
+        from .policy import policy_sha256, validate_policy
         validate_policy(policy)
+        if policy_text is None:
+            from .canon import canon
+            policy_text = canon(policy)
+        policy_digest = policy_sha256(policy_text)
+    else:
+        policy_text = None
     if window is not None:
         chain_verified = window.get("chain_verified", True)
     else:
         from .verify import verify_records
         chain_verified = verify_records(records)
-    reg = _view.regions(records, policy, chain_verified)
+    reg = _view.regions(records, policy, chain_verified, policy_digest)
     multi_agent = len(_view.agents(records)) > 1
     row_html = reg["rows"]
     if row_html:
@@ -1022,7 +1053,7 @@ def render(records, checkpoints=None, *, witness_url=None, policy=None, window=N
     # the embedded JSON block. The in-browser JSON.parse reads these unchanged.
     records_json = json.dumps(records, separators=(",", ":")).replace("<", "\\u003c")
     checkpoints_json = json.dumps(checkpoints, separators=(",", ":")).replace("<", "\\u003c")
-    policy_json = json.dumps(policy or None, separators=(",", ":")).replace("<", "\\u003c")
+    policy_json = json.dumps(policy_text).replace("<", "\\u003c")
     # The completeness half of the banner only holds when the report is actually
     # anchored; an un-anchored report is integrity-only and must say so, not imply
     # a witness it never had.
@@ -1248,10 +1279,10 @@ def write_report(log_path, out_path=None, witness_log=None, witness_url=None,
             raise ValueError(
                 "%s: the witness at %s could not be reached (%s); refusing to render a "
                 "report whose completeness was not checked" % (log_path, witness_url, e))
-    policy = None
+    policy = policy_text = None
     if policy_path:
-        from .policy import load_policy
-        policy = load_policy(policy_path)
+        from .policy import read_policy
+        policy, policy_text = read_policy(policy_path)
     if expected_subject is not None:
         found = sorted({json.dumps(_record_subject(r)) for r in records})
         if found != [json.dumps(expected_subject)]:
@@ -1334,7 +1365,8 @@ def write_report(log_path, out_path=None, witness_log=None, witness_url=None,
                 "windowed report that could not show it" % (log_path, completeness.get("why")))
         records = win_records
     html_doc = render(records, checkpoints, witness_url=witness_url, policy=policy,
-                      window=window, expected_subject=expected_subject)
+                      window=window, expected_subject=expected_subject,
+                      policy_text=policy_text)
     html_doc = _LONE_SURROGATE_RE.sub("\ufffd", html_doc)  # displayable and encodable
     if out_path:
         with open(out_path, "w", encoding="utf-8") as fh:

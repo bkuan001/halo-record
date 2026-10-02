@@ -636,23 +636,26 @@ def rules_digest(rules):
         return None
 
 
-def policy_result(records, rules, chain_verified=True):
+def policy_result(records, rules, chain_verified=True, policy_digest=None):
+    """The policy verdict over ``records``. ``policy_digest`` is the SHA-256 of
+    the policy text the rules were read from; without one, the rules' RFC 8785
+    canonical JSON stands in for that text."""
     if not rules:
         return None
     from .policy import evaluate
     res = evaluate(records, rules)
-    res["rules_sha256"] = rules_digest(rules)
+    res["policy_sha256"] = policy_digest or rules_digest(rules)
     res["chain_verified"] = bool(chain_verified)
     if not chain_verified:
         res["compliant"] = False
     return res
 
 
-def regions(records, rules=None, chain_verified=True):
+def regions(records, rules=None, chain_verified=True, policy_digest=None):
     """Every record-derived region of the report page, as HTML strings."""
     from .policy import panel_card
     names = agents(records)
-    res = policy_result(records, rules, chain_verified)
+    res = policy_result(records, rules, chain_verified, policy_digest)
     label = subject_label(records)
     return {
         "title": label,
@@ -681,6 +684,10 @@ var HaloView = (function(){
   var PLAIN_KEYS = %(plain_keys)s;
   var PLAIN_VERB = %(plain_verb)s;
   var FOOT_PAGE = %(foot_page)s;
+  var DIGEST_NOTE = %(digest_note)s;
+  var SCHEMA = %(schema)s;
+  var RULE_KEYS = %(rule_keys)s;
+  var SEVERITIES = %(severities)s;
   var PY_WS = /[\t\n\x0b\x0c\r\x1c-\x1f \x85\xa0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]+/;
   var TS_RE = /^([0-9]{4})-([0-9]{2})-([0-9]{2})[Tt ]([0-9]{2}):([0-9]{2}):([0-9]{2})(?:\.([0-9]{1,9}))?(Z|z|[+-][0-9]{2}:[0-9]{2})?$/;
   var NUM_RE = /-?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?/y;
@@ -1077,6 +1084,180 @@ var HaloView = (function(){
   }
 
   /*POLICY-BEGIN*/
+  /* --- policy validation (mirror policy.validate_policy) --- */
+  function pyRepr(v){
+    if (typeof v === "string"){
+      var q = (v.indexOf("'") >= 0 && v.indexOf('"') < 0) ? '"' : "'", out = q;
+      for (var i = 0; i < v.length; i++){
+        var ch = v[i], c = v.charCodeAt(i);
+        if (ch === q || ch === "\\") out += "\\" + ch;
+        else if (ch === "\n") out += "\\n";
+        else if (ch === "\r") out += "\\r";
+        else if (ch === "\t") out += "\\t";
+        else if (c < 0x20 || (c >= 0x7f && c < 0xa0)) out += "\\x" + pad(c.toString(16), 2);
+        else out += ch;
+      }
+      return out + q;
+    }
+    if (v === null || v === undefined) return "None";
+    if (v === true) return "True";
+    if (v === false) return "False";
+    return pyJson(v);
+  }
+  function pyJson(v){
+    if (typeof v === "string") return pyJsonStr(v);
+    if (v === null) return "null";
+    if (typeof v === "number" && !isFinite(v)) return v > 0 ? "Infinity" : v < 0 ? "-Infinity" : "NaN";
+    return JSON.stringify(v);
+  }
+  function PolicyError(msg){ this.message = msg; }
+  function perr(msg){ throw new PolicyError(msg); }
+  var MAX_SAFE = 9007199254740991;
+  var TYPE_WORD = {string: "a string", number: "a number", integer: "a number", boolean: "true or false"};
+  var RANGE_OPS = ["gt", "gte", "lt", "lte"];
+  var OPS = ["contains", "eq", "exists", "gt", "gte", "in", "lt", "lte", "ne", "nin"];
+  function polField(path, where){
+    if (typeof path !== "string" || !path || path.split(".").some(function(p){ return !p; }))
+      perr(where + ": field path " + pyRepr(path) + " is not a dotted record path");
+    var node = SCHEMA, fanned = false, prev = null, parts = path.split(".");
+    for (var i = 0; i < parts.length; i++){
+      var part = parts[i], fan = part.slice(-2) === "[]", key = fan ? part.slice(0, -2) : part;
+      if (node === null) return [null, fanned];
+      if (node.type === "array")
+        perr(where + ": " + pyRepr(prev) + ' is a list; use "' + prev + '[]" to match its items (in ' + pyRepr(path) + ")");
+      var props = node.properties;
+      if (!isDict(props) || !Object.keys(props).length) return [null, fanned];
+      if (!has(props, key))
+        perr(where + ": " + pyRepr(key) + " is not a Runtime Record field (in " + pyRepr(path) +
+             "; known here: " + Object.keys(props).sort().join(", ") + ")");
+      node = props[key];
+      prev = key;
+      if (fan){
+        if (node.type !== "array")
+          perr(where + ": " + pyRepr(key) + ' is not a list, so "[]" does not apply (in ' + pyRepr(path) + ")");
+        node = isDict(node.items) ? node.items : null;
+        fanned = true;
+      }
+    }
+    return [node, fanned];
+  }
+  function polValue(v, node, path, where){
+    if (v === null) perr(where + ": null never equals a recorded value of " + pyRepr(path) +
+                         '; use {"exists": false} for an absent field');
+    if (typeof v === "number" && !isFinite(v)) perr(where + ": " + pyRepr(path) + " needs a finite number");
+    if (typeof v === "number" && Number.isInteger(v) && Math.abs(v) > MAX_SAFE)
+      perr(where + ": " + pyRepr(path) + ": a number beyond 2^53-1, which a browser cannot compare exactly");
+    if (typeof v === "object")
+      perr(where + ": " + pyRepr(path) + " needs a single value, not " + (Array.isArray(v) ? "a list" : "an object"));
+    if (node === null) return;
+    var t = node.type, ok = true;
+    if (t === "string") ok = typeof v === "string";
+    else if (t === "number") ok = typeof v === "number";
+    else if (t === "integer") ok = typeof v === "number" && Number.isInteger(v);
+    else if (t === "boolean") ok = typeof v === "boolean";
+    if (!ok) perr(where + ": " + pyRepr(path) + " needs " + TYPE_WORD[t] + ", not " + pyJson(v));
+    if (Array.isArray(node.enum) && !inList(v, node.enum))
+      perr(where + ": " + pyJson(v) + " is not one of the values " + pyRepr(path) + " can hold (" + node.enum.join(", ") + ")");
+  }
+  function polMatcher(path, spec, node, fanned, where){
+    var kind = node !== null ? node.type : null;
+    var ops = isDict(spec) ? spec : {eq: spec};
+    Object.keys(ops).forEach(function(op){
+      var arg = ops[op];
+      if (op === "exists") return;
+      if (kind === "object") perr(where + ": " + pyRepr(path) + ' is an object; only {"exists": ...} applies to it');
+      if (kind === "array"){
+        if (op !== "contains")
+          perr(where + ": " + pyRepr(path) + ' is a list; match an item with {"contains": ...} or "' + path + '[]"');
+        polValue(arg, isDict(node.items) ? node.items : null, path, where);
+        return;
+      }
+      if (op === "contains")
+        perr(where + ": 'contains' applies to list fields; " + pyRepr(path) + " is " +
+             (kind === null ? "not a list" : (TYPE_WORD[kind] || kind)));
+      if (RANGE_OPS.indexOf(op) >= 0){
+        if (kind !== null && kind !== "number" && kind !== "integer")
+          perr(where + ": " + pyRepr(op) + " applies to numeric fields; " + pyRepr(path) + " is " + (TYPE_WORD[kind] || kind));
+        polValue(arg, null, path, where);
+        return;
+      }
+      (op === "in" || op === "nin" ? arg : [arg]).forEach(function(v){ polValue(v, node, path, where); });
+    });
+    polConsistent(path, ops, fanned, where);
+  }
+  function polConsistent(path, ops, fanned, where){
+    function bad(why){
+      perr(where + ": the matchers for " + pyRepr(path) + " contradict each other (" + why + "), so the condition can never hold");
+    }
+    if (has(ops, "in") && !ops["in"].length)
+      perr(where + ": 'in' for " + pyRepr(path) + " has an empty list, so the condition can never hold");
+    if (ops.exists === false && Object.keys(ops).some(function(k){ return ["exists", "ne", "nin"].indexOf(k) < 0; }))
+      bad("an absent field has no value to compare");
+    if (has(ops, "eq") && has(ops, "ne") && pyEq(ops.eq, ops.ne)) bad("eq and ne name the same value");
+    if (has(ops, "eq") && has(ops, "nin") && inList(ops.eq, ops.nin)) bad("eq names a value nin excludes");
+    if (has(ops, "in") && has(ops, "nin") && ops["in"].every(function(v){ return inList(v, ops.nin); }))
+      bad("every value in 'in' is excluded by nin");
+    if (fanned) return;
+    if (has(ops, "eq") && has(ops, "in") && !inList(ops.eq, ops["in"])) bad("eq names a value outside 'in'");
+    var lo = [], hi = [];
+    ["gt", "gte"].forEach(function(k){ if (has(ops, k)) lo.push([ops[k], k === "gte"]); });
+    ["lt", "lte"].forEach(function(k){ if (has(ops, k)) hi.push([ops[k], k === "lte"]); });
+    lo.forEach(function(a){ hi.forEach(function(b){
+      if (a[0] > b[0] || (a[0] === b[0] && !(a[1] && b[1]))) bad("the numeric bounds leave no value");
+    }); });
+  }
+  function polCondition(cond, where){
+    if (!isDict(cond) || !Object.keys(cond).length) perr(where + ": must be a non-empty object of {field: matcher}");
+    Object.keys(cond).forEach(function(path){
+      var spec = cond[path], fn = polField(path, where);
+      if (isDict(spec)){
+        if (!Object.keys(spec).length) perr(where + ": empty matcher for " + pyRepr(path));
+        Object.keys(spec).forEach(function(op){
+          var arg = spec[op];
+          if (OPS.indexOf(op) < 0)
+            perr(where + ": unknown matcher " + pyRepr(op) + " for " + pyRepr(path) + " (known: " + OPS.join(", ") + ")");
+          if ((op === "in" || op === "nin") && !Array.isArray(arg)) perr(where + ": " + pyRepr(op) + " needs a list for " + pyRepr(path));
+          if (op === "exists" && typeof arg !== "boolean") perr(where + ": 'exists' needs true or false for " + pyRepr(path));
+          if (RANGE_OPS.indexOf(op) >= 0 && typeof arg !== "number") perr(where + ": " + pyRepr(op) + " needs a number for " + pyRepr(path));
+        });
+      }
+      polMatcher(path, spec, fn[0], fn[1], where);
+    });
+  }
+  function validatePolicy(rules){
+    /* null when ``rules`` is a valid policy, else the reason (validate_policy's message). */
+    try {
+      if (!Array.isArray(rules) || !rules.length) perr("policy: expected a non-empty list of rules");
+      var seen = {};
+      rules.forEach(function(rule, n){
+        var where = "policy rule " + (n + 1);
+        if (!isDict(rule)) perr(where + ": must be an object");
+        if (typeof rule.id === "string" && rule.id) where = "policy rule " + pyRepr(rule.id);
+        else perr(where + ': needs a non-empty string "id"');
+        if (has(seen, rule.id)) perr(where + ": duplicate rule id");
+        seen[rule.id] = true;
+        var unknown = Object.keys(rule).filter(function(k){ return RULE_KEYS.indexOf(k) < 0; }).sort();
+        if (unknown.length)
+          perr(where + ": unknown key(s) " + unknown.map(pyRepr).join(", ") + " (known: " + RULE_KEYS.join(", ") + ")");
+        if (!has(rule, "forbid") && !has(rule, "require") && rule.expect_evidence !== true)
+          perr(where + ': has nothing to check — give it forbid, require, or "expect_evidence": true');
+        if (has(rule, "expect_evidence") && typeof rule.expect_evidence !== "boolean")
+          perr(where + ": expect_evidence must be true or false");
+        if (has(rule, "severity") && SEVERITIES.indexOf(rule.severity) < 0)
+          perr(where + ": severity " + pyRepr(rule.severity) + " is not one of " + SEVERITIES.join(", "));
+        ["description", "source"].forEach(function(k){
+          if (has(rule, k) && typeof rule[k] !== "string") perr(where + ": " + k + " must be a string");
+        });
+        ["when", "forbid", "require"].forEach(function(k){
+          if (has(rule, k)) polCondition(rule[k], where + " " + k);
+        });
+      });
+      return null;
+    } catch (e){
+      if (e instanceof PolicyError) return e.message;
+      throw e;
+    }
+  }
   /* --- policy (mirror policy.evaluate / panel_card) --- */
   function pyEq(a, b){
     var na = typeof a === "number" || typeof a === "boolean", nb = typeof b === "number" || typeof b === "boolean";
@@ -1159,7 +1340,7 @@ var HaloView = (function(){
     });
     var res = {compliant: violations === 0, checked: records.length, violations: violations,
                violating_records: violating.size, gaps: gaps, unexercised: noMatch, rules: results,
-               rules_sha256: digest || null, chain_verified: !!chainVerified};
+               policy_sha256: digest || null, chain_verified: !!chainVerified};
     if (!chainVerified) res.compliant = false;
     return res;
   }
@@ -1167,8 +1348,7 @@ var HaloView = (function(){
     return res.checked + " record(s) checked against " + res.rules.length + " rule(s): " + res.violations +
       " rule(s) violated by " + res.violating_records + " record(s), " + res.gaps + " evidence gap(s), " +
       res.unexercised + " rule(s) not exercised." +
-      (res.rules_sha256 ? " Rules evaluated: sha256 " + res.rules_sha256.slice(0, 16) +
-                          "\u2026 (compare with the policy file you hold)." : "");
+      (res.policy_sha256 ? " " + DIGEST_NOTE.replace("%%s", res.policy_sha256.slice(0, 16)) : "");
   }
   function panelCard(res, subject){
     var order = {violated: 0, no_evidence: 1, no_match: 2, pass: 3};
@@ -1177,7 +1357,7 @@ var HaloView = (function(){
       var meta = HTML_META[r.status], detail;
       if (r.status === "violated") detail = r.violators.length + " record(s) out of policy: " + r.violators.join(", ");
       else if (r.status === "no_evidence") detail = "Policy declares this control. The log contains no evidence of it.";
-      else if (r.status === "no_match") detail = "No records in scope \u2014 nothing attested.";
+      else if (r.status === "no_match") detail = "Matched no records \u2014 nothing attested.";
       else detail = r.matched + " matching action(s), all within policy.";
       var src = r.source ? '<span class="hp-src">' + esc(r.source) + "</span>" : "";
       return '<div class="hp-row"><div class="hp-badge" style="color:' + meta[1] + ";background:" + meta[2] + '">' +
@@ -1217,7 +1397,9 @@ var HaloView = (function(){
   }
   function regions(records, rules, chainVerified, rulesDigest){
     var names = agents(records), st = stats(records), label = subjectLabel(records);
-    var res = (rules && rules.length && typeof evaluate === "function")
+    var hasRules = rules !== null && rules !== undefined && !(Array.isArray(rules) && !rules.length);
+    var invalid = hasRules && typeof validatePolicy === "function" ? validatePolicy(rules) : null;
+    var res = (hasRules && !invalid && typeof evaluate === "function")
       ? evaluate(records, rules, chainVerified, rulesDigest) : null;
     var rows = [];
     for (var i = records.length - 1; i >= 0; i--) rows.push(row(records[i], names.length > 1));
@@ -1233,18 +1415,40 @@ var HaloView = (function(){
               '<span class="dim">none</span>',
       provenance: provenance(records),
       rows: rows,
-      policy: res ? panelCard(res, label) : ""
+      policyEvaluated: res !== null,
+      policy: invalid ? "<div class='verdict fail'>Policy verdict withheld &mdash; the policy embedded in " +
+                        "this page is not a valid policy (" + esc(invalid) + ").</div>"
+                      : res ? panelCard(res, label) : ""
     };
   }
-  return {regions: regions, tsUtc: tsUtc, fmtTs: fmtTs, plain: plain, esc: esc, subjectId: subjectId};
+  return {regions: regions, tsUtc: tsUtc, fmtTs: fmtTs, plain: plain, esc: esc, subjectId: subjectId,
+          validatePolicy: typeof validatePolicy === "function" ? validatePolicy : null};
 })();
 """
+
+
+def _policy_schema():
+    """The parts of the record schema the policy validator reads (type, enum,
+    items, properties), for the page's copy of it."""
+    from .verify import load_schema
+
+    def trim(node):
+        out = {}
+        for k in ("type", "enum"):
+            if k in node:
+                out[k] = node[k]
+        if isinstance(node.get("items"), dict):
+            out["items"] = trim(node["items"])
+        if isinstance(node.get("properties"), dict):
+            out["properties"] = {k: trim(v) for k, v in node["properties"].items()}
+        return out
+    return trim(load_schema())
 
 
 def render_js(with_policy=True):
     """RENDER_JS with its shared constants filled in from this module. Without
     a policy, the policy evaluator and panel are left out of the page."""
-    from .policy import _FOOT_PAGE
+    from .policy import _FOOT_PAGE, POLICY_DIGEST_NOTE, RULE_KEYS, SEVERITIES
     st_note = {}
     # The provenance notes come from provenance() itself so the two cannot drift.
     def _note(recs):
@@ -1261,6 +1465,10 @@ def render_js(with_policy=True):
         "plain_keys": json.dumps(list(PLAIN_KEYS)),
         "plain_verb": json.dumps(PLAIN_VERB),
         "foot_page": json.dumps(_FOOT_PAGE),
+        "digest_note": json.dumps(POLICY_DIGEST_NOTE),
+        "schema": json.dumps(_policy_schema()),
+        "rule_keys": json.dumps(list(RULE_KEYS)),
+        "severities": json.dumps(list(SEVERITIES)),
         "note_mixed": json.dumps(st_note["mixed"]),
         "note_ing": json.dumps(st_note["ing"]),
         "note_cap": json.dumps(st_note["cap"]),

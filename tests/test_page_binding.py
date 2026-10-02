@@ -102,6 +102,10 @@ def _cases():
         {"id": "gap", "when": {"action.tool": "escalate"}, "expect_evidence": True},
         {"id": "nums", "forbid": {"data.pii_types": {"contains": "ssn"}}},
         {"id": "none", "when": {"action.tool": "nope"}, "require": {"ts": {"exists": True}}},
+        {"id": "fan", "forbid": {"findings[].type": {"in": ["db_conn", "ssn"], "nin": ["email"]}}},
+        {"id": "items", "when": {"data.pii_types[]": "ssn"}, "require": {"data.purpose": {"exists": True}}},
+        {"id": "gate", "when": {"verification.status": {"in": ["blocked", "modified"]}},
+         "forbid": {"outcome.status": {"nin": ["denied", "error"]}}},
     ]})
     cases.append({"name": "empty", "records": [], "rules": pack})
     odd_subject = _records([(("tool_call", "security"), dict(tool="t", subject="acme​"))])
@@ -229,19 +233,20 @@ class TamperedStaticHtmlTest(unittest.TestCase):
         self.assertIn("re-rendered", out["verdict"]["html"])
 
     def test_the_rules_evaluated_are_identified_on_the_page(self):
-        # The rules travel with the page; the verdict names the digest of the
-        # rules it evaluated, so an edited rule set cannot pass as the original.
-        from halo_record.canon import canon, sha256_hex
-        with open(self.policy) as fh:
-            rules = json.load(fh)
-        digest = sha256_hex(canon(rules))
+        # The policy file travels with the page; the verdict names the SHA-256
+        # of the policy text it evaluated (the file's bytes), so an edited rule
+        # set cannot pass as the original.
+        import hashlib
+        with open(self.policy, "rb") as fh:
+            digest = hashlib.sha256(fh.read()).hexdigest()
         out = _run_page(self.html)
         self.assertIn(digest[:16], out["policy"]["html"])
         blocks, _ = _page_parts(self.html)
         edited = blocks["halo-policy"].replace("issue_refund", "lookup")
         out = _run_page(self.html.replace(blocks["halo-policy"], edited))
         self.assertNotIn(digest[:16], out["policy"]["html"])
-        self.assertIn(sha256_hex(canon(json.loads(edited)))[:16], out["policy"]["html"])
+        edited_text = json.loads(edited).encode("utf-8")
+        self.assertIn(hashlib.sha256(edited_text).hexdigest()[:16], out["policy"]["html"])
 
     def test_edited_records_show_no_verdict_or_table_as_verified(self):
         blocks, _ = _page_parts(self.html)

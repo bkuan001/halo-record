@@ -178,30 +178,141 @@ def _schema_props():
         return None
 
 
-def _check_path(path, schema, where):
+def _field(path, schema, where):
+    """Check ``path`` against the record schema and return (node, fanned): the
+    schema node of the value the path reaches (None below a free-form
+    object, or without a schema) and whether a "[]" segment fans out."""
     if not isinstance(path, str) or not path or any(not p for p in path.split(".")):
         raise ValueError("%s: field path %r is not a dotted record path" % (where, path))
     node = schema
+    fanned = False
     for part in path.split("."):
-        key = part[:-2] if part.endswith("[]") else part
+        fan = part.endswith("[]")
+        key = part[:-2] if fan else part
         if node is None:
-            return
-        if node.get("type") == "array" and isinstance(node.get("items"), dict):
-            node = node["items"]
+            return None, fanned
+        if node.get("type") == "array":
+            raise ValueError("%s: %r is a list; use \"%s[]\" to match its items (in %r)"
+                             % (where, prev, prev, path))
         props = node.get("properties")
         if not props:
-            return  # free-form beneath this point
+            return None, fanned  # free-form beneath this point
         if key not in props:
             raise ValueError("%s: %r is not a Runtime Record field (in %r; known here: %s)"
                              % (where, key, path, ", ".join(sorted(props))))
         node = props[key]
+        prev = key
+        if fan:
+            if node.get("type") != "array":
+                raise ValueError("%s: %r is not a list, so \"[]\" does not apply (in %r)"
+                                 % (where, key, path))
+            node = node.get("items") if isinstance(node.get("items"), dict) else None
+            fanned = True
+    return node, fanned
+
+
+# Integers beyond 2^53 are read differently by the page's JavaScript.
+_MAX_SAFE = 2 ** 53 - 1
+_TYPE_WORD = {"string": "a string", "number": "a number", "integer": "a number",
+              "boolean": "true or false"}
+
+
+def _check_value(v, node, path, where):
+    """A matcher value must be a finite JSON scalar of the field's type, and
+    one of the field's allowed values when the schema lists them."""
+    if v is None:
+        raise ValueError("%s: null never equals a recorded value of %r; use "
+                         "{\"exists\": false} for an absent field" % (where, path))
+    if isinstance(v, float) and (v != v or v in (float("inf"), float("-inf"))):
+        raise ValueError("%s: %r needs a finite number" % (where, path))
+    if isinstance(v, int) and not isinstance(v, bool) and abs(v) > _MAX_SAFE:
+        raise ValueError("%s: %r: a number beyond 2^53-1, which a browser cannot compare "
+                         "exactly" % (where, path))
+    if isinstance(v, (dict, list)):
+        raise ValueError("%s: %r needs a single value, not %s"
+                         % (where, path, "an object" if isinstance(v, dict) else "a list"))
+    if node is None:
+        return
+    t = node.get("type")
+    ok = {"string": isinstance(v, str),
+          "number": isinstance(v, (int, float)) and not isinstance(v, bool),
+          "integer": isinstance(v, int) and not isinstance(v, bool),
+          "boolean": isinstance(v, bool)}.get(t, True)
+    if not ok:
+        raise ValueError("%s: %r needs %s, not %s" % (where, path, _TYPE_WORD[t], json.dumps(v)))
+    if "enum" in node and v not in node["enum"]:
+        raise ValueError("%s: %s is not one of the values %r can hold (%s)"
+                         % (where, json.dumps(v), path, ", ".join(node["enum"])))
+
+
+_VALUE_OPS = ("eq", "ne", "in", "nin")
+_RANGE_OPS = ("gt", "gte", "lt", "lte")
+
+
+def _check_matcher(path, spec, node, fanned, where):
+    kind = node.get("type") if node is not None else None
+    ops = spec if isinstance(spec, dict) else {"eq": spec}
+    for op, arg in ops.items():
+        if op == "exists":
+            continue
+        if kind == "object":
+            raise ValueError("%s: %r is an object; only {\"exists\": ...} applies to it"
+                             % (where, path))
+        if kind == "array":
+            if op != "contains":
+                raise ValueError("%s: %r is a list; match an item with {\"contains\": ...} "
+                                 "or \"%s[]\"" % (where, path, path))
+            items = node.get("items") if isinstance(node.get("items"), dict) else None
+            _check_value(arg, items, path, where)
+            continue
+        if op == "contains":
+            raise ValueError("%s: 'contains' applies to list fields; %r is %s"
+                             % (where, path, "not a list" if kind is None
+                                else _TYPE_WORD.get(kind, kind)))
+        if op in _RANGE_OPS:
+            if kind not in (None, "number", "integer"):
+                raise ValueError("%s: %r applies to numeric fields; %r is %s"
+                                 % (where, op, path, _TYPE_WORD.get(kind, kind)))
+            _check_value(arg, None, path, where)
+            continue
+        for v in (arg if op in ("in", "nin") else [arg]):
+            _check_value(v, node, path, where)
+    _check_consistent(path, ops, fanned, where)
+
+
+def _check_consistent(path, ops, fanned, where):
+    """Reject a matcher no value (or, for "[]" paths, no set of values) can satisfy."""
+    def bad(why):
+        raise ValueError("%s: the matchers for %r contradict each other (%s), so the "
+                         "condition can never hold" % (where, path, why))
+    if "in" in ops and not ops["in"]:
+        raise ValueError("%s: 'in' for %r has an empty list, so the condition can never "
+                         "hold" % (where, path))
+    if ops.get("exists") is False and any(k not in ("exists", "ne", "nin") for k in ops):
+        bad("an absent field has no value to compare")
+    if "eq" in ops and "ne" in ops and ops["eq"] == ops["ne"]:
+        bad("eq and ne name the same value")
+    if "eq" in ops and "nin" in ops and ops["eq"] in ops["nin"]:
+        bad("eq names a value nin excludes")
+    if "in" in ops and "nin" in ops and all(v in ops["nin"] for v in ops["in"]):
+        bad("every value in 'in' is excluded by nin")
+    if fanned:
+        return  # below, different items may satisfy different matchers
+    if "eq" in ops and "in" in ops and ops["eq"] not in ops["in"]:
+        bad("eq names a value outside 'in'")
+    lo = [(ops[k], k == "gte") for k in ("gt", "gte") if k in ops]
+    hi = [(ops[k], k == "lte") for k in ("lt", "lte") if k in ops]
+    for a, a_inc in lo:
+        for b, b_inc in hi:
+            if a > b or (a == b and not (a_inc and b_inc)):
+                bad("the numeric bounds leave no value")
 
 
 def _check_condition(cond, schema, where):
     if not isinstance(cond, dict) or not cond:
         raise ValueError("%s: must be a non-empty object of {field: matcher}" % where)
     for path, spec in cond.items():
-        _check_path(path, schema, where)
+        node, fanned = _field(path, schema, where)
         if isinstance(spec, dict):
             if not spec:
                 raise ValueError("%s: empty matcher for %r" % (where, path))
@@ -213,9 +324,10 @@ def _check_condition(cond, schema, where):
                     raise ValueError("%s: %r needs a list for %r" % (where, op, path))
                 if op == "exists" and not isinstance(arg, bool):
                     raise ValueError("%s: 'exists' needs true or false for %r" % (where, path))
-                if op in ("gt", "gte", "lt", "lte") and (
+                if op in _RANGE_OPS and (
                         isinstance(arg, bool) or not isinstance(arg, (int, float))):
                     raise ValueError("%s: %r needs a number for %r" % (where, op, path))
+        _check_matcher(path, spec, node, fanned, where)
 
 
 def validate_policy(rules):
@@ -368,13 +480,64 @@ def resolve_policy_path(path):
     return path
 
 
+def _no_duplicate_keys(pairs):
+    out = {}
+    for k, v in pairs:
+        if k in out:
+            # The last one would win silently: a reader would see one rule and
+            # the evaluator run another.
+            raise ValueError("duplicate key %r in one object" % k)
+        out[k] = v
+    return out
+
+
+def _finite_float(text):
+    v = float(text)
+    if v != v or v in (float("inf"), float("-inf")):
+        raise ValueError("%s is not a finite number" % text)
+    return v
+
+
+def _no_constant(name):
+    raise ValueError("%s is not a finite number" % name)
+
+
+def parse_policy_text(text):
+    """JSON-decode a policy, refusing duplicate keys and non-finite numbers
+    (NaN, Infinity, or a literal such as 1e400 that overflows)."""
+    return json.loads(text, object_pairs_hook=_no_duplicate_keys,
+                      parse_float=_finite_float, parse_constant=_no_constant)
+
+
+def policy_sha256(text):
+    """The policy digest a verdict names: SHA-256 of the policy file's bytes
+    (what ``shasum -a 256 <file>`` prints). ``text`` is the file's text."""
+    import hashlib
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def read_policy(path):
+    """(rules, text) for a policy file or a bundled pack by name: the validated
+    rules and the file's exact text, which the policy digest is computed over."""
+    with open(resolve_policy_path(path), "rb") as fh:
+        raw = fh.read()
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError as e:
+        raise ValueError("policy %s is not UTF-8 text (%s)" % (path, e))
+    return _rules_from_text(text, path), text
+
+
 def load_policy(path):
     """Load and validate a policy file (or a bundled pack by name)."""
-    with open(resolve_policy_path(path), "r", encoding="utf-8") as fh:
-        try:
-            data = json.load(fh)
-        except ValueError as e:
-            raise ValueError("policy %s is not valid JSON (%s)" % (path, e))
+    return read_policy(path)[0]
+
+
+def _rules_from_text(text, path):
+    try:
+        data = parse_policy_text(text)
+    except ValueError as e:
+        raise ValueError("policy %s is not valid JSON (%s)" % (path, e))
     # accept either a bare list of rules or {"rules": [...]}
     if isinstance(data, dict):
         unknown = sorted(set(data) - set(POLICY_KEYS))
@@ -396,7 +559,7 @@ def evaluate_log(log_path, policy_path, *, start=None, end=None, expected_subjec
     refuses (ValueError) a chain carrying any other subject id."""
     from .verify import verify_log
     chain_verified = verify_log(log_path, out=lambda *_a, **_k: None)
-    policy = load_policy(policy_path)
+    policy, policy_text = read_policy(policy_path)
     try:
         records = load_records(log_path)
     except Exception:
@@ -424,6 +587,7 @@ def evaluate_log(log_path, policy_path, *, start=None, end=None, expected_subjec
         result = {"compliant": False, "checked": 0, "violations": 0, "gaps": 0,
                   "violating_records": 0, "unexercised": 0, "rules": []}
     from ._view import rules_digest
+    result["policy_sha256"] = policy_sha256(policy_text)
     result["rules_sha256"] = rules_digest(policy)
     result["chain_verified"] = chain_verified
     if not chain_verified:
@@ -442,10 +606,14 @@ def _counts_line(result):
             "%d evidence gap(s), %d rule(s) not exercised." % (
                 result["checked"], len(result["rules"]), result["violations"],
                 result.get("violating_records", 0), result["gaps"], unex))
-    if result.get("rules_sha256"):
-        line += (" Rules evaluated: sha256 %s\u2026 (compare with the policy file you hold)."
-                 % result["rules_sha256"][:16])
+    if result.get("policy_sha256"):
+        line += (" " + POLICY_DIGEST_NOTE % result["policy_sha256"][:16])
     return line
+
+
+# Shared with the page (``_view``), which hashes the policy text it carries.
+POLICY_DIGEST_NOTE = ("Policy sha256 %s\u2026 (compare with `shasum -a 256` of the "
+                      "policy file you hold).")
 
 
 # --------------------------------------------------------------------------- #
@@ -491,7 +659,7 @@ def render_text(result):
         elif r["status"] == "no_evidence":
             line += "  -> policy declares this control; log shows no evidence"
         elif r["status"] == "no_match":
-            line += "  -> no records in scope — nothing attested"
+            line += "  -> matched no records — nothing attested"
         else:
             line += "  -> %d matched, none flagged" % r["matched"]
         lines.append(line)
@@ -562,7 +730,9 @@ def verdict_panel(result, subject=None):
 _FOOT = ("Each verdict is computed by deterministic rules over the record fields, "
          "when this panel was generated.")
 _FOOT_PAGE = ("Each verdict is computed by deterministic rules over the record fields; "
-              "this page re-computes it in your browser from the records it verifies.")
+              "this page re-computes it in your browser from the records it verifies. "
+              "The rules are the policy embedded in this page by whoever generated it: "
+              "compare the policy sha256 above with the policy file you hold.")
 
 
 def panel_card(result, subject=None, in_page=False):
@@ -579,7 +749,7 @@ def panel_card(result, subject=None, in_page=False):
         elif r["status"] == "no_evidence":
             detail = "Policy declares this control. The log contains no evidence of it."
         elif r["status"] == "no_match":
-            detail = "No records in scope — nothing attested."
+            detail = "Matched no records — nothing attested."
         else:
             detail = "%d matching action(s), all within policy." % r["matched"]
         src = ('<span class="hp-src">%s</span>' % _html.escape(r["source"])) if r["source"] else ""
