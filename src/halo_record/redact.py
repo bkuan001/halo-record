@@ -43,8 +43,13 @@ PATTERNS = [
     ("iban",         "HIGH",     re.compile(r'(?i)\b[A-Z]{2}[0-9]{2}(?:[ .\-\t\u00a0]{0,2}[A-Z0-9]{4}){2,7}(?:[ .\-\t\u00a0]{0,2}[A-Z0-9]{1,4})?\b')),
     ("credit_card",  "HIGH",     re.compile(r'\b(?:4[0-9]{3}|5[1-5][0-9]{2}|3[47][0-9]{2}|6(?:011|5[0-9]{2}))(?:[ -]?[0-9]){9,13}\b')),
     ("ssn",          "HIGH",     re.compile(r'\b\d{3}[- ]\d{2}[- ]\d{4}\b')),
+    # Telegram-style bot tokens: a numeric bot id, a colon, a ~35-char secret.
+    # Often embedded in a URL path, where path-readable fields keep the rest.
+    ("bot_token",    "HIGH",     re.compile(r'(?<![0-9])\d{8,10}:[A-Za-z0-9_-]{30,40}(?![A-Za-z0-9_-])')),
     ("bearer_token", "HIGH",     re.compile(r'Bearer\s+[a-zA-Z0-9\-_\.]{20,}')),
-    ("email",        "MEDIUM",   re.compile(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b')),
+    # Bounded quantifiers (RFC 5321 local part <= 64, label <= 63, at most 8
+    # labels) keep this linear on hostile input such as "a." * 40000.
+    ("email",        "MEDIUM",   re.compile(r'\b[A-Za-z0-9._%+-]{1,64}@(?:[A-Za-z0-9-]{1,63}\.){1,8}[A-Za-z]{2,24}\b')),
     ("ip_internal",  "MEDIUM",   re.compile(r'\b(10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(?:1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3})\b')),
     ("phone",        "MEDIUM",   re.compile(r'\b(?:\+?1[-.\s])?\(?\d{3}\)?[-.\s]\d{3}[-.\s]\d{4}\b')),
 ]
@@ -223,6 +228,33 @@ def mask_known_secrets(text):
     hashes and refs), where the catch-all would mangle the very thing the field
     exists to carry."""
     return _apply_patterns(str(text))
+
+
+# Personal-data patterns that legitimately identify a person in identity
+# fields (an approver's email, a principal's phone). Credentials and financial
+# identifiers are masked in those fields too; these are not.
+_IDENTITY_OK = {"email", "phone", "ip_internal"}
+
+
+def mask_secrets_only(text):
+    """Mask credentials and financial identifiers but keep the personal-data
+    patterns an identity field exists to carry (email, phone, internal IP)."""
+    out = str(text)
+    for name, _sev, pattern in PATTERNS:
+        if name in _IDENTITY_OK:
+            continue
+        if name in _VALIDATORS:
+            def _sub(m, n=name):
+                span = _validated_span(n, m.group(0))
+                if span is None:
+                    return m.group(0)
+                return redact_sample(n, span) + m.group(0)[len(span):]
+            out = pattern.sub(_sub, out)
+        else:
+            out = pattern.sub(lambda m, n=name: redact_sample(n, m.group(0)), out)
+    return TOKEN_RE.sub(
+        lambda m: redact_sample(HIGH_ENTROPY_TYPE, m.group(0))
+        if _looks_like_secret(m.group(0)) else m.group(0), out)
 
 
 def redact_text(text, entropy=True):

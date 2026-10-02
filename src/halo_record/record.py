@@ -20,7 +20,7 @@ except ImportError:  # pragma: no cover
     fcntl = None
 
 from .canon import GENESIS_PREV, canon, compute_hash, input_hash, sha256_hex
-from .redact import SEVERITY_RANK, mask_known_secrets, redact_fields, redact_text, scan, scan_fields, top_severity
+from .redact import SEVERITY_RANK, mask_known_secrets, mask_secrets_only, redact_fields, redact_text, scan, scan_fields, top_severity
 
 SCHEMA_VERSION = "0.1"
 
@@ -478,7 +478,10 @@ def build(action_type, category, tool=None, tool_input=None, *,
     if tool_input is not None:
         inp = {"hash": input_hash(tool_input)}
         if summaries:
-            inp["summary"] = str(redact_fields(tool_input))[:200]
+            # Leaves the field redactor does not treat as text (numbers, sets,
+            # bytes, object reprs, credential-bearing URL paths) are caught by a
+            # final pass over the rendered summary.
+            inp["summary"] = mask_known_secrets(str(redact_fields(tool_input)))[:200]
         action["input"] = inp
 
     # Normalize the outcome up front so its summary is redacted before it is
@@ -566,10 +569,50 @@ def build(action_type, category, tool=None, tool_input=None, *,
         record["data"] = data_block
     if outcome is not None:
         record["outcome"] = outcome
+    _scrub_fields(record)
     # Final guard: a caller-supplied value (a float score in data/outcome, say)
     # must never crash the recorder when the record is hashed. No-op on a record
     # that was already canonicalizable, so the hash of valid records is unchanged.
     return _canon_safe(record)
+
+
+# Fields the recorder itself produces or has already redacted; everything else
+# a caller can set is scrubbed before sealing.
+_SCRUB_SKIP = {"schema_version", "record_id", "ts", "integrity", "findings",
+               "authority", "severity", "source"}
+# Fields that name a person or account: credentials are masked, but the email or
+# phone the field exists to carry is kept (an approver must stay identifiable).
+_IDENTITY_PATHS = {("action", "authorization", "approver"), ("subject", "name")}
+
+
+def _scrub_fields(record):
+    def walk(node, path):
+        if isinstance(node, dict):
+            for k in list(node):
+                p = path + (k,)
+                if not path and k in _SCRUB_SKIP:
+                    continue
+                if p in (("subject", "id"), ("data", "pii_types"), ("data", "purpose"),
+                         ("action", "input"), ("outcome", "summary"), ("outcome", "hash"),
+                         ("action", "type"), ("action", "category")):
+                    continue
+                node[k] = walk(node[k], p)
+            return node
+        if isinstance(node, list):
+            return [walk(v, path) for v in node]
+        if isinstance(node, str):
+            if path in _IDENTITY_PATHS or (path and path[0] == "principal"):
+                return mask_secrets_only(node)
+            return mask_known_secrets(node) if _identifier_like(path) else redact_text(node)
+        return node
+    walk(record, ())
+
+
+def _identifier_like(path):
+    """Identifier-shaped fields (ids, versions, refs) skip the high-entropy
+    catch-all, which would mangle legitimate opaque identifiers."""
+    return path[-1] in ("id", "session_id", "parent_id", "version", "ref", "policy_ref") or \
+        path[:1] in (("agent",), ("threats",))
 
 
 def _read_last_line(path):
