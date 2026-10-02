@@ -93,16 +93,19 @@ def _verify_lines(lines, schema, out):
     seen_ids = set()          # record_ids seen so far, to resolve parent links
     parent_links = 0          # records that declare a parent_id
     orphan_links = 0          # parent_ids not found earlier in this chain
+    unreadable = 0            # lines that are not complete JSON records
     for n, line in enumerate(lines, start=1):
         try:
             record = json.loads(line)
         except RecursionError:
             out("record %d: not valid JSON: nested too deeply" % n)
             ok = False
+            unreadable += 1
             continue
         except json.JSONDecodeError as e:
             out("record %d: not valid JSON: %s" % (n, e))
             ok = False
+            unreadable += 1
             continue
         if not isinstance(record, dict):
             out("record %d: not a JSON object" % n)
@@ -210,6 +213,10 @@ def _verify_lines(lines, schema, out):
         out("note: this is integrity, not completeness — a self-held chain cannot show records that were removed and the chain re-sealed, anywhere in it; an external witness (halo anchor --check) is what attests nothing was dropped.")
     elif not chain_ok:
         out("FAIL: log did not verify — sequence integrity gap detected (see above).")
+    elif unreadable:
+        out("FAIL: log did not verify — %d line(s) are not complete records (a torn "
+            "write or a truncation; see above); the hash chain of the remaining "
+            "records is intact." % unreadable)
     else:
         out("FAIL: log did not verify — records do not match the record format "
             "(schema); the hash chain itself is intact (see above).")

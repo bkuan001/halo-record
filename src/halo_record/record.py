@@ -744,36 +744,71 @@ def _identifier_like(path):
         path[:1] in (("agent",), ("threats",))
 
 
-def _read_last_line(path):
-    """Last non-empty line of ``path``, read from the tail without scanning the
-    whole file. Falls back to a full scan only if the final line is longer than
-    the tail window (records are ~1 KB; the window is 256 KB)."""
+def _complete_record(line):
+    """The record on ``line`` if it is a complete sealed record, else None."""
+    try:
+        rec = json.loads(line)
+    except (ValueError, RecursionError):
+        return None
+    if not isinstance(rec, dict):
+        return None
+    integ = rec.get("integrity")
+    if not isinstance(integ, dict) or not isinstance(integ.get("hash"), str) or not integ["hash"]:
+        return None
+    return rec
+
+
+def _tail_state(path):
+    """``(record, incomplete, has_content)`` for the chain file at ``path``:
+    the last complete record (or None), how many non-empty lines after it are
+    not complete records (a torn write or a truncation), and whether the file
+    holds anything but whitespace. Reads the tail window, and the whole file
+    only when the window holds no complete record."""
     try:
         with open(path, "rb") as fh:
             fh.seek(0, os.SEEK_END)
             size = fh.tell()
-            if size == 0:
-                return None
             back = min(size, 262144)
             fh.seek(size - back)
             buf = fh.read(back)
-        stripped = buf.rstrip()
-        if stripped:
-            nl = stripped.rfind(b"\n")
-            if nl != -1:
-                return stripped[nl + 1:]
-            if back == size:
-                return stripped  # single-line file, fully in the window
-        elif back == size:
-            return None  # whitespace-only file
     except OSError:
-        return None
-    last = None
-    with open(path, "rb") as fh:
-        for line in fh:
-            if line.strip():
-                last = line
-    return last
+        return None, 0, False
+    lines = buf.split(b"\n")
+    if back < size:
+        lines = lines[1:]  # the first line in the window may be cut
+    incomplete = 0
+    for line in reversed(lines):
+        if not line.strip():
+            continue
+        rec = _complete_record(line)
+        if rec is not None:
+            return rec, incomplete, True
+        incomplete += 1
+    if back < size:
+        last, incomplete = None, 0
+        with open(path, "rb") as fh:
+            for line in fh:
+                if not line.strip():
+                    continue
+                rec = _complete_record(line)
+                if rec is not None:
+                    last, incomplete = rec, 0
+                else:
+                    incomplete += 1
+        return last, incomplete, True
+    return None, incomplete, incomplete > 0
+
+
+def _ends_with_newline(path):
+    try:
+        with open(path, "rb") as fh:
+            fh.seek(0, os.SEEK_END)
+            if fh.tell() == 0:
+                return True
+            fh.seek(-1, os.SEEK_END)
+            return fh.read(1) == b"\n"
+    except OSError:
+        return True
 
 
 class Recorder:
@@ -831,8 +866,25 @@ class Recorder:
             return 0
 
     def _refresh_tail(self):
-        """Read the chain head (and last authority snapshot) from disk."""
-        line = _read_last_line(self.path) if os.path.exists(self.path) else None
+        """Read the chain head (and last authority snapshot) from disk.
+
+        The head is the last COMPLETE record. Lines after it that are not
+        complete records (a torn write, a truncated file) are left in place,
+        reported on stderr, and skipped: the next record links to the last
+        complete one and starts on a new line, so the chain never restarts at
+        genesis on top of earlier records and no bytes are lost or hidden —
+        ``halo verify`` reports the incomplete line. A file with no complete
+        record at all keeps its bytes too; the chain starts after them."""
+        rec, incomplete, _ = (_tail_state(self.path) if os.path.exists(self.path)
+                              else (None, 0, False))
+        if incomplete:
+            sys.stderr.write(
+                "halo-record: %d line(s) at the end of %s are not a complete record "
+                "(a torn write or a truncation); they are kept in place, the next "
+                "record %s, and `halo verify` will report them\n"
+                % (incomplete, self.path,
+                   "links to the last complete record" if rec is not None
+                   else "starts the chain after them"))
         self._last_hash = GENESIS_PREV
         self._last_record_id = None
         self._last_authority_snapshot_id = None
@@ -842,18 +894,17 @@ class Recorder:
         # restart the snapshot_id is trusted — the reuse guard is strongest where
         # the hazard lives, inside a single producing process.
         self._last_authority_hash = None
-        if line is not None:
-            try:
-                rec = json.loads(line)
-                self._last_hash = rec.get("integrity", {}).get("hash") or GENESIS_PREV
-                self._last_record_id = rec.get("record_id")
-                authority = rec.get("authority")
-                if isinstance(authority, dict):
-                    self._last_authority_snapshot_id = authority.get("snapshot_id")
-                    if not authority.get("same_as_previous"):
+        if rec is not None:
+            self._last_hash = rec["integrity"]["hash"]
+            self._last_record_id = rec.get("record_id")
+            authority = rec.get("authority")
+            if isinstance(authority, dict):
+                self._last_authority_snapshot_id = authority.get("snapshot_id")
+                if not authority.get("same_as_previous"):
+                    try:
                         self._last_authority_hash = _authority_content_hash(authority)
-            except Exception:
-                pass
+                    except Exception:
+                        self._last_authority_hash = None
         self._last_size = self._size()
         self._tail_loaded = True
 
@@ -910,14 +961,10 @@ class Recorder:
         return snapshot_id, content_hash
 
     def _check_tail_subject(self):
-        line = _read_last_line(self.path)
-        if not line:
+        rec = _tail_state(self.path)[0]
+        if rec is None:
             return
-        try:
-            rec = json.loads(line)
-        except ValueError:
-            return
-        subj = rec.get("subject") if isinstance(rec, dict) else None
+        subj = rec.get("subject")
         sid = (subj.get("id") or None) if isinstance(subj, dict) else None
         if sid not in self._expected_subjects:
             raise ValueError("halo-record: %s holds records for another subject; "
@@ -935,8 +982,11 @@ class Recorder:
                 record.setdefault("integrity", {})
                 record["integrity"]["prev_hash"] = prev
                 record["integrity"]["hash"] = compute_hash(record, prev)
+                # A last line without its newline (torn, or written by another
+                # tool) is ended first, so the new record never joins it.
+                lead = "" if _ends_with_newline(self.path) else "\n"
                 with open(self.path, "a", encoding="utf-8") as fh:
-                    fh.write(json.dumps(record, separators=(",", ":")) + "\n")
+                    fh.write(lead + json.dumps(record, separators=(",", ":")) + "\n")
                     fh.flush()
                     self._last_size = fh.tell()
                 self._last_hash = record["integrity"]["hash"]
