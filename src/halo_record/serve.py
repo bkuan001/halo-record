@@ -98,11 +98,22 @@ def _served_chains(directory):
 
 
 def chain_key(directory, name):
-    """The serving key for a chain named by key or by file stem."""
-    for key, path in _served_chains(directory):
-        if name == key or name == os.path.basename(path)[: -len(".jsonl")]:
-            return key
-    return name
+    """The serving key for a chain named by its subject id (its key) or by its
+    file stem. Raises ValueError when the name is ambiguous — one chain's key
+    and another chain's file stem (a subject id can be chosen to equal another
+    tenant's file name) — so a grant never lands on a chain by accident."""
+    chains = _served_chains(directory)
+    by_key = [key for key, _path in chains if key == name]
+    by_stem = [key for key, path in chains
+               if os.path.basename(path)[: -len(".jsonl")] == name]
+    found = sorted(set(by_key) | set(by_stem))
+    if len(found) > 1:
+        raise ValueError(
+            "%r is ambiguous: it names the chains for subject ids %s (as a subject id "
+            "and as a file name); name the chain by a file name that is unique (%s)"
+            % (name, ", ".join(map(repr, found)),
+               ", ".join(os.path.basename(p) for k, p in chains if k in found)))
+    return found[0] if found else name
 
 
 def load_secret(directory):

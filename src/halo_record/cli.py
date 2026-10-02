@@ -265,7 +265,11 @@ def _cmd_grant(args):
     if not access.recipient_ok(args.recipient):
         print("not a valid email address or domain: %r" % args.recipient, file=sys.stderr)
         return 2
-    key = chain_key(args.dir, args.chain)
+    try:
+        key = chain_key(args.dir, args.chain)
+    except ValueError as e:
+        print("halo grant: %s" % e, file=sys.stderr)
+        return 2
     if key != args.chain:
         print("note: %s is served as chain %r" % (args.chain, key))
     allow = access.grant(args.dir, key, args.recipient)
