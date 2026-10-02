@@ -59,8 +59,12 @@ class TenantIsolationTest(unittest.TestCase):
         tr = TenantRecorder(d)
         with open(tr.path_for("acme-corp"), "w", encoding="utf-8") as fh:
             fh.write('[1, 2]\n"text"\nnot json\n{"subject": {"id": {"x": 1}}}\n')
-        with self.assertRaises(ValueError):  # the dict-id line is another subject
-            tr.append(build("tool_call", "security", tool="a", subject="acme-corp"))
+        polluted = tr.path_for("acme-corp")
+        before = open(polluted, encoding="utf-8").read()
+        # the dict-id line is another subject: the record goes to its own chain
+        r = tr.append(build("tool_call", "security", tool="a", subject="acme-corp"))
+        self.assertEqual(open(polluted, encoding="utf-8").read(), before)
+        self.assertEqual(r["subject"]["id"], "acme-corp")
         with open(tr.path_for("initech"), "wb") as fh:
             fh.write(b'\xff\xfe[]\n')
         TenantRecorder(d).append(build("tool_call", "security", tool="b", subject="initech"))
@@ -78,13 +82,15 @@ class TenantIsolationTest(unittest.TestCase):
         rec = Recorder(os.path.join(d, "m.jsonl"))
         self.assertEqual(len(record_model_call(rec, provider="a", model="m", purpose="p" * 501)["data"]["purpose"]), 500)
 
-    def test_refuses_a_file_holding_another_subject(self):
+    def test_never_appends_to_a_file_holding_another_subject(self):
         d = tempfile.mkdtemp()
         tr = TenantRecorder(d)
         stray = Recorder(tr.path_for("initech"))
         stray.append(build("tool_call", "security", tool="z", subject="acme-corp"))
-        with self.assertRaises(ValueError):
-            TenantRecorder(d).append(build("tool_call", "security", tool="q", subject="initech"))
+        TenantRecorder(d).append(build("tool_call", "security", tool="q", subject="initech"))
+        with open(tr.path_for("initech"), encoding="utf-8") as fh:
+            subjects = [json.loads(l)["subject"]["id"] for l in fh if l.strip()]
+        self.assertEqual(subjects, ["acme-corp"])  # the initech record went elsewhere
 
 
 def _forged_chain(path, prev):

@@ -972,9 +972,18 @@ class TenantRecorder:
                 path = legacy
             others = self._file_subjects(path) - expected
             if others:
-                raise ValueError(
-                    "halo-record: %s already holds records for another subject; "
-                    "refusing to mix tenants in one chain" % path)
+                # A file written by an earlier version can hold several subjects.
+                # Continue this subject in its own digested chain rather than
+                # raise into the agent, and say so.
+                raw = str(subject_id)
+                alt = os.path.join(self.directory, "%s~%s.jsonl" % (
+                    self._safe_ascii(raw), hashlib.sha256(raw.encode("utf-8")).hexdigest()[:24]))
+                if self._file_subjects(alt) - expected:
+                    raise ValueError("halo-record: %s and %s both hold records for other "
+                                     "subjects; refusing to mix tenants" % (path, alt))
+                sys.stderr.write("halo-record: %s also holds other subjects; recording %r in %s\n"
+                                 % (path, raw, alt))
+                path = alt
             self._recorders[subject_id] = Recorder(path, expected_subjects=expected)
         return self._recorders[subject_id]
 

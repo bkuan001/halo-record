@@ -59,7 +59,18 @@ def _subject_note(records):
     return '<div class="meta">%s</div>' % note
 
 
+_LONE_SURROGATE_RE = re.compile("[\ud800-\udfff]")
+
+
+def _record_subject(r):
+    s = r.get("subject")
+    return (s.get("id") or None) if isinstance(s, dict) else None
+
+
 def _subject_label(records):
+    ids = {_record_subject(r) for r in records} - {None}
+    if len(ids) > 1:
+        return "%d subjects" % len(ids)  # never label a mixed chain as one customer
     for r in records:
         s = r.get("subject")
         if isinstance(s, dict) and (s.get("name") or s.get("id")):
@@ -420,6 +431,7 @@ function witnessBase(url){
   // Only an https witness (or http on this machine, for local testing) is fetched.
   try {
     const u = new URL(String(url));
+    if (u.username || u.password) return null;  // "https://known.example@other.example" is refused
     const local = u.hostname === "localhost" || u.hostname === "127.0.0.1" || u.hostname === "[::1]";
     if (u.protocol === "https:" || (u.protocol === "http:" && local))
       return u.origin + u.pathname.replace(/\/+$/, "");
@@ -432,7 +444,8 @@ function completeness(records, cps){
   // In a windowed report only the checkpoints that land inside the window can
   // be re-checked in the browser; the ones before/beyond it are disclosed.
   if (!cps.length) return {ok:null};
-  const latest = Math.max.apply(null, cps.map(c => c.count));
+  let latest = 0;
+  for (const c of cps) if (c.count > latest) latest = c.count;
   if (!WINDOW && records.length < latest)
     return {ok:false, why:"truncated below witnessed length", have:records.length, witnessed:latest};
   let inWin = 0, before = 0, beyond = 0;
@@ -519,7 +532,12 @@ async function liveCheckpoints(cfg, embedded){
   }
   if (!cel) return;
   const src = await liveCheckpoints(cfg, embedded);
-  const comp = completeness(records, src.cps);
+  let comp;
+  try {
+    comp = completeness(records, src.cps);
+  } catch (e){
+    comp = {ok:false, why:"completeness could not be checked (" + e.message + ")"};
+  }
   const witness = src.live ? "the live witness log" : "the witness log embedded in this report";
   const note = src.error
     ? " <span class='dim'>(couldn't reach the live witness — checked the embedded snapshot instead)</span>"
@@ -529,7 +547,7 @@ async function liveCheckpoints(cfg, embedded){
     cel.innerHTML = "No witness checkpoint falls inside this window — window integrity is " +
       "verified against its anchor above" +
       (comp.beyond ? "; the chain is witnessed beyond this window" : "") +
-      (comp.before ? "; " + comp.before + " checkpoint(s) precede the window" : "") +
+      (comp.before ? "; " + comp.before + " checkpoint(s) precede the window and cannot be checked from this page (run halo anchor --check on the full chain)" : "") +
       "." + note;
   } else if (comp.ok === null){
     cel.className = "verdict open";
@@ -547,7 +565,7 @@ async function liveCheckpoints(cfg, embedded){
       (comp.before ? "; " + comp.before + " earlier checkpoint(s) precede it" : "") +
       ". No witnessed record in this window has been dropped or altered." +
       (src.live
-        ? " Whether this counts as independent verification depends on who operates the witness at " + String(cfg.witnessUrl || "the configured URL").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;") + " &mdash; treat it as self-attested unless that party is outside the operator's control."
+        ? " Whether this counts as independent verification depends on who operates the witness at " + String(witnessBase(cfg.witnessUrl) || "the configured URL").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;") + " &mdash; treat it as self-attested unless that party is outside the operator's control."
         : "") + note;
   } else if (comp.ok){
     cel.className = "verdict neutral";
@@ -558,7 +576,7 @@ async function liveCheckpoints(cfg, embedded){
       " checkpoint(s) up to record " + comp.latest +
       ". No record the notary saw has been dropped or altered." +
       (src.live
-        ? " Whether this counts as independent verification depends on who operates the witness at " + String(cfg.witnessUrl || "the configured URL").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;") + " &mdash; treat it as self-attested unless that party is outside the operator's control."
+        ? " Whether this counts as independent verification depends on who operates the witness at " + String(witnessBase(cfg.witnessUrl) || "the configured URL").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;") + " &mdash; treat it as self-attested unless that party is outside the operator's control."
         : "") + note;
   } else {
     cel.className = "verdict fail";
@@ -1340,18 +1358,25 @@ def write_report(log_path, out_path=None, witness_log=None, witness_url=None,
     elif witness_url:
         try:
             from .witness import fetch_checkpoints
-            checkpoints = fetch_checkpoints(witness_url, subject=_subject_id(records))
+            subj = _subject_id(records)
+            checkpoints = fetch_checkpoints(
+                witness_url, subject=subj,
+                chain_root=(_chain_root(records) if subj is None and records else None))
         except Exception:
             checkpoints = None  # live fetch happens in-browser regardless
     policy = None
     if policy_path:
         from .policy import load_policy
         policy = load_policy(policy_path)
-    if expected_subject is not None and _subject_id(records) != expected_subject:
-        raise ValueError("%s: chain subject id %s is not the expected %s; refusing to render"
-                         % (log_path, json.dumps(_subject_id(records)), json.dumps(expected_subject)))
+    if expected_subject is not None:
+        found = sorted({json.dumps(_record_subject(r)) for r in records})
+        if found != [json.dumps(expected_subject)]:
+            raise ValueError("%s: chain subject id(s) %s are not exactly the expected %s; "
+                             "refusing to render" % (log_path, ", ".join(found),
+                                                     json.dumps(expected_subject)))
     from .verify import verify_records
     chain_ok = verify_records(records)
+    full_records = records
     window = None
     if start is None and end is None and not chain_ok:
         raise ValueError(
@@ -1409,9 +1434,19 @@ def write_report(log_path, out_path=None, witness_log=None, witness_url=None,
                   "chain_verified": chain_ok,
                   "from": start.isoformat() if start else None,
                   "to": end.isoformat() if end else None}
+        # The page can only re-check checkpoints that fall inside the window, so
+        # the full chain is checked against the witness here, at generation.
+        if checkpoints:
+            from .anchor import verify_completeness
+            full = verify_completeness(full_records, checkpoints, expected_subject=expected_subject)
+            if full.get("ok") is False:
+                raise ValueError(
+                    "%s: the chain conflicts with the witness (%s); refusing to render a "
+                    "windowed report that could not show it" % (log_path, full.get("why")))
         records = win_records
     html_doc = render(records, checkpoints, witness_url=witness_url, policy=policy,
                       window=window)
+    html_doc = _LONE_SURROGATE_RE.sub("\ufffd", html_doc)  # displayable and encodable
     if out_path:
         with open(out_path, "w", encoding="utf-8") as fh:
             fh.write(html_doc)

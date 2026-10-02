@@ -257,8 +257,10 @@ def verify_completeness(records, checkpoints, expected_subject=None):
     if expected_subject is not None:
         # The buyer names the customer it expects. The id inside the records is
         # the vendor's to write, so a re-keyed chain must not pick its own lookup.
+        ids = {(r.get("subject") or {}).get("id") if isinstance(r.get("subject"), dict) else None
+               for r in records}
         found = _subject_id(records)
-        if found != expected_subject:
+        if ids != {expected_subject}:
             return _out({"ok": False, "witnessed": 0,
                          "why": "chain subject id %s differs from the expected %s"
                                 % (json.dumps(found), json.dumps(expected_subject))})
