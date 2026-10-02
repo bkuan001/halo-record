@@ -1114,11 +1114,19 @@ class TenantRecorder:
             # Continuity for chains written before digested names: if the plain
             # file exists and holds only this subject, keep appending there.
             legacy = os.path.join(self.directory, self._safe(subject_id) + ".jsonl")
-            if (legacy != path and not os.path.exists(path)
-                    and os.path.exists(legacy)
-                    and self._file_subjects(legacy)
-                    and self._file_subjects(legacy) <= expected):
-                path = legacy
+            if legacy != path and not os.path.exists(path) and os.path.exists(legacy):
+                legacy_subjects = self._file_subjects(legacy)
+                if legacy_subjects and legacy_subjects <= expected:
+                    path = legacy
+                elif subject_id in legacy_subjects:
+                    # This subject's earlier records share a file with other
+                    # subjects, so they cannot be continued without mixing
+                    # tenants. Say where they are and where the new chain is.
+                    sys.stderr.write(
+                        "halo-record: earlier records for %r are in %s together with "
+                        "other subjects; new records for %r start their own chain in "
+                        "%s (the earlier records stay where they are)\n"
+                        % (subject_id, legacy, subject_id, path))
             others = self._file_subjects(path) - expected
             if others:
                 # A file written by an earlier version can hold several subjects.
@@ -1135,5 +1143,23 @@ class TenantRecorder:
             self._recorders[subject_id] = Recorder(path, expected_subjects=expected)
         return self._recorders[subject_id]
 
+    def _explicit_default_recorder(self, subject_id):
+        """A record whose subject id equals the default chain's name is a real
+        tenant, not a subjectless record: it gets its own digested chain so it
+        never shares the subjectless chain."""
+        key = ("subject", subject_id)
+        if key not in self._recorders:
+            if not os.path.isdir(self.directory):
+                os.makedirs(self.directory, exist_ok=True)
+            path = os.path.join(self.directory, self._digested(str(subject_id)) + ".jsonl")
+            if self._file_subjects(path) - {subject_id}:
+                raise ValueError("halo-record: %s holds records for other subjects; "
+                                 "refusing to mix tenants" % path)
+            self._recorders[key] = Recorder(path, expected_subjects={subject_id})
+        return self._recorders[key]
+
     def append(self, record):
+        subj = record.get("subject")
+        if isinstance(subj, dict) and subj.get("id") and subj["id"] == self.default:
+            return self._explicit_default_recorder(subj["id"]).append(record)
         return self.recorder_for(self._subject_id(record)).append(record)
