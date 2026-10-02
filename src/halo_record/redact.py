@@ -229,20 +229,35 @@ def _validated_span(name, match_text):
 _VALIDATORS = {"credit_card": _luhn_ok, "iban": _iban_ok}
 
 
-# Invisible format characters (zero-width space/joiners, word joiner, BOM, soft
-# hyphen) spliced between the characters of a token would otherwise split a
-# known key format so no pattern sees it. They are dropped when they sit between
-# token characters; elsewhere (an emoji ZWJ sequence) they are kept.
+# Invisible characters spliced between the characters of a token would
+# otherwise split a known key format so no pattern sees it. The set is every
+# Unicode format character (category Cf, as of Unicode 15.1) plus the invisible
+# combining grapheme joiner, variation selectors, and Hangul fillers. They are
+# dropped when they sit between token characters; elsewhere (an emoji ZWJ
+# sequence, a bidi mark in prose) they are kept. The ranges are fixed here,
+# not read from ``unicodedata``, so every Python version and the TypeScript
+# port strip the same set.
+_INVISIBLE_RANGES = (
+    (0x00AD, 0x00AD), (0x034F, 0x034F), (0x0600, 0x0605), (0x061C, 0x061C),
+    (0x06DD, 0x06DD), (0x070F, 0x070F), (0x0890, 0x0891), (0x08E2, 0x08E2),
+    (0x115F, 0x1160), (0x180B, 0x180F), (0x200B, 0x200F), (0x202A, 0x202E),
+    (0x2060, 0x2064), (0x2066, 0x206F), (0x3164, 0x3164), (0xFE00, 0xFE0F),
+    (0xFEFF, 0xFEFF), (0xFFA0, 0xFFA0), (0xFFF9, 0xFFFB), (0x110BD, 0x110BD),
+    (0x110CD, 0x110CD), (0x13430, 0x1343F), (0x1BCA0, 0x1BCA3), (0x1D173, 0x1D17A),
+    (0xE0001, 0xE0001), (0xE0020, 0xE007F), (0xE0100, 0xE01EF),
+)
+INVISIBLE_CHARS = frozenset(chr(c) for a, b in _INVISIBLE_RANGES for c in range(a, b + 1))
+_INVISIBLE_CLASS = "".join(
+    re.escape(chr(a)) if a == b else "%s-%s" % (re.escape(chr(a)), re.escape(chr(b)))
+    for a, b in _INVISIBLE_RANGES)
 _ZW_IN_TOKEN_RE = re.compile(
-    r'(?<=[A-Za-z0-9_\-+/=.:])[\u200b\u200c\u200d\u2060\ufeff\u00ad\u180e]+(?=[A-Za-z0-9_\-+/=.:@])')
+    r'(?<=[A-Za-z0-9_\-+/=.:])[' + _INVISIBLE_CLASS + r']+(?=[A-Za-z0-9_\-+/=.:@])')
+_ZW_HINT_RE = re.compile('[' + _INVISIBLE_CLASS + ']')
 
 
 def normalize_invisible(text):
-    """``text`` with zero-width characters inside tokens removed."""
+    """``text`` with invisible characters inside tokens removed."""
     return _ZW_IN_TOKEN_RE.sub("", text) if _ZW_HINT_RE.search(text) else text
-
-
-_ZW_HINT_RE = re.compile(r'[\u200b\u200c\u200d\u2060\ufeff\u00ad\u180e]')
 
 
 def _apply_patterns(text):
