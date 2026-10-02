@@ -27,6 +27,8 @@ import threading
 import time
 from hashlib import sha256
 
+from ._private import open_private
+
 ACCESS_FILE = ".halo_access.json"
 LEADS_FILE = ".halo_leads.jsonl"
 OTP_OUTBOX = ".halo_otp_outbox.jsonl"
@@ -53,9 +55,8 @@ def load_access(directory):
 
 def save_access(directory, data):
     path = _access_path(directory)
-    with open(path, "w", encoding="utf-8") as fh:
+    with open_private(path, "w") as fh:
         json.dump(data, fh, indent=2, sort_keys=True)
-    os.chmod(path, 0o600)
 
 
 def grant(directory, chain, entry):
@@ -208,9 +209,8 @@ def send_otp(directory, email, code, chain, subject=None):
         "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
     }
     try:
-        with open(os.path.join(directory, OTP_OUTBOX), "a", encoding="utf-8") as fh:
+        with open_private(os.path.join(directory, OTP_OUTBOX), "a") as fh:
             fh.write(json.dumps(rec, separators=(",", ":")) + "\n")
-        os.chmod(os.path.join(directory, OTP_OUTBOX), 0o600)
     except OSError:
         pass
     return delivered

@@ -39,6 +39,7 @@ import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs, urlencode
 
+from ._private import open_private
 from . import __version__
 from .anchor import Notary, checkpoint, _now
 
@@ -67,9 +68,8 @@ def load_keys(store):
         with open(path, "r", encoding="utf-8") as fh:
             return parse_key_spec(fh.read().splitlines())
     key = os.urandom(24).hex()
-    with open(path, "w", encoding="utf-8") as fh:
+    with open_private(path, "w") as fh:
         fh.write(key + "\n")
-    os.chmod(path, 0o600)
     return parse_key_spec([key])
 
 

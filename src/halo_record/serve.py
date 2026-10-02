@@ -26,6 +26,7 @@ from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
+from ._private import open_private
 from . import __version__
 from . import access as _access
 from .anchor import Notary, verify_completeness, _subject_id
@@ -58,9 +59,8 @@ def load_secret(directory):
         with open(path, "rb") as fh:
             return fh.read().strip()
     secret = os.urandom(32).hex().encode("utf-8")
-    with open(path, "wb") as fh:
+    with open_private(path, "wb") as fh:
         fh.write(secret)
-    os.chmod(path, 0o600)
     return secret
 
 
