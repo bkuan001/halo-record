@@ -4,7 +4,7 @@ The [OWASP GenAI Security Project](https://genai.owasp.org) publishes the **OWAS
 
 halo-record sits in the **Operate → Monitor → Govern** stages. It is **record-only by design** — it does not intercept, guard, or enforce — so it is not a control that *prevents* any of these threats. It is the **evidence layer underneath them**: a tamper-evident record of what the agent actually did, which is the forensic basis the ASI threat list assumes but does not itself provide. Traceability is the cross-cutting mitigation; halo-record is where it comes from.
 
-> **Two distinct things a record does per threat.** Every threat below leaves a forensic trace in the record (that is universal — a record *proves what happened*). Separately, some threats admit a **deterministic policy check** over that record (a rule that flags when the evidence is missing or the wrong shape). The record is always present; the rule exists only where a deterministic check is warranted — a record proves what an agent *did*, never what a control *prevented*.
+> **Two distinct things a record does per threat.** Every threat below leaves a forensic trace in the record (that is universal — a record documents what was recorded under the declared capture surface). Separately, some threats admit a **deterministic policy check** over that record (a rule that flags when the evidence is missing or the wrong shape). The record is always present; the rule exists only where a deterministic check is warranted — a record proves what an agent *did*, never what a control *prevented*.
 
 ## Top 10 for Agentic Applications (2026) → halo-record
 
@@ -30,7 +30,7 @@ The rules above ship as [`examples/policies/owasp-starter.json`](examples/polici
 ## Boundaries
 
 - **Tamper-*evident*, not immutable.** Records can be edited; the edit is *detectable* against the hash chain, not *prevented*. The claim is "modification, deletion, or reordering is detectable," never "cannot be changed."
-- **Record proves what happened, not what a control prevented.** The two ❌ categories (ASI08, ASI09) are systemic-runtime and human/organizational risks a record policy cannot assert — the record still supplies the forensic trace for post-hoc reconstruction, it just yields no deterministic pass/fail verdict.
+- **A record documents what was recorded under the declared capture surface, not what a control prevented.** The two ❌ categories (ASI08, ASI09) are systemic-runtime and human/organizational risks a record policy cannot assert — the record still supplies the forensic trace for post-hoc reconstruction, it just yields no deterministic pass/fail verdict.
 - **Integrity is not completeness.** A record the operator holds proves nothing was *edited*, never that nothing was *omitted*. Completeness comes from an independent witness holding a periodic count and head-hash of the chain — see [Integrity vs. completeness](README.md#integrity-vs-completeness-read-this-part). This is the layer that makes the evidence trustworthy to a party outside the operator.
 
 halo-record is the traceability evidence the OWASP agentic threat list assumes — produced tamper-evident, chained, and verifiable by someone outside the vendor.

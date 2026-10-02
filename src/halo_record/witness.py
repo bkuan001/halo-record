@@ -4,28 +4,40 @@ A per-tenant hash chain is internally tamper-evident, but a vendor who hosts
 their *own* chain can drop a record and rebuild a chain that still verifies
 (see ``anchor`` for the full argument). The fix is an append-only witness the
 vendor does not control. ``anchor.Notary`` is that store on disk; this module
-puts it behind HTTP so vendors anchor to a witness running in *Halo's* account,
-not their own — which is what makes "complete" a claim the buyer's security
-team can trust instead of taking on the vendor's word.
+puts it behind HTTP so vendors can anchor to a witness operated by someone
+other than themselves. "Complete" is a claim the buyer's security team can
+rely on only to the extent that whoever runs this service is outside the
+vendor's control.
 
 Trust-not-data, by construction:
   The vendor computes the checkpoint LOCALLY and POSTs only
   ``{subject, count, head, chain_root}`` — opaque hashes, a count, and the
-  customer id. Record *contents* never leave the vendor. Halo witnesses what it
-  saw (a head at a count at a time) without ever holding the underlying runtime
-  data. The independence comes from Halo hosting an append-only log the vendor
-  can't rewrite, not from Halo accumulating the vendor's data.
+  customer id. Record *contents* never leave the vendor. The witness records
+  what it was sent (a head at a count at a time) without ever holding the
+  underlying runtime data. Any independence comes from the witness operator
+  keeping an append-only log the vendor can't rewrite, not from accumulating
+  the vendor's data.
 
 Routes:
   POST /anchor                  vendor-authed (Bearer key); append one checkpoint,
                                 return a receipt. Append-only — no update/delete.
-  GET  /v1/checkpoints?subject= public, CORS-open so a viewer's browser can fetch
-                                the witness log while verifying a report.
+                                Rate-limited per key.
+  GET  /v1/checkpoints?subject= CORS-open so a viewer's browser can fetch the
+                                witness log while verifying a report. Public by
+                                default, which lets anyone who guesses a subject
+                                id see that it is anchored and its record count;
+                                set ``$HALO_WITNESS_READ_KEYS`` (``key=subject-
+                                glob|…``) to require a scoped read key instead.
   GET  /healthz                 liveness probe.
 
-Pure-stdlib, like the rest of the package. Offline *signed* receipts (so a buyer
-can verify a witness without contacting Halo) need asymmetric signatures and are
-deliberately deferred; the hosted append-only store is the guarantee on its own.
+Pure-stdlib, like the rest of the package.
+
+What this store does not give you (see LIMITS.md §1): checkpoints are not
+signed, so a reader trusts whoever operates the store, and an operator with
+access to ``witness.jsonl`` can rewrite it. Completeness is only as independent
+as the party that runs this service; there is no hosted Halo witness today.
+Offline signed receipts (verifiable without contacting the witness) need
+asymmetric signatures and are not implemented.
 """
 
 import fnmatch
@@ -34,6 +46,7 @@ import json
 import threading
 import os
 import re
+import time
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs, urlencode
@@ -47,6 +60,8 @@ KEY_FILE = ".halo_witness_key"
 MAX_BODY = 8192
 MAX_COUNT = 10 ** 12
 DEFAULT_PORT = 8730
+POST_RATE_LIMIT = 60      # anchors per key per POST_RATE_WINDOW seconds
+POST_RATE_WINDOW = 60.0
 
 _HEX64 = re.compile(r"^[0-9a-f]{64}$")
 # ASCII only, single internal spaces, no leading/trailing space: ids that differ
@@ -174,18 +189,76 @@ def anchor_remote(witness_url, key, records, *, timeout=10):
     return out.get("receipt", out)
 
 
-def fetch_checkpoints(witness_url, subject=None, *, chain_root=None, timeout=10):
-    """Fetch the witness's independently held checkpoints for a subject. This is
-    what a viewer's browser (or a buyer's tooling) calls to check completeness
-    against a party the vendor does not control."""
+def fetch_checkpoints(witness_url, subject=None, *, chain_root=None, timeout=10, key=None):
+    """Fetch the witness's checkpoints for a subject. This is what a viewer's
+    browser (or a buyer's tooling) calls to check completeness against the
+    witness. ``key`` is a read key, needed only when the witness requires one."""
     url = witness_url.rstrip("/") + "/v1/checkpoints"
     if subject is not None:
         url += "?" + urlencode({"subject": subject})
     elif chain_root is not None:
         url += "?" + urlencode({"chain_root": chain_root})
-    with urllib.request.urlopen(url, timeout=timeout) as resp:
+    req = urllib.request.Request(url, headers=({"Authorization": "Bearer " + key}
+                                               if key else {}))
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
         out = json.loads(resp.read().decode("utf-8"))
     return out.get("checkpoints", [])
+
+
+class _CheckpointIndex:
+    """In-memory index over the append-only witness log. Each read parses only
+    the bytes appended since the previous read, so a GET costs the new lines,
+    not the whole log. A log that shrank or was replaced is re-read from the
+    start."""
+
+    def __init__(self, path):
+        self.path = path
+        self._lock = threading.Lock()
+        self._reset()
+
+    def _reset(self):
+        self.offset, self.ident = 0, None
+        self.by_subject, self.by_root = {}, {}
+
+    def _refresh(self):
+        try:
+            st = os.stat(self.path)
+        except OSError:
+            self._reset()
+            return
+        ident = (st.st_dev, st.st_ino)
+        if ident != self.ident or st.st_size < self.offset:
+            self._reset()
+            self.ident = ident
+        if st.st_size == self.offset:
+            return
+        with open(self.path, "rb") as fh:
+            fh.seek(self.offset)
+            data = fh.read(st.st_size - self.offset)
+        end = data.rfind(b"\n")
+        if end < 0:
+            return  # a line still being written
+        self.offset += end + 1
+        for raw in data[:end].split(b"\n"):
+            if not raw.strip():
+                continue
+            try:
+                cp = json.loads(raw.decode("utf-8"))
+            except (ValueError, RecursionError):
+                continue  # a damaged line never hides the rest
+            if not isinstance(cp, dict):
+                continue
+            if cp.get("subject") is not None:
+                self.by_subject.setdefault(cp["subject"], []).append(cp)
+            elif cp.get("chain_root") is not None:
+                self.by_root.setdefault(cp["chain_root"], []).append(cp)
+
+    def lookup(self, subject=None, chain_root=None):
+        with self._lock:
+            self._refresh()
+            if subject is not None:
+                return list(self.by_subject.get(subject, []))
+            return list(self.by_root.get(chain_root, []))
 
 
 class _Handler(BaseHTTPRequestHandler):
@@ -221,8 +294,21 @@ class _Handler(BaseHTTPRequestHandler):
             # vendor's customers and volumes to any origin.
             if subject is None and not (root and _HEX64.match(root)):
                 return self._send(400, {"error": "subject or chain_root required"}, cors=True)
+            read_keys = self.config.get("read_keys")
+            if read_keys and subject is not None:
+                # Subject ids can be guessed; with read keys configured, whether a
+                # subject is anchored (and how far) is shown only to a key scoped to it.
+                auth = self.headers.get("Authorization", "")
+                presented = auth[7:].strip() if auth.lower().startswith("bearer ") else ""
+                entry = _key_match(presented, list(read_keys) + list(self.config["keys"]))
+                if entry is None:
+                    return self._send(401, {"error": "read key required"}, cors=True)
+                if not _in_scope(subject, entry[1]) or (
+                        entry[1] is None and len(parse_key_spec(self.config["keys"])) > 1):
+                    return self._send(403, {"error": "key not authorized for this subject"},
+                                      cors=True)
             # subject is only ever a filter, never a path — traversal impossible.
-            cps = self.config["notary"].checkpoints(subject=subject, chain_root=root)
+            cps = self._index().lookup(subject=subject, chain_root=root)
             return self._send(200, {"checkpoints": cps, "count": len(cps)}, cors=True)
         return self._send(404, {"error": "not found"})
 
@@ -253,14 +339,22 @@ class _Handler(BaseHTTPRequestHandler):
             length = int(self.headers.get("Content-Length") or 0)
         except ValueError:
             return self._send(400, {"error": "bad Content-Length"})
-        if length < 0 or length > MAX_BODY:
+        if length < 0:
+            return self._send(400, {"error": "bad Content-Length"})
+        if length > MAX_BODY:
             return self._send(413, {"error": "payload too large"})
+        if not self._rate_ok(entry[0]):
+            return self._send(429, {"error": "too many anchors for this key; retry later"})
         raw = self.rfile.read(length) if length else b""
         try:
             payload = json.loads(raw.decode("utf-8"))
+        except (ValueError, UnicodeDecodeError, RecursionError):
+            # The parser's message quotes the body back; say only what failed.
+            return self._send(400, {"error": "body is not valid JSON"})
+        try:
             cp = _clean_checkpoint(payload)
-        except (ValueError, UnicodeDecodeError, RecursionError) as exc:
-            return self._send(400, {"error": str(exc)[:200]})
+        except ValueError as exc:
+            return self._send(400, {"error": str(exc)[:200]})  # our own fixed messages
 
         keys = parse_key_spec(self.config["keys"])
         if len(keys) > 1 and entry[1] is None:
@@ -293,9 +387,30 @@ class _Handler(BaseHTTPRequestHandler):
             return None
 
     _default_lock = threading.Lock()
+    _state_lock = threading.Lock()
 
     def _lock(self):
         return self.config.get("lock") or self._default_lock
+
+    def _index(self):
+        with self._state_lock:
+            idx = self.config.get("_index")
+            if idx is None:
+                idx = self.config["_index"] = _CheckpointIndex(self.config["notary"].path)
+        return idx
+
+    def _rate_ok(self, key):
+        now = time.monotonic()
+        limit = self.config.get("post_rate_limit", POST_RATE_LIMIT)
+        with self._state_lock:
+            hits = self.config.setdefault("_rate", {})
+            recent = [t for t in hits.get(key, []) if now - t < POST_RATE_WINDOW]
+            if len(recent) >= limit:
+                hits[key] = recent
+                return False
+            recent.append(now)
+            hits[key] = recent
+        return True
 
     def log_message(self, fmt, *args):
         pass
@@ -311,13 +426,24 @@ def serve(store, *, host="127.0.0.1", port=DEFAULT_PORT):
     if len(keys) > 1 and any(scopes is None for _k, scopes in keys):
         raise SystemExit("halo witness: several vendor keys are configured, so every key "
                          "needs a subject scope (key=glob|glob); refusing to start")
+    read_env = os.environ.get("HALO_WITNESS_READ_KEYS")
+    read_keys = parse_key_spec(read_env.split(",")) if read_env else []
+    if any(scopes is None for _k, scopes in read_keys):
+        raise SystemExit("halo witness: every read key needs a subject scope "
+                         "(key=glob|glob); refusing to start")
     handler = type("_BoundWitness", (_Handler,),
-                   {"config": {"notary": notary, "keys": keys,
+                   {"config": {"notary": notary, "keys": keys, "read_keys": read_keys,
                                "lock": threading.Lock()}})
     httpd = ThreadingHTTPServer((host, port), handler)
     print("Halo witness serving from %s" % os.path.join(store, WITNESS_FILE))
     print("  anchor (vendor): POST http://%s:%s/anchor   (Bearer key required)" % (host, port))
-    print("  checkpoints (public): GET http://%s:%s/v1/checkpoints?subject=<id>" % (host, port))
+    if read_keys:
+        print("  checkpoints (scoped read key): GET http://%s:%s/v1/checkpoints?subject=<id>"
+              % (host, port))
+    else:
+        print("  checkpoints (public): GET http://%s:%s/v1/checkpoints?subject=<id>" % (host, port))
+        print("  note: reads are public — anyone who guesses a subject id sees that it is "
+              "anchored and its record count; set HALO_WITNESS_READ_KEYS to scope reads.")
     if not os.environ.get("HALO_WITNESS_KEYS"):
         print("  vendor key: %s" % keys[0][0])
     print("  Ctrl-C to stop.")

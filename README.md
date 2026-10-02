@@ -2,7 +2,7 @@
 
 Tamper-evident **audit trails for AI agents** — hash-chained Runtime Records, rendered as a Runtime Report your customers can check themselves.
 
-Every action your agent takes (tool calls, model calls, data access, approvals) becomes one **Runtime Record** in an append-only, hash-chained log; the **Runtime Report** is that chain rendered as a self-verifying HTML page. Any party holding a checkpoint of the chain can verify the records behind it were never altered, without trusting whoever produced them — that checkpoint is the load-bearing piece: the chain alone is tamper-evident against everyone except the party operating the recorder ([LIMITS.md §1](https://github.com/bkuan001/halo-record/blob/main/LIMITS.md)). When a customer's security team asks "what did your agent do with our data?", you hand them a link instead of a paragraph. Security reviews already ask AI questions next to the SOC 2 checklist — and increasingly those questions come from ISO 42001, the EU AI Act's record-keeping articles, and customers' own questionnaires. Today a written assurance still passes. The bet behind this project is that it won't for long.
+Every action your agent takes (tool calls, model calls, data access, approvals) becomes one **Runtime Record** in an append-only, hash-chained log; the **Runtime Report** is that chain rendered as an HTML page that re-computes the hash chain in the reader's browser and renders what it displays from the records it verified (for a check that does not rely on the page's own code, run `halo verify` on the JSONL). Any party holding a checkpoint of the chain can verify the records behind it were never altered, without trusting whoever produced them — that checkpoint is the load-bearing piece: the chain alone is tamper-evident against everyone except the party operating the recorder ([LIMITS.md §1](https://github.com/bkuan001/halo-record/blob/main/LIMITS.md)). When a customer's security team asks "what did your agent do with our data?", you hand them a link instead of a paragraph. Security reviews already ask AI questions next to the SOC 2 checklist — and increasingly those questions come from ISO 42001, the EU AI Act's record-keeping articles, and customers' own questionnaires. Today a written assurance still passes. The bet behind this project is that it won't for long.
 
 **Featured in [Help Net Security](https://www.helpnetsecurity.com/2026/08/31/halo-record-open-source-ai-agent-audit-trail/)** (August 2026).
 
@@ -79,7 +79,7 @@ with record_call(rec, "payments.refund", {"amount": 120},
 Then render the report:
 
 ```
-halo report audit.jsonl -o report.html    # one chain -> self-verifying HTML
+halo report audit.jsonl -o report.html    # one chain -> HTML that re-verifies in the browser
 halo serve ./records --port 8721          # all tenants, gated per customer
 ```
 
@@ -327,7 +327,7 @@ halo-record is an evidence layer, not a certification. It produces the artifact 
 
 - **Security questionnaires and SOC 2 reviews:** answer the AI sections with a verifiable Runtime Report instead of screenshots and prose.
 - **AIUC-1:** produces the tamper-evident logging evidence (E015.4) and execution-chain records with authorization events (E015.2 — with a stated gap: reasoning traces are not captured) that the standard's Accountability control E015 names. E015 itself is mandatory; E015.2 and E015.4 are its supplemental tier: not required to pass, the one a vendor adopts when a customer or regulator asks for it. Once the chain is anchored to a witness the relying party has reason to trust — a witness the operator runs itself does not provide this — that's a continuously witnessed chain rather than one reconstructed at audit time (what entered the chain is still bounded by the capture surface). A control-by-control evidence mapping, including what's deliberately out of scope, is in [`AIUC.md`](https://github.com/bkuan001/halo-record/blob/main/AIUC.md).
-- **OWASP Top 10 for Agentic Applications 2026:** eight of the ten threats map to deterministic policy rules over the record, two are marked out of scope with reasons, and the pack ships runnable. An approximate community mapping, not an official OWASP artifact. See [`OWASP.md`](https://github.com/bkuan001/halo-record/blob/main/OWASP.md).
+- **OWASP Top 10 for Agentic Applications 2026:** eight of the ten threats map to deterministic policy rules over the record, two are marked out of scope with reasons, and the pack ships in the package, runnable by name (`halo policy chain.jsonl owasp-starter`). An approximate community mapping, not an official OWASP artifact. See [`OWASP.md`](https://github.com/bkuan001/halo-record/blob/main/OWASP.md).
 - **AARM (CSA):** produces the tamper-evident action receipt AARM specifies — R5, and the sealing half of R6 (identity is sealed into the hash, not cryptographically authenticated). halo-record is the receipt layer; pair it with an enforcement gateway for a full AARM system. See [`AARM.md`](https://github.com/bkuan001/halo-record/blob/main/AARM.md).
 - **Agentic Trust Controls:** the runtime records behind the ATC's evidence controls — tamper-evident action logging (RBM-03) and the record half of authority attestation (AID-05; the enforcement half belongs to the gate) in one chained record. See [`ATC.md`](https://github.com/bkuan001/halo-record/blob/main/ATC.md).
 - **CSA AI Controls Matrix (AICM) / STAR for AI:** the LOG-domain evidence — audit records generated, sealed against undetected modification, input and output events logged — mapped control-by-control in [`AICM.md`](https://github.com/bkuan001/halo-record/blob/main/AICM.md). CSA's own v1.1 crosswalk ties that domain to AIUC-1 E015.
@@ -345,9 +345,12 @@ halo export audit.jsonl --from 2026-06-01 --to 2026-06-30 -o evidence.csv
 
 # scope the export to the actions a control covers
 halo export audit.jsonl --from 2026-06-01 --to 2026-06-30 --tool email.send --tool db.query -o evidence.csv
+
+# check completeness against a witness, under the customer id you expect
+halo export audit.jsonl --from 2026-06-01 --to 2026-06-30 --witness-url https://<witness> --expect-subject acme -o evidence.csv
 ```
 
-This writes two files for the audit window: the CSV (one row per recorded action, grouped left to right as *when → what happened → who → under what authority → what was flagged → provenance → how to verify*, including a redacted plain-language summary of the call and its result, the agent build and model that produced each, the identity it ran on behalf of, the record it was caused by, its authorization decision and scope, and any personal-data categories or ingested threat flags) and a manifest (`evidence.csv.manifest.json`) that ties the CSV to its source — the chain's head hash links it to the verifiable log it came from, and `csv_sha256` is the exported file's own hash, so a CSV edited after export no longer matches its manifest. Narrow the population with `--tool` when a control only covers certain actions; the manifest records the filter, so a scoped export discloses that it is a subset rather than reading as the whole population. Upload both against your logging or monitoring control; attach the Runtime Report HTML when a reviewer wants to verify the chain themselves. The export refuses to run on a chain that fails verification.
+This writes two files for the audit window: the CSV (one row per recorded action, grouped left to right as *when → what happened → who → under what authority → what was flagged → provenance → how to verify*, including a redacted plain-language summary of the call and its result, the agent build and model that produced each, the identity it ran on behalf of, the record it was caused by, its authorization decision and scope, and any personal-data categories or ingested threat flags) and a manifest (`evidence.csv.manifest.json`) that ties the CSV to its source — the chain's head hash links it to the verifiable log it came from, and `csv_sha256` is the exported file's own hash, so a CSV edited after export no longer matches its manifest. Narrow the population with `--tool` when a control only covers certain actions; the manifest records the filter, so a scoped export discloses that it is a subset rather than reading as the whole population. Upload both against your logging or monitoring control; attach the Runtime Report HTML when a reviewer wants to verify the chain themselves. The export refuses to run on a chain that fails verification. With `--witness` / `--witness-url` it also checks completeness: a chain that conflicts with the witness (INCOMPLETE) or carries a subject other than `--expect-subject` is refused, an unreachable witness is refused, and the manifest records the subject ids, the witness, and the completeness status (`NOT_CHECKED` when no witness was named). Record timestamps are the recording host's clock; the manifest says so (`chain.ts_source`).
 
 A native push integration — evidence landing in your platform automatically — is on the roadmap. The file path above works today with any platform that accepts uploaded evidence.
 
@@ -355,17 +358,23 @@ A native push integration — evidence landing in your platform automatically �
 
 ```
 halo verify   validate schema + hash chain (exit 1 broken, 3 empty chain; CI-friendly)
-halo report   render a chain as a self-verifying HTML Runtime Report (hash chain; `halo verify` also checks the record format)
-              (--from/--to: a date-windowed report covering only the review period)
+halo report   render a chain as an HTML Runtime Report that re-verifies its hash chain in the browser (`halo verify` also checks the record format)
+              (--from/--to: a date-windowed report covering only the review period;
+               -w/--witness-url: completeness checked at generation — exit 1 incomplete, 3 unwitnessed
+               or empty, unreachable witness refused; --expect-subject pins the customer id)
 halo policy   corroborate a chain against a declarative policy pack
-              (per-rule pass / violation / evidence-gap; exit 1 violated, 3 nothing in scope)
+              (per-rule pass / violation / evidence-gap; exit 1 violated, 2 refused —
+               invalid policy, unverifiable chain, or unexpected subject — 3 nothing in scope;
+               --from/--to/--expect-subject; bundled packs run by name; --help shows the format)
 halo serve    serve per-tenant reports over HTTP, access-scoped per customer
 halo grant    designate a report recipient (email or domain)
 halo viewers  list who has unlocked a gated report
-halo anchor   witness a chain head, or --check completeness (exit 1 incomplete, 3 unwitnessed)
+halo anchor   witness a chain head, or --check completeness (exit 1 incomplete, 3 unwitnessed;
+              --remote --check needs no vendor key)
 halo witness-serve  run a witness over HTTP: vendors anchor chain heads, viewers fetch checkpoints
 halo demo     scaffold the full vendor demo (record -> witness -> gated report)
 halo export   date-bounded evidence export: CSV + manifest tied to the chain head
+              (--witness/--witness-url/--expect-subject: completeness in the manifest; INCOMPLETE refused)
 halo sample   emit a valid example log
 halo hash     canonical sha256 of a JSON value
 halo hook     Claude Code PostToolUse hook

@@ -7,7 +7,7 @@
       "id": "actions-traceable",
       "source": "OWASP ASI 2026 cross-cutting (forensic traceability) / Agentic T8 Repudiation & Untraceability",
       "severity": "MEDIUM",
-      "description": "Every recorded action carries a timestamp, so it is attributable and non-repudiable. The tamper-evident chain is the control; this rule asserts the evidence exists.",
+      "description": "Every recorded action carries a timestamp, so it can be placed in time and attributed to the chain that recorded it. The tamper-evident chain is the control; this rule asserts the evidence exists.",
       "require": {
         "ts": {
           "exists": true
@@ -18,7 +18,7 @@
       "id": "excessive-agency-authorized",
       "source": "OWASP ASI03 / Identity and Privilege Abuse (+ LLM06 Excessive Agency)",
       "severity": "HIGH",
-      "description": "Consequential real-world actions (writes, network egress) must carry an explicit authorization decision, never run unattributed.",
+      "description": "Write actions must carry an explicit authorization decision, never run unattributed. Extend \"when\" to cover network egress if your agent's egress is consequential.",
       "when": {
         "action.type": "write"
       },
@@ -86,7 +86,7 @@
       "id": "no-secret-disclosure",
       "source": "OWASP LLM02 / Sensitive Information Disclosure (supports ASI03 credential hygiene)",
       "severity": "CRITICAL",
-      "description": "No credential or sensitive identifier may ever land in a record.",
+      "description": "No recorded action may involve a credential or sensitive identifier the scanner detects. A finding means one was detected and masked before the record was sealed; the masked value is not in the record, and the detection is what this rule reports.",
       "forbid": {
         "findings[].type": {
           "in": [
@@ -104,9 +104,18 @@
       "id": "pii-egress-controlled",
       "source": "OWASP LLM02 / Sensitive Information Disclosure",
       "severity": "HIGH",
-      "description": "Network actions must not carry SSNs off the boundary.",
+      "description": "Network actions that ran must not carry SSNs off the boundary. Actions recorded as denied or blocked did not egress and are out of scope.",
       "when": {
-        "action.type": "network"
+        "action.type": "network",
+        "action.authorization.decision": {
+          "ne": "denied"
+        },
+        "outcome.status": {
+          "ne": "denied"
+        },
+        "verification.status": {
+          "ne": "blocked"
+        }
       },
       "forbid": {
         "data.pii_types": {

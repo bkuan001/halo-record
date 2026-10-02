@@ -1,0 +1,187 @@
+{
+  "name": "OWASP starter policy",
+  "version": "0.2",
+  "note": "A STARTING POINT, not an official mapping. These rules approximate control areas from the OWASP Top 10 for Agentic Applications 2026 (ASI01-ASI10), the OWASP Top 10 for LLM Applications (2025), and the Agentic Security Initiative's Threats & Mitigations research (T1-T15) that fed the 2026 list - expressed over Halo Runtime Record v0.1 fields. Traceability is the cross-cutting mitigation: a tamper-evident record of what the agent did is the forensic basis the ASI list assumes. ASI08 (Cascading Failures) and ASI09 (Human-Agent Trust Exploitation) are runtime/organizational risks a record policy cannot assert, so they are deliberately not covered here. Rename tools/fields to match your agent and your buyer's contract. Run: halo policy <chain.jsonl> owasp-starter.json  (or: halo report <chain.jsonl> --policy owasp-starter.json).",
+  "rules": [
+    {
+      "id": "actions-traceable",
+      "source": "OWASP ASI 2026 cross-cutting (forensic traceability) / Agentic T8 Repudiation & Untraceability",
+      "severity": "MEDIUM",
+      "description": "Every recorded action carries a timestamp, so it can be placed in time and attributed to the chain that recorded it. The tamper-evident chain is the control; this rule asserts the evidence exists.",
+      "require": {
+        "ts": {
+          "exists": true
+        }
+      }
+    },
+    {
+      "id": "excessive-agency-authorized",
+      "source": "OWASP ASI03 / Identity and Privilege Abuse (+ LLM06 Excessive Agency)",
+      "severity": "HIGH",
+      "description": "Write actions must carry an explicit authorization decision, never run unattributed. Extend \"when\" to cover network egress if your agent's egress is consequential.",
+      "when": {
+        "action.type": "write"
+      },
+      "require": {
+        "action.authorization.decision": {
+          "exists": true
+        }
+      }
+    },
+    {
+      "id": "privileged-writes-human-approved",
+      "source": "OWASP ASI03 / Identity and Privilege Abuse (+ Agentic T3 Privilege Compromise)",
+      "severity": "HIGH",
+      "description": "Security-category write actions must be human-approved, not auto-allowed by the agent.",
+      "when": {
+        "action.category": "security",
+        "action.type": "write"
+      },
+      "forbid": {
+        "action.authorization.decision": {
+          "ne": "human_approved"
+        }
+      }
+    },
+    {
+      "id": "money-movement-human-approved",
+      "source": "OWASP ASI02 / Tool Misuse and Exploitation (TEMPLATE)",
+      "severity": "HIGH",
+      "description": "TEMPLATE \u2014 money movement must be human-approved. Rename action.tool to your real high-impact tools (transfer_funds, issue_refund, ...) or delete if not applicable.",
+      "when": {
+        "action.tool": "issue_refund"
+      },
+      "forbid": {
+        "action.authorization.decision": {
+          "ne": "human_approved"
+        }
+      }
+    },
+    {
+      "id": "tool-misuse-critical-reviewed",
+      "source": "OWASP ASI02 / Tool Misuse and Exploitation (+ Agentic T2)",
+      "severity": "HIGH",
+      "description": "Any action the recorder marked CRITICAL is treated as out of policy until a human reviews it.",
+      "forbid": {
+        "severity": {
+          "eq": "CRITICAL"
+        }
+      }
+    },
+    {
+      "id": "prompt-injection-mitigated",
+      "source": "OWASP ASI01 / Agent Goal Hijack (+ LLM01 Prompt Injection)",
+      "severity": "HIGH",
+      "description": "No prompt-injection threat may appear unmitigated in the record.",
+      "forbid": {
+        "threats[].type": {
+          "in": [
+            "prompt_injection_direct",
+            "prompt_injection_indirect"
+          ]
+        }
+      }
+    },
+    {
+      "id": "no-secret-disclosure",
+      "source": "OWASP LLM02 / Sensitive Information Disclosure (supports ASI03 credential hygiene)",
+      "severity": "CRITICAL",
+      "description": "No recorded action may involve a credential or sensitive identifier the scanner detects. A finding means one was detected and masked before the record was sealed; the masked value is not in the record, and the detection is what this rule reports.",
+      "forbid": {
+        "findings[].type": {
+          "in": [
+            "api_key",
+            "private_key",
+            "bearer_token",
+            "db_conn",
+            "credit_card",
+            "ssn"
+          ]
+        }
+      }
+    },
+    {
+      "id": "pii-egress-controlled",
+      "source": "OWASP LLM02 / Sensitive Information Disclosure",
+      "severity": "HIGH",
+      "description": "Network actions that ran must not carry SSNs off the boundary. Actions recorded as denied or blocked did not egress and are out of scope.",
+      "when": {
+        "action.type": "network",
+        "action.authorization.decision": {
+          "ne": "denied"
+        },
+        "outcome.status": {
+          "ne": "denied"
+        },
+        "verification.status": {
+          "ne": "blocked"
+        }
+      },
+      "forbid": {
+        "data.pii_types": {
+          "contains": "ssn"
+        }
+      }
+    },
+    {
+      "id": "source-integrity-checked",
+      "source": "OWASP ASI06 / Memory and Context Poisoning (+ LLM04 Data Poisoning) (TEMPLATE)",
+      "severity": "MEDIUM",
+      "description": "TEMPLATE \u2014 expects evidence that a source-integrity / provenance check ran before the agent acted on external content. Rename action.tool to your real integrity-check step, or delete if not applicable.",
+      "when": {
+        "action.tool": "verify_source_integrity"
+      },
+      "expect_evidence": true
+    },
+    {
+      "id": "purpose-declared",
+      "source": "OWASP ASI10 / Rogue Agents (purpose deviation is detectable only if purpose is declared)",
+      "severity": "MEDIUM",
+      "description": "Every action that touches personal data declares why (purpose limitation).",
+      "when": {
+        "action.category": "privacy"
+      },
+      "require": {
+        "data.purpose": {
+          "exists": true
+        }
+      }
+    },
+    {
+      "id": "agent-version-pinned",
+      "source": "OWASP ASI04 / Agentic Supply Chain Vulnerabilities",
+      "severity": "MEDIUM",
+      "description": "Every record carries the agent version that acted, so a supply-chain question (which build did this?) is answerable by column, not recollection.",
+      "require": {
+        "agent.version": {
+          "exists": true
+        }
+      }
+    },
+    {
+      "id": "agent-attributed",
+      "source": "OWASP ASI07 / Insecure Inter-Agent Communication (+ ASI10 Rogue Agents)",
+      "severity": "MEDIUM",
+      "description": "Every action is attributed to a specific agent id - the basis for reconstructing who did what when several agents share a pipeline.",
+      "require": {
+        "agent.id": {
+          "exists": true
+        }
+      }
+    },
+    {
+      "id": "code-exec-human-approved",
+      "source": "OWASP ASI05 / Unexpected Code Execution (TEMPLATE)",
+      "severity": "HIGH",
+      "description": "TEMPLATE - agent-triggered code execution must be human-approved. Rename action.tool to your real execution tools (execute_code, run_script, ...) or delete if not applicable.",
+      "when": {
+        "action.tool": "execute_code"
+      },
+      "forbid": {
+        "action.authorization.decision": {
+          "ne": "human_approved"
+        }
+      }
+    }
+  ]
+}

@@ -217,14 +217,32 @@ def _verify_lines(lines, schema, out):
         # After the first break, a per-record check here is uninformative (see
         # the summary line below) -- LIMITS.md section 9 already covers why.
         if chain_broken_at is None:
-            if declared_prev != prev_hash:
-                out("record %d: chain: prev_hash %s does not match expected %s"
-                    % (n, declared_prev, prev_hash))
+            link_broken = declared_prev != prev_hash
+            if link_broken:
                 ok = False
                 chain_ok = False
                 chain_broken_at = n
+                # Say where the break is. A record that still hashes correctly
+                # over the predecessor it declares is intact itself: what is
+                # wrong is the link, i.e. a record before it is missing,
+                # reordered, or was altered.
+                try:
+                    self_consistent = declared_hash == compute_hash(record, declared_prev)
+                except (ValueError, TypeError):
+                    self_consistent = False
+                if self_consistent:
+                    out("record %d: chain: prev_hash %s does not match the hash of the "
+                        "record before it (%s) — this record is intact over the predecessor "
+                        "it declares, so a record before it is missing, reordered, or was "
+                        "altered" % (n, declared_prev, prev_hash))
+                else:
+                    out("record %d: chain: prev_hash %s does not match expected %s"
+                        % (n, declared_prev, prev_hash))
 
-            if declared_hash != recomputed:
+                    if declared_hash != recomputed:
+                        out("record %d: chain: hash %s does not match its contents over "
+                            "the declared prev_hash either" % (n, declared_hash))
+            elif declared_hash != recomputed:
                 out("record %d: chain: hash %s does not match recomputed %s"
                     % (n, declared_hash, recomputed))
                 ok = False

@@ -8,7 +8,7 @@ Three things this document is not:
 - **Not a compliance claim.** Whether any evidence is sufficient for any control in any deployment is a determination for the certifying auditor. This maps what the record *contains*, not what an audit will *accept*.
 - **Not a completeness claim.** A Runtime Record documents what flowed through the recorder while it was running. See [LIMITS.md](https://github.com/bkuan001/halo-record/blob/main/LIMITS.md) for the capture boundary.
 
-Audit partners we've worked with say it can automate up to 25% of an AIUC-1 audit today.
+An audit partner we've worked with mapped halo-record against AIUC-1 and estimated it can directly evidence part of an audit; which part, and whether it suffices, is the certifying auditor's call.
 
 **Legend** — *Direct*: the record or its tooling is itself the evidence class the sub-control names. *Contributing*: the record supplies part of the evidence; the operator supplies the rest (the system, workflow, or documentation around it). *Out of scope*: halo-record does not address this by design.
 
@@ -74,4 +74,4 @@ AIUC-1's own published crosswalk for E015 maps the same evidence surface to: **I
 
 ## Known gaps
 
-Stated here so nobody discovers them mid-audit: **reasoning traces** (E015.2 names them "where available"; the record does not capture them today) and **retention** (the schema reserves retention fields; the reference recorder neither populates nor enforces them — automated deletion lives in the operator's storage layer). If either matters for your engagement, say so — the roadmap is demand-driven: bkuan001@gmail.com.
+Stated here so nobody discovers them mid-audit: **reasoning traces** (E015.2 names them "where available"; the record does not capture them today) and **retention** (the schema reserves retention fields; the reference recorder neither populates nor enforces them — automated deletion lives in the operator's storage layer). If either matters for your engagement, say so — the roadmap is demand-driven: brian@briankuan.com.

@@ -7,15 +7,15 @@
       "id": "no-secret-leakage",
       "source": "AIUC-1 A008 (prevent credential/secret leakage)",
       "severity": "CRITICAL",
-      "description": "No credential or sensitive identifier may ever land in a record.",
+      "description": "No recorded action may involve a credential or sensitive identifier the scanner detects. A finding means one was detected and masked before the record was sealed; the masked value is not in the record, and the detection is what this rule reports.",
       "forbid": {"findings[].type": {"in": ["api_key", "private_key", "bearer_token", "db_conn", "credit_card", "ssn"]}}
     },
     {
       "id": "pii-egress-controlled",
       "source": "AIUC-1 A006 (PII handling)",
       "severity": "HIGH",
-      "description": "Records of network actions must not carry SSNs off the boundary. Corroborates over data.pii_types, which reflects the scanner's named categories (email/ssn/credit_card/phone/iban) — a PII shape the scanner does not detect will not appear here.",
-      "when": {"action.type": "network"},
+      "description": "Records of network actions that ran must not carry SSNs off the boundary (actions recorded as denied or blocked did not egress and are out of scope). Corroborates over data.pii_types, which reflects the scanner's named categories (email/ssn/credit_card/phone/iban) — a PII shape the scanner does not detect will not appear here.",
+      "when": {"action.type": "network", "action.authorization.decision": {"ne": "denied"}, "outcome.status": {"ne": "denied"}, "verification.status": {"ne": "blocked"}},
       "forbid": {"data.pii_types": {"contains": "ssn"}}
     },
     {
@@ -44,7 +44,7 @@
       "id": "high-risk-writes-authorized",
       "source": "AIUC-1 B006 / D003 (prevent unauthorized actions, restrict unsafe tool calls)",
       "severity": "HIGH",
-      "description": "Security-category write/network actions must carry an explicit authorization decision, never run unattributed.",
+      "description": "Security-category write actions must carry an explicit authorization decision, never run unattributed.",
       "when": {"action.category": "security", "action.type": "write"},
       "require": {"action.authorization.decision": {"exists": true}}
     },

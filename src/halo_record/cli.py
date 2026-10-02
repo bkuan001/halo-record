@@ -82,7 +82,8 @@ def _cmd_export(args):
     for value in (args.tool or []):
         tools.extend(part for part in value.split(",") if part.strip())
     return export(args.log, args.out, start=start, end=end, tools=tools or None,
-                  manifest_path=args.manifest)
+                  manifest_path=args.manifest, witness_log=args.witness,
+                  witness_url=args.witness_url, expected_subject=args.expect_subject)
 
 
 def _cmd_hook(args):
@@ -100,20 +101,45 @@ def _cmd_report(args):
         print(e)
         return 2
     out = args.out or (args.log.rsplit(".", 1)[0] + ".html")
+    status = {}
     try:
         _, count = write_report(args.log, out, witness_log=args.witness,
                                 witness_url=args.witness_url, policy_path=args.policy,
-                                start=start, end=end, expected_subject=args.expect_subject)
-    except ValueError as e:
+                                start=start, end=end, expected_subject=args.expect_subject,
+                                status=status)
+    except (ValueError, OSError) as e:
         print("REFUSED: %s" % e)
         return 1
     print("wrote %s (%d records)" % (out, count))
+    # The exit code carries the verdict a script would otherwise have to read
+    # out of the HTML: 1 INCOMPLETE, 3 nothing attested / not witnessed.
+    comp = status.get("completeness")
+    if comp is not None and comp.get("ok") is False:
+        print("INCOMPLETE — the chain conflicts with the witness: %s" % json.dumps(comp),
+              file=sys.stderr)
+        return 1
+    if not status.get("chain_records"):
+        print("NOTE: 0 records — an empty chain; the report attests nothing.", file=sys.stderr)
+        return 3
+    if comp is not None and comp.get("ok") is None:
+        print("UNWITNESSED — the named witness holds no checkpoints for this chain; "
+              "completeness is not established: %s" % json.dumps(comp), file=sys.stderr)
+        return 3
     return 0
 
 
 def _cmd_policy(args):
     from .policy import evaluate_log, render_text, render_html
-    result = evaluate_log(args.log, args.policy)
+    from .export import parse_bound
+    try:
+        start = parse_bound(getattr(args, "from"), end=False)
+        end = parse_bound(args.to, end=True)
+        result = evaluate_log(args.log, args.policy, start=start, end=end,
+                              expected_subject=args.expect_subject)
+    except (ValueError, OSError) as e:
+        # An invalid policy or a chain for someone else is not a verdict.
+        print("REFUSED: %s" % e)
+        return 2
     if args.json:
         print(json.dumps(result, indent=2))
     elif args.html:
@@ -138,13 +164,15 @@ def _cmd_policy(args):
 def _cmd_anchor(args):
     from .anchor import (Notary, verify_completeness, _subject_id,
                          checkpoint, attach_timestamp, TimestampError)
+    from .anchor import chain_root as _chain_root
     from .report import _load
     records = _load(args.log)
 
     if args.remote:
         from .witness import anchor_remote, fetch_checkpoints
-        if not args.key:
-            print("anchor --remote requires --key (the vendor bearer key)", file=sys.stderr)
+        if not args.key and not args.check:
+            print("anchor --remote requires --key (the vendor bearer key) to anchor; "
+                  "--check reads without one", file=sys.stderr)
             return 2
         if args.timestamp:
             print("note: --timestamp is not carried over --remote; the hosted "
@@ -152,7 +180,9 @@ def _cmd_anchor(args):
         try:
             if args.check:
                 pinned = args.expect_subject or _subject_id(records)
-                cps = fetch_checkpoints(args.remote, subject=pinned)
+                cps = fetch_checkpoints(args.remote, subject=pinned, key=args.key,
+                                        chain_root=(_chain_root(records)
+                                                    if pinned is None and records else None))
                 result = verify_completeness(records, cps, expected_subject=args.expect_subject)
                 status = {True: "COMPLETE", False: "INCOMPLETE", None: "UNWITNESSED"}[result["ok"]]
                 print("%s — %s" % (status, json.dumps(result)))
@@ -218,7 +248,15 @@ def _cmd_serve(args):
 
 def _cmd_grant(args):
     from . import access
-    allow = access.grant(args.dir, args.chain, args.recipient)
+    from .serve import chain_key
+    if not access.recipient_ok(args.recipient):
+        print("not a valid email address or domain: %r" % args.recipient, file=sys.stderr)
+        return 2
+    key = chain_key(args.dir, args.chain)
+    if key != args.chain:
+        print("note: %s is served as chain %r" % (args.chain, key))
+    allow = access.grant(args.dir, key, args.recipient)
+    args.chain = key
     print("recipients for %s: %s" % (args.chain, ", ".join(allow)))
     return 0
 
@@ -285,6 +323,14 @@ def main(argv=None):
                                "so the export discloses that it is a subset.")
     p_export.add_argument("--manifest", default=None,
                           help="manifest path (default: <out>.manifest.json)")
+    p_export.add_argument("-w", "--witness", default=None,
+                          help="local witness log to check completeness against; an "
+                               "INCOMPLETE chain is refused (exit 1)")
+    p_export.add_argument("--witness-url", default=None,
+                          help="hosted witness URL to check completeness against "
+                               "(unreachable = refused)")
+    p_export.add_argument("--expect-subject", default=None,
+                          help="the customer id you expect; refused if the chain carries another")
     p_export.set_defaults(func=_cmd_export)
 
     p_hook = sub.add_parser(
@@ -317,13 +363,27 @@ def main(argv=None):
                                "carries a different one")
     p_report.set_defaults(func=_cmd_report)
 
+    from .policy import FORMAT_HELP, bundled_packs
     p_policy = sub.add_parser(
         "policy",
         help="corroborate a chain against a declarative policy (vendor / buyer / "
              "framework rules): per-rule pass / violation / evidence-gap verdict. "
-             "Evaluative only, never enforcement. Non-zero exit on violation.")
+             "Evaluative only, never enforcement. Non-zero exit on violation.",
+        description="Corroborate a chain against a declarative policy. Exit codes: 0 rules "
+                    "exercised, none violated; 1 violated; 2 refused (invalid policy, chain "
+                    "does not verify, or unexpected subject); 3 nothing in scope.",
+        epilog=FORMAT_HELP % (", ".join(bundled_packs()) or "none installed"),
+        formatter_class=argparse.RawDescriptionHelpFormatter)
     p_policy.add_argument("log", help="path to the .jsonl chain")
-    p_policy.add_argument("policy", help="path to a policy JSON file (list of rules, or {\"rules\":[...]})")
+    p_policy.add_argument("policy", help="path to a policy JSON file (list of rules, or "
+                                         "{\"rules\":[...]}), or a bundled pack name")
+    p_policy.add_argument("--from", dest="from", default=None,
+                          help="evaluate only records at or after this time (YYYY-MM-DD or "
+                               "RFC 3339); the whole chain is still verified")
+    p_policy.add_argument("--to", default=None,
+                          help="evaluate only records at or before this time (inclusive)")
+    p_policy.add_argument("--expect-subject", default=None,
+                          help="the customer id you expect; refused if the chain carries another")
     p_policy.add_argument("--html", help="write the verdict panel as standalone HTML to this path")
     p_policy.add_argument("--json", action="store_true", help="emit the raw result as JSON")
     p_policy.add_argument("--subject", help="subject/tenant label for the report footer")
@@ -341,7 +401,8 @@ def main(argv=None):
                           help="URL of a hosted Halo witness (e.g. https://witness.example) "
                                "to anchor to / check against instead of a local file")
     p_anchor.add_argument("--key",
-                          help="vendor bearer key for --remote anchoring")
+                          help="vendor bearer key for --remote anchoring; with --check, a "
+                               "read key (only for a witness that requires one)")
     p_anchor.add_argument("--check", action="store_true",
                           help="verify completeness against existing witnesses instead of adding one")
     p_anchor.add_argument("--expect-subject", default=None,

@@ -37,4 +37,4 @@ py-modules = ["halo"]
 where = ["src"]
 
 [tool.setuptools.package-data]
-halo_record = ["*.json"]
+halo_record = ["*.json", "policies/*.json"]

@@ -139,6 +139,124 @@ def _holds(record, condition):
 
 
 # --------------------------------------------------------------------------- #
+# Validation
+# --------------------------------------------------------------------------- #
+
+RULE_KEYS = ("id", "description", "severity", "source", "when", "forbid",
+             "require", "expect_evidence")
+POLICY_KEYS = ("name", "version", "note", "description", "rules", "$schema")
+SEVERITIES = ("INFO", "LOW", "MEDIUM", "HIGH", "CRITICAL")
+_OPS = {"eq", "ne", "in", "nin", "contains", "exists", "gt", "gte", "lt", "lte"}
+
+FORMAT_HELP = """\
+policy format: a JSON list of rules, or {"rules": [...]} (optional "name",
+"version", "note"). Each rule:
+  id               required; a short name
+  description      what the rule asserts
+  severity         INFO | LOW | MEDIUM | HIGH | CRITICAL (default MEDIUM)
+  source           who declared it (vendor / buyer / framework control id)
+  when             {field: matcher} selecting records (default: every record)
+  forbid           a selected record that matches this is a violation
+  require          a selected record that does not match this is a violation
+  expect_evidence  true: no selected record at all is an evidence gap
+Every rule needs forbid, require, or expect_evidence. Unknown keys, unknown
+matchers, and field paths that are not Runtime Record fields are rejected.
+Fields are dotted record paths; "[]" fans out over a list
+(findings[].type, threats[].type). Matchers: a bare value (equality), or
+{"eq"|"ne"|"in"|"nin"|"contains"|"exists"|"gt"|"gte"|"lt"|"lte": value}.
+Bundled packs (run by name): %s. Full guide: examples/policies/README.md in
+the source repository."""
+
+
+def _schema_props():
+    try:
+        from .verify import load_schema
+        return load_schema()
+    except (OSError, ValueError):
+        return None
+
+
+def _check_path(path, schema, where):
+    if not isinstance(path, str) or not path or any(not p for p in path.split(".")):
+        raise ValueError("%s: field path %r is not a dotted record path" % (where, path))
+    node = schema
+    for part in path.split("."):
+        key = part[:-2] if part.endswith("[]") else part
+        if node is None:
+            return
+        if node.get("type") == "array" and isinstance(node.get("items"), dict):
+            node = node["items"]
+        props = node.get("properties")
+        if not props:
+            return  # free-form beneath this point
+        if key not in props:
+            raise ValueError("%s: %r is not a Runtime Record field (in %r; known here: %s)"
+                             % (where, key, path, ", ".join(sorted(props))))
+        node = props[key]
+
+
+def _check_condition(cond, schema, where):
+    if not isinstance(cond, dict) or not cond:
+        raise ValueError("%s: must be a non-empty object of {field: matcher}" % where)
+    for path, spec in cond.items():
+        _check_path(path, schema, where)
+        if isinstance(spec, dict):
+            if not spec:
+                raise ValueError("%s: empty matcher for %r" % (where, path))
+            for op, arg in spec.items():
+                if op not in _OPS:
+                    raise ValueError("%s: unknown matcher %r for %r (known: %s)"
+                                     % (where, op, path, ", ".join(sorted(_OPS))))
+                if op in ("in", "nin") and not isinstance(arg, list):
+                    raise ValueError("%s: %r needs a list for %r" % (where, op, path))
+                if op == "exists" and not isinstance(arg, bool):
+                    raise ValueError("%s: 'exists' needs true or false for %r" % (where, path))
+                if op in ("gt", "gte", "lt", "lte") and (
+                        isinstance(arg, bool) or not isinstance(arg, (int, float))):
+                    raise ValueError("%s: %r needs a number for %r" % (where, op, path))
+
+
+def validate_policy(rules):
+    """Reject a policy that could not mean what it says. A misspelled key, an
+    unknown matcher, a field path that is not a record field, or a rule with
+    nothing to check would otherwise evaluate to a PASS that asserts nothing."""
+    if not isinstance(rules, list) or not rules:
+        raise ValueError("policy: expected a non-empty list of rules")
+    schema = _schema_props()
+    seen = set()
+    for n, rule in enumerate(rules, start=1):
+        where = "policy rule %d" % n
+        if not isinstance(rule, dict):
+            raise ValueError("%s: must be an object" % where)
+        if isinstance(rule.get("id"), str) and rule["id"]:
+            where = "policy rule %r" % rule["id"]
+        else:
+            raise ValueError("%s: needs a non-empty string \"id\"" % where)
+        if rule["id"] in seen:
+            raise ValueError("%s: duplicate rule id" % where)
+        seen.add(rule["id"])
+        unknown = sorted(set(rule) - set(RULE_KEYS))
+        if unknown:
+            raise ValueError("%s: unknown key(s) %s (known: %s)"
+                             % (where, ", ".join(map(repr, unknown)), ", ".join(RULE_KEYS)))
+        if "forbid" not in rule and "require" not in rule and rule.get("expect_evidence") is not True:
+            raise ValueError("%s: has nothing to check — give it forbid, require, or "
+                             "\"expect_evidence\": true" % where)
+        if "expect_evidence" in rule and not isinstance(rule["expect_evidence"], bool):
+            raise ValueError("%s: expect_evidence must be true or false" % where)
+        if "severity" in rule and rule["severity"] not in SEVERITIES:
+            raise ValueError("%s: severity %r is not one of %s"
+                             % (where, rule["severity"], ", ".join(SEVERITIES)))
+        for k in ("description", "source"):
+            if k in rule and not isinstance(rule[k], str):
+                raise ValueError("%s: %s must be a string" % (where, k))
+        for k in ("when", "forbid", "require"):
+            if k in rule:
+                _check_condition(rule[k], schema, "%s %s" % (where, k))
+    return rules
+
+
+# --------------------------------------------------------------------------- #
 # Evaluation
 # --------------------------------------------------------------------------- #
 
@@ -153,12 +271,15 @@ def evaluate(records, policy):
         "gaps":       <count>,
         "rules": [ {id, description, severity, status, matched, violators[]}, ... ]
       }
-    status is one of: "pass", "violated", "no_evidence".
+    status is one of: "pass", "violated", "no_evidence", "no_match".
+    The policy is validated first; an invalid one raises ValueError.
     """
+    validate_policy(policy)
     rule_results = []
     total_violations = 0
     total_gaps = 0
     total_no_match = 0
+    violating = set()
 
     for rule in policy:
         when = rule.get("when", {})
@@ -179,6 +300,7 @@ def evaluate(records, policy):
                 bad = True
             if bad:
                 violators.append(rec.get("record_id", "?"))
+                violating.add(id(rec))
 
         if violators:
             status = "violated"
@@ -209,6 +331,9 @@ def evaluate(records, policy):
         "compliant": total_violations == 0,
         "checked": len(records),
         "violations": total_violations,
+        # distinct records out of policy, across every violated rule — the
+        # number to set beside "violations" (which counts rules)
+        "violating_records": len(violating),
         "gaps": total_gaps,
         "unexercised": total_no_match,
         "rules": rule_results,
@@ -220,31 +345,106 @@ def load_records(path):
         return [json.loads(ln) for ln in fh.read().split("\n") if ln.strip()]
 
 
+_PACK_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "policies")
+
+
+def bundled_packs():
+    """Names of the starter packs shipped inside the package."""
+    try:
+        return sorted(n[:-5] for n in os.listdir(_PACK_DIR) if n.endswith(".json"))
+    except OSError:
+        return []
+
+
+def resolve_policy_path(path):
+    """A policy file path, or the name of a bundled pack (``owasp-starter``)."""
+    if os.path.exists(path):
+        return path
+    name = os.path.basename(path)
+    name = name[:-5] if name.endswith(".json") else name
+    if path in (name, name + ".json") and name in bundled_packs():
+        return os.path.join(_PACK_DIR, name + ".json")
+    return path
+
+
 def load_policy(path):
-    with open(path, "r", encoding="utf-8") as fh:
-        data = json.load(fh)
+    """Load and validate a policy file (or a bundled pack by name)."""
+    with open(resolve_policy_path(path), "r", encoding="utf-8") as fh:
+        try:
+            data = json.load(fh)
+        except ValueError as e:
+            raise ValueError("policy %s is not valid JSON (%s)" % (path, e))
     # accept either a bare list of rules or {"rules": [...]}
-    return data["rules"] if isinstance(data, dict) else data
+    if isinstance(data, dict):
+        unknown = sorted(set(data) - set(POLICY_KEYS))
+        if unknown:
+            raise ValueError("policy %s: unknown top-level key(s) %s (known: %s)"
+                             % (path, ", ".join(map(repr, unknown)), ", ".join(POLICY_KEYS)))
+        if "rules" not in data:
+            raise ValueError("policy %s: an object policy needs a \"rules\" list" % path)
+        data = data["rules"]
+    return validate_policy(data)
 
 
-def evaluate_log(log_path, policy_path):
+def evaluate_log(log_path, policy_path, *, start=None, end=None, expected_subject=None):
     """Evaluate a policy over a log, but only after the log verifies: a verdict
-    computed over records that fail verification is not attestable."""
+    computed over records that fail verification is not attestable.
+
+    ``start``/``end`` (aware datetimes, inclusive) limit the records evaluated
+    to a review window; the whole chain is still verified. ``expected_subject``
+    refuses (ValueError) a chain carrying any other subject id."""
     from .verify import verify_log
     chain_verified = verify_log(log_path, out=lambda *_a, **_k: None)
     policy = load_policy(policy_path)
     try:
-        result = evaluate(load_records(log_path), policy)
+        records = load_records(log_path)
+    except Exception:
+        if chain_verified:
+            raise
+        records = None
+    if records is not None and expected_subject is not None:
+        from .report import _record_subject
+        found = sorted({json.dumps(_record_subject(r) if isinstance(r, dict) else None)
+                        for r in records})
+        if found != [json.dumps(expected_subject)]:
+            raise ValueError("%s: chain subject id(s) %s are not exactly the expected %s"
+                             % (log_path, ", ".join(found), json.dumps(expected_subject)))
+    if records is not None and (start is not None or end is not None):
+        from .export import in_window
+        records = [r for r in records if isinstance(r, dict) and in_window(r, start, end)]
+    try:
+        if records is None:
+            raise ValueError("unreadable records")
+        result = evaluate(records, policy)
     except Exception:
         if chain_verified:
             raise
         # An unverifiable log may not even have record shapes to evaluate.
         result = {"compliant": False, "checked": 0, "violations": 0, "gaps": 0,
-                  "unexercised": 0, "rules": []}
+                  "violating_records": 0, "unexercised": 0, "rules": []}
+    from ._view import rules_digest
+    result["rules_sha256"] = rules_digest(policy)
     result["chain_verified"] = chain_verified
     if not chain_verified:
         result["compliant"] = False
+    if start is not None or end is not None:
+        result["window"] = {"from": start.isoformat() if start else None,
+                            "to": end.isoformat() if end else None}
+    if expected_subject is not None:
+        result["expected_subject"] = expected_subject
     return result
+
+
+def _counts_line(result):
+    unex = result.get("unexercised", 0)
+    line = ("%d record(s) checked against %d rule(s): %d rule(s) violated by %d record(s), "
+            "%d evidence gap(s), %d rule(s) not exercised." % (
+                result["checked"], len(result["rules"]), result["violations"],
+                result.get("violating_records", 0), result["gaps"], unex))
+    if result.get("rules_sha256"):
+        line += (" Rules evaluated: sha256 %s\u2026 (compare with the policy file you hold)."
+                 % result["rules_sha256"][:16])
+    return line
 
 
 # --------------------------------------------------------------------------- #
@@ -265,7 +465,8 @@ def render_text(result):
     elif unex == len(result["rules"]):
         head = "NO APPLICABLE EVIDENCE — records exist but none fall in any rule's scope"
     elif not result["compliant"]:
-        head = "NON-COMPLIANT: %d rule(s) violated" % result["violations"]
+        head = "NON-COMPLIANT: %d rule(s) violated by %d record(s)" % (
+            result["violations"], result.get("violating_records", 0))
     else:
         head = "COMPLIANT"
         notes = []
@@ -276,8 +477,7 @@ def render_text(result):
         if notes:
             head += " (" + ", ".join(notes) + ")"
     lines.append("Policy verdict: %s" % head)
-    lines.append("Checked %d record(s) against %d rule(s)."
-                 % (result["checked"], len(result["rules"])))
+    lines.append(_counts_line(result))
     lines.append("")
     # exceptions first, routine collapsed (mirrors the report UX doctrine)
     order = {"violated": 0, "no_evidence": 1, "no_match": 2, "pass": 3}
@@ -355,6 +555,19 @@ def verdict_panel(result, subject=None):
     completeness with its own live in-browser verdicts; a static pill would
     only compete with — and could contradict — the real one.
     """
+    return "<style>%s</style>%s" % (_PANEL_CSS, panel_card(result, subject))
+
+
+_FOOT = ("Each verdict is computed by deterministic rules over the record fields, "
+         "when this panel was generated.")
+_FOOT_PAGE = ("Each verdict is computed by deterministic rules over the record fields; "
+              "this page re-computes it in your browser from the records it verifies.")
+
+
+def panel_card(result, subject=None, in_page=False):
+    """The verdict card without its styles. The Runtime Report page re-renders
+    this card in the browser from the records it verifies (see ``_view``), so
+    any change here must be mirrored in ``_view.RENDER_JS``."""
     order = {"violated": 0, "no_evidence": 1, "no_match": 2, "pass": 3}
     rows = []
     for r in sorted(result["rules"], key=lambda x: order[x["status"]]):
@@ -387,25 +600,22 @@ def verdict_panel(result, subject=None):
     elif not result["compliant"]:
         verdict, vcolor = "NON-COMPLIANT", "#B23A48"
     elif result["gaps"]:
-        verdict, vcolor = "COMPLIANT, WITH GAPS", "#3E7C5A"
+        # a declared control with no evidence is an open item, not a pass
+        verdict, vcolor = "COMPLIANT, WITH GAPS", "#9A6A00"
     else:
         verdict, vcolor = "COMPLIANT", "#3E7C5A"
 
-    unex = result.get("unexercised", 0)
-    sub = "%d records checked against %d policy rules. %d violation(s), %d evidence gap(s), %d rule(s) not exercised." % (
-        result["checked"], len(result["rules"]), result["violations"], result["gaps"], unex)
+    sub = _counts_line(result)
     subj = ("halo-record &middot; %s" % _html.escape(subject)) if subject else "halo-record"
-
     return (
-        '<style>%s</style>'
         '<div class="hp-card"><div class="hp-top">'
         '<div class="hp-eyebrow">Runtime Report &middot; Policy Corroboration</div>'
         '<div class="hp-h1">Verdict: <span style="color:%s">%s</span></div>'
         '<div class="hp-sub">%s</div></div>'
         '<div class="hp-rows">%s</div>'
-        '<div class="hp-foot"><span>Every verdict computed from explicit rules over the '
-        'record. <b>No model judgment.</b></span><span>%s</span></div></div>'
-        % (_PANEL_CSS, vcolor, verdict, _html.escape(sub), "".join(rows), subj))
+        '<div class="hp-foot"><span>%s <b>No model judgment.</b></span><span>%s</span></div></div>'
+        % (vcolor, verdict, _html.escape(sub), "".join(rows),
+           _html.escape(_FOOT_PAGE if in_page else _FOOT), subj))
 
 
 def render_html(result, subject=None):

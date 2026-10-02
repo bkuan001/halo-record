@@ -213,6 +213,9 @@ class ExportTest(unittest.TestCase):
                          data={"pii_types": ["email"], "region": "eu-west-1",
                                "cross_region": True, "purpose": "support"},
                          ts="2026-06-15T00:00:00+00:00",
+                         verification={"status": "allowed", "verifier": "gate/1",
+                                       "policy_ref": "p-1",
+                                       "checked_at": "2026-06-15T00:00:00Z"},
                          outcome={"status": "ok", "summary": "1 row"}))
         export(log, out, out=_silent)
         with open(out, newline="") as fh:
