@@ -159,9 +159,15 @@ does, that is a vulnerability report we want (see SECURITY.md).
 
 Two bounds keep the scanner linear on hostile text. A stored text value is
 masked up to its first 65,536 characters and the rest is withheld, replaced by
-`[… N more characters withheld]` (the cut lands on whitespace, or before a
-partial token); findings still cover the whole text, scanned in overlapping
-windows. Invisible characters spliced inside a token — every Unicode format
+`[… N more characters withheld]`. The cut never falls inside a pattern match
+or a token: every pattern is matched first over the text up to 4,096
+characters past the cap, and the cut moves back to the start of any match it
+would split, so a grouped card number, SSN, IBAN or phone number is either kept
+whole (and masked) or withheld whole. Within that rule the cut lands after
+whitespace, else after a character that cannot be part of a token. A single
+match longer than 4,096 characters that runs past that window is seen only as
+far as the window reaches. Findings still cover the whole text, scanned in
+overlapping windows. Invisible characters spliced inside a token — every Unicode format
 character (category Cf, as of Unicode 15.1), the combining grapheme joiner,
 variation selectors, and Hangul fillers — are dropped before matching, so they
 cannot split a key; outside a token (an emoji sequence, a bidi mark in prose)

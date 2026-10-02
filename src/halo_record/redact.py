@@ -334,20 +334,83 @@ _WITHHELD = "[\u2026 %d more characters withheld]"
 _TOKEN_CHARS = frozenset("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=_-")
 
 
+def _normalized_with_map(text):
+    """(normalized text, raw index of each normalized character) — the map is
+    None when normalizing removes nothing."""
+    if text.isascii() or not _ZW_HINT_RE.search(text):
+        return text, None
+    keep = []
+    pos = 0
+    for m in _ZW_IN_TOKEN_RE.finditer(text):
+        keep.extend(range(pos, m.start()))
+        pos = m.end()
+    keep.extend(range(pos, len(text)))
+    return "".join(text[i] for i in keep), keep
+
+
+def _match_spans(window):
+    """Sorted, merged (start, end) raw spans of every pattern match and every
+    token-character run in ``window``, found on its normalized text exactly as
+    the masking pass sees it. Checksum gates are ignored: any match counts."""
+    norm, idx = _normalized_with_map(window)
+    folded = None
+    spans = []
+    for name, _sev, pattern in PATTERNS:
+        req = _REQUIRED.get(name)
+        if req is not None and req[1] and folded is None:
+            folded = _fold(norm)
+        if not _may_match(name, norm, folded):
+            continue
+        for m in pattern.finditer(norm):
+            if m.end() > m.start():
+                spans.append((m.start(), m.end()))
+    for m in TOKEN_RE.finditer(norm):
+        spans.append((m.start(), m.end()))
+    if idx is not None:
+        spans = [(idx[a], idx[b - 1] + 1) for a, b in spans]
+    spans.sort()
+    merged = []
+    for a, b in spans:
+        if merged and a < merged[-1][1]:
+            if b > merged[-1][1]:
+                merged[-1] = (merged[-1][0], b)
+        else:
+            merged.append((a, b))
+    return merged
+
+
 def _capped(text):
     """``text`` cut to at most REDACT_MAX characters, plus the marker naming
-    what was withheld. The cut lands on whitespace when it can, else after the
-    last character that cannot be part of a token, so no fragment of a secret
-    is kept for the patterns to miss; with neither, nothing is kept."""
+    what was withheld.
+
+    The cut never falls inside a pattern match or a token: matches are found
+    first over the text up to SCAN_OVERLAP characters past the cap (on the
+    normalized text, as masking sees it), and the cut moves back to the start
+    of any match it would split. Within that, it lands after whitespace when
+    there is some in the second half of the kept text, else after the last
+    character that cannot be part of a token; with neither, nothing is kept.
+    So a grouped number (card, SSN, IBAN, phone) is either kept whole, and
+    masked, or withheld whole. A match longer than SCAN_OVERLAP that runs past
+    the window edge is seen only as far as the window reaches."""
     if len(text) <= REDACT_MAX:
         return text, ""
-    cut = text[:REDACT_MAX]
-    i = max(cut.rfind(" "), cut.rfind("\n"), cut.rfind("\t"))
-    if i < REDACT_MAX // 2:
-        i = len(cut) - 1
-        while i >= 0 and cut[i] in _TOKEN_CHARS:
-            i -= 1
-    keep = cut[:i + 1] if i >= 0 else ""
+    import bisect
+    spans = _match_spans(text[:REDACT_MAX + SCAN_OVERLAP])
+    starts = [a for a, _b in spans]
+    c = REDACT_MAX
+    while True:
+        i = max(text.rfind(" ", 0, c), text.rfind("\n", 0, c), text.rfind("\t", 0, c))
+        if i < REDACT_MAX // 2:
+            i = c - 1
+            while i >= 0 and text[i] in _TOKEN_CHARS:
+                i -= 1
+        cut = i + 1 if i >= 0 else 0
+        k = bisect.bisect_right(starts, cut - 1) - 1
+        if k >= 0 and spans[k][0] < cut < spans[k][1]:
+            c = spans[k][0]  # inside a match: retry from its start
+            continue
+        break
+    keep = text[:cut]
     return keep, " " + _WITHHELD % (len(text) - len(keep))
 
 
