@@ -28,6 +28,25 @@ reviews:
         Redaction must be fail-closed: verify no secret or PII pattern can
         survive into a stored record, and that pattern changes do not narrow
         existing coverage.
+    - path: "src/halo_record/report.py"
+      instructions: >
+        Generated reports are opened by a buyer who does not trust the vendor, so
+        every chain-sourced value is attacker-controlled. Flag any chain field
+        that reaches HTML or inline JavaScript without escaping or serialization,
+        and any verification shortcut a crafted chain could satisfy.
+    - path: "src/halo_record/witness.py"
+      instructions: >
+        The witness is the independence guarantee. Flag any change that lets one
+        vendor key write, alter, or shadow checkpoints for a subject it does not
+        own, or that exposes key material or ownership data on public routes.
+    - path: "src/halo_record/serve.py"
+      instructions: >
+        Each tenant link must only ever show that tenant's records. Flag any path
+        where one tenant's token, file, or page can surface another's data.
+    - path: "src/halo_record/capture.py"
+      instructions: >
+        Every caller-supplied field that reaches the seal must pass redaction,
+        with summaries on and off. Flag any field copied into the record verbatim.
     - path: "src/halo_record/halo-record.schema.json"
       instructions: >
         The schema must remain byte-identical to the TypeScript repository's

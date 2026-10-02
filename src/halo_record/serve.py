@@ -257,6 +257,14 @@ class _Handler(BaseHTTPRequestHandler):
     def _render_report(self, path):
         cfg = self.config
         records = _load(path)
+        subjects = {(r.get("subject") or {}).get("id") if isinstance(r.get("subject"), dict)
+                    else None for r in records}
+        if len(subjects) > 1:
+            # One page, one customer: a file holding several subjects is withheld
+            # rather than shown to the holder of any one tenant's link.
+            return ('<!doctype html><meta charset="utf-8"><title>Report withheld</title>'
+                    '<p>This chain holds records for more than one subject, so the '
+                    'report is withheld. Each customer\'s records belong in their own chain.</p>')
         cps = None
         if cfg["witness"]:
             cps = Notary(cfg["witness"]).checkpoints(subject=_subject_id(records))

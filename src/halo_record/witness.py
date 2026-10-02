@@ -28,8 +28,11 @@ can verify a witness without contacting Halo) need asymmetric signatures and are
 deliberately deferred; the hosted append-only store is the guarantee on its own.
 """
 
+import fnmatch
+import hashlib
 import hmac
 import json
+import threading
 import os
 import re
 import urllib.request
@@ -40,6 +43,7 @@ from . import __version__
 from .anchor import Notary, checkpoint, _now
 
 WITNESS_FILE = "witness.jsonl"
+OWNERS_FILE = "witness_owners.json"
 KEY_FILE = ".halo_witness_key"
 MAX_BODY = 8192
 DEFAULT_PORT = 8730
@@ -51,31 +55,71 @@ _SUBJECT_RE = re.compile(r"^[\w.\- ]{1,200}$")
 def load_keys(store):
     """Vendor bearer keys authorized to anchor. ``$HALO_WITNESS_KEYS`` (comma-
     separated) if set, else a single random key persisted in the store so it
-    survives restarts. Returning a list lets multiple vendors share one witness
-    while each holds a distinct key."""
+    survives restarts. Several vendors can share one witness, each with its own
+    key; scope a key with ``<key>=<subject-or-glob>|…`` (for example
+    ``k1=vendor-a-*,k2=vendor-b-*``). Whether scoped or not, a key can only add
+    checkpoints to subjects it anchored first. Returns ``[(key, scopes), …]``."""
     env = os.environ.get("HALO_WITNESS_KEYS")
     if env:
-        return [k.strip() for k in env.split(",") if k.strip()]
+        return parse_key_spec(env.split(","))
     path = os.path.join(store, KEY_FILE)
     if os.path.exists(path):
         with open(path, "r", encoding="utf-8") as fh:
-            return [k.strip() for k in fh.read().splitlines() if k.strip()]
+            return parse_key_spec(fh.read().splitlines())
     key = os.urandom(24).hex()
     with open(path, "w", encoding="utf-8") as fh:
         fh.write(key + "\n")
     os.chmod(path, 0o600)
-    return [key]
+    return parse_key_spec([key])
+
+
+def parse_key_spec(entries):
+    """Parse authorized vendor keys. Each entry is ``<key>`` or
+    ``<key>=<scope>|<scope>…``, where a scope is a subject ID or a glob
+    (``vendor-a-*``). Returns ``[(key, scopes_or_None), …]``. A scoped key may
+    anchor only subjects its scopes match; every key, scoped or not, may only
+    extend subjects it anchored first (see ``_Handler``)."""
+    out = []
+    for raw in entries:
+        if isinstance(raw, tuple):
+            out.append(raw)
+            continue
+        entry = str(raw).strip()
+        if not entry:
+            continue
+        key, _, spec = entry.partition("=")
+        scopes = [x.strip() for x in spec.split("|") if x.strip()] if spec else None
+        out.append((key.strip(), scopes))
+    return out
+
+
+def _key_match(presented, keys):
+    """Constant-time match of a presented bearer key. Returns the matching
+    ``(key, scopes)`` entry, or None."""
+    if not presented:
+        return None
+    found = None
+    for entry in parse_key_spec(keys):
+        if hmac.compare_digest(presented, entry[0]):
+            found = entry
+    return found
 
 
 def _key_ok(presented, keys):
     """Constant-time match of a presented bearer key against any authorized key."""
-    if not presented:
+    return _key_match(presented, keys) is not None
+
+
+def _in_scope(subject, scopes):
+    if scopes is None:
+        return True
+    if subject is None:
         return False
-    ok = False
-    for k in keys:
-        if hmac.compare_digest(presented, k):
-            ok = True
-    return ok
+    return any(fnmatch.fnmatchcase(subject, sc) for sc in scopes)
+
+
+def _fingerprint(key):
+    return hashlib.sha256(key.encode("utf-8")).hexdigest()[:16]
 
 
 def _clean_checkpoint(payload):
@@ -184,7 +228,8 @@ class _Handler(BaseHTTPRequestHandler):
 
         auth = self.headers.get("Authorization", "")
         presented = auth[7:].strip() if auth.lower().startswith("bearer ") else ""
-        if not _key_ok(presented, self.config["keys"]):
+        entry = _key_match(presented, self.config["keys"])
+        if entry is None:
             return self._send(401, {"error": "unauthorized"})
 
         length = int(self.headers.get("Content-Length") or 0)
@@ -197,8 +242,41 @@ class _Handler(BaseHTTPRequestHandler):
         except (ValueError, UnicodeDecodeError) as exc:
             return self._send(400, {"error": str(exc)})
 
-        receipt = self.config["notary"].record_checkpoint(cp)
+        if not _in_scope(cp["subject"], entry[1]):
+            return self._send(403, {"error": "key not authorized for this subject"})
+        with self._lock():
+            if not self._claim(cp, entry[0]):
+                return self._send(403, {"error": "subject is anchored by another key"})
+            receipt = self.config["notary"].record_checkpoint(cp)
         return self._send(201, {"ok": True, "receipt": receipt})
+
+    _default_lock = threading.Lock()
+
+    def _lock(self):
+        return self.config.get("lock") or self._default_lock
+
+    def _claim(self, cp, key):
+        """First key to anchor a subject owns it; other keys are refused, so one
+        vendor cannot append checkpoints to another vendor's chain. Ownership is
+        kept beside the witness log (never in the public checkpoints)."""
+        path = self.config.get("owners_path")
+        if not path:
+            return True
+        owner_id = cp["subject"] if cp["subject"] is not None else "root:%s" % cp.get("chain_root")
+        owners = {}
+        if os.path.exists(path):
+            with open(path, "r", encoding="utf-8") as fh:
+                owners = json.load(fh)
+        fp = _fingerprint(key)
+        held = owners.get(owner_id)
+        if held is not None:
+            return hmac.compare_digest(held, fp)
+        owners[owner_id] = fp
+        tmp = path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump(owners, fh, separators=(",", ":"), sort_keys=True)
+        os.replace(tmp, path)
+        return True
 
     def log_message(self, fmt, *args):
         pass
@@ -212,13 +290,15 @@ def serve(store, *, host="127.0.0.1", port=DEFAULT_PORT):
     notary = Notary(os.path.join(store, WITNESS_FILE))
     keys = load_keys(store)
     handler = type("_BoundWitness", (_Handler,),
-                   {"config": {"notary": notary, "keys": keys}})
+                   {"config": {"notary": notary, "keys": keys,
+                               "owners_path": os.path.join(store, OWNERS_FILE),
+                               "lock": threading.Lock()}})
     httpd = ThreadingHTTPServer((host, port), handler)
     print("Halo witness serving from %s" % os.path.join(store, WITNESS_FILE))
     print("  anchor (vendor): POST http://%s:%s/anchor   (Bearer key required)" % (host, port))
     print("  checkpoints (public): GET http://%s:%s/v1/checkpoints?subject=<id>" % (host, port))
     if not os.environ.get("HALO_WITNESS_KEYS"):
-        print("  vendor key: %s" % keys[0])
+        print("  vendor key: %s" % keys[0][0])
     print("  Ctrl-C to stop.")
     try:
         httpd.serve_forever()

@@ -16,6 +16,7 @@ safe to share with that customer and no other (segmentation by construction).
 import ast
 import html
 import json
+import re
 import os
 
 from .canon import GENESIS_PREV
@@ -323,8 +324,21 @@ def _row(r, show_agent=False):
     )
 
 
+
+_ANCHOR_RE = re.compile(r"^[0-9a-f]{64}$")
+
+
+def _js_anchor(anchor):
+    """A chain anchor as a JavaScript string literal. The anchor comes from the
+    chain itself, so it is treated as untrusted: it must be a 64-character
+    lowercase SHA-256 hex digest, and it is serialized, never interpolated."""
+    if not isinstance(anchor, str) or not _ANCHOR_RE.match(anchor):
+        raise ValueError("halo-record: chain anchor is not a SHA-256 hex digest; "
+                         "refusing to render the report")
+    return json.dumps(anchor)
+
 _VERIFY_JS = r"""
-const GENESIS = "%(genesis)s";
+const GENESIS = %(genesis)s;
 const WINDOW = %(window_json)s;
 function canon(v){
   if (v === true) return "true";
@@ -1096,7 +1110,7 @@ def render(records, checkpoints=None, *, witness_url=None, policy=None, window=N
         window_json = json.dumps(
             {"first": window["first"], "last": window["last"], "total": window["total"]},
             separators=(",", ":"))
-        verify_js = _VERIFY_JS % {"genesis": window["anchor"] or GENESIS_PREV,
+        verify_js = _VERIFY_JS % {"genesis": _js_anchor(window["anchor"] or GENESIS_PREV),
                                   "window_json": window_json}
         bounds = " to ".join(x for x in [window.get("from"), window.get("to")] if x)
         if window["last"]:
@@ -1130,7 +1144,7 @@ def render(records, checkpoints=None, *, witness_url=None, policy=None, window=N
                _esc((window["anchor"] or GENESIS_PREV)[:16]),
                outside_note))
     else:
-        verify_js = _VERIFY_JS % {"genesis": GENESIS_PREV, "window_json": "null"}
+        verify_js = _VERIFY_JS % {"genesis": _js_anchor(GENESIS_PREV), "window_json": "null"}
         window_block = ""
 
     return """<!doctype html>

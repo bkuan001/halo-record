@@ -5,6 +5,7 @@ constructs a single record dict without writing it. Both redact sensitive data
 and never store raw secrets.
 """
 
+import hashlib
 import json
 import os
 import re
@@ -251,6 +252,9 @@ def _canon_safe(value):
     return value
 
 
+_PURPOSE_MAX = 500
+
+
 def _norm_data(data):
     """Normalize the caller's ``data`` block so intuitive input can neither crash
     the recorder nor seal a schema-invalid record. The schema-typed keys are
@@ -277,7 +281,12 @@ def _norm_data(data):
         elif k in ("region", "purpose"):
             if v is None:
                 continue  # absent, not the string "None"
-            out[k] = v if isinstance(v, str) else str(v)
+            text = v if isinstance(v, str) else str(v)
+            if k == "purpose":
+                # Free text that is sealed and exported verbatim, so it gets the
+                # same redaction as an input summary, with or without summaries.
+                text = redact_text(text)[:_PURPOSE_MAX]
+            out[k] = text
         else:
             out[k] = _canon_safe(v)
     return out
@@ -776,13 +785,54 @@ class TenantRecorder:
         return self.default
 
     def path_for(self, subject_id):
-        return os.path.join(self.directory, self._safe(subject_id) + ".jsonl")
+        """One file per distinct subject ID. An ID that is already filename-safe
+        keeps its plain name (``acme-corp.jsonl``); an ID the cleaning step would
+        alter gets a ``~`` plus a digest of the original ID, so two different IDs
+        can never share a file (``acme/a`` and ``acme_a`` stay apart). ``~`` is
+        never produced by cleaning, so a plain name cannot imitate a digested one."""
+        raw = str(subject_id)
+        safe = self._safe(raw)
+        if safe != raw:
+            digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()[:24]
+            safe = "%s~%s" % (safe, digest)
+        return os.path.join(self.directory, safe + ".jsonl")
+
+    @staticmethod
+    def _file_subjects(path):
+        """Subject IDs already present in a chain file (``None`` for subjectless)."""
+        found = set()
+        if not os.path.exists(path):
+            return found
+        with open(path, "r", encoding="utf-8") as fh:
+            for line in fh:
+                if not line.strip():
+                    continue
+                try:
+                    subj = json.loads(line).get("subject")
+                except ValueError:
+                    continue
+                found.add(subj.get("id") if isinstance(subj, dict) else None)
+        return found
 
     def recorder_for(self, subject_id):
         if subject_id not in self._recorders:
             if not os.path.isdir(self.directory):
                 os.makedirs(self.directory, exist_ok=True)
-            self._recorders[subject_id] = Recorder(self.path_for(subject_id))
+            path = self.path_for(subject_id)
+            expected = None if subject_id == self.default else subject_id
+            # Continuity for chains written before digested names: if the plain
+            # file exists and holds only this subject, keep appending there.
+            legacy = os.path.join(self.directory, self._safe(subject_id) + ".jsonl")
+            if (legacy != path and not os.path.exists(path)
+                    and os.path.exists(legacy)
+                    and self._file_subjects(legacy) == {expected}):
+                path = legacy
+            others = self._file_subjects(path) - {expected}
+            if others:
+                raise ValueError(
+                    "halo-record: %s already holds records for another subject; "
+                    "refusing to mix tenants in one chain" % path)
+            self._recorders[subject_id] = Recorder(path)
         return self._recorders[subject_id]
 
     def append(self, record):
