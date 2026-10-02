@@ -91,11 +91,22 @@
         "findings[].type": {
           "in": [
             "api_key",
-            "private_key",
+            "aws_secret_key",
             "bearer_token",
-            "db_conn",
+            "bot_token",
+            "credential_field",
             "credit_card",
-            "ssn"
+            "db_conn",
+            "gcp_api_key",
+            "github_token",
+            "high_entropy_secret",
+            "iban",
+            "jwt",
+            "password",
+            "private_key",
+            "ssn",
+            "stripe_key",
+            "webhook_url"
           ]
         }
       }

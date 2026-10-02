@@ -8,7 +8,7 @@
       "source": "AIUC-1 A008 (prevent credential/secret leakage)",
       "severity": "CRITICAL",
       "description": "No recorded action may involve a credential or sensitive identifier the scanner detects. A finding means one was detected and masked before the record was sealed; the masked value is not in the record, and the detection is what this rule reports.",
-      "forbid": {"findings[].type": {"in": ["api_key", "private_key", "bearer_token", "db_conn", "credit_card", "ssn"]}}
+      "forbid": {"findings[].type": {"in": ["api_key", "aws_secret_key", "bearer_token", "bot_token", "credential_field", "credit_card", "db_conn", "gcp_api_key", "github_token", "high_entropy_secret", "iban", "jwt", "password", "private_key", "ssn", "stripe_key", "webhook_url"]}}
     },
     {
       "id": "pii-egress-controlled",

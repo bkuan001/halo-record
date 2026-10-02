@@ -463,6 +463,14 @@ def credential_value(key, value):
     return False
 
 
+# Every finding type this scanner can emit, with its severity. The starter
+# packs' secret rules are tested against this map (tests/test_pack_secret_coverage.py),
+# so a type added here must be classified there too.
+FINDING_TYPES = {name: sev for name, sev, _pattern in PATTERNS}
+FINDING_TYPES.update({HIGH_ENTROPY_TYPE: "HIGH", HIGH_ENTROPY_PATH_TYPE: "LOW",
+                      CREDENTIAL_TYPE: "CRITICAL"})
+
+
 def _credential_finding(key):
     return {"type": CREDENTIAL_TYPE, "severity": "CRITICAL",
             "sample": redact_text(key)[:60] + "=" + CREDENTIAL_MASK}
