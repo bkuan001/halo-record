@@ -27,6 +27,19 @@ class ShippedWordingTest(unittest.TestCase):
                 text = fh.read()
             self.assertIsNone(AVOIDED.search(text), name)
 
+    def test_captured_tier_is_described_as_declared_by_the_source_tag(self):
+        # Same terms as the report's provenance text (_view.CAP_TITLE): the
+        # capture tier is what the record's source tag declares, set by the
+        # integration that wrote it.
+        for name in FILES:
+            with open(os.path.join(SRC, name), encoding="utf-8") as fh:
+                text = " ".join(fh.read().split())
+            self.assertNotIn("saw the call", text, name)
+        with open(os.path.join(SRC, "integrations", "__init__.py"), encoding="utf-8") as fh:
+            text = " ".join(fh.read().split())
+        self.assertIn("source tag", text)
+        self.assertIn("not independently verified", text)
+
 
 if __name__ == "__main__":
     unittest.main()

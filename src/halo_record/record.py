@@ -28,9 +28,10 @@ ACTION_TYPES = {"tool_call", "agent_message", "read", "write", "network"}
 CATEGORIES = {"security", "safety", "reliability", "privacy"}
 
 # Where a record came from. ``capture`` is the evidentiary tier:
-#   "captured"  — Halo saw the call at the trust boundary (in-process interceptor
-#                 or the native recorder). Strongest: nothing could be shaped
-#                 before Halo recorded it.
+#   "captured"  — declared recorded at the trust boundary (in-process interceptor
+#                 or the native recorder): written as the call runs rather than
+#                 rebuilt from other telemetry. The stronger tier; the tag is set
+#                 by the integration and not independently verified.
 #   "ingested"  — the record was built from telemetry the vendor already emits
 #                 (OTel spans, gateway/proxy logs, a tracing store). Useful and
 #                 low-friction, but weaker: the stream is the vendor's own, so the
