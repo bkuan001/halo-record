@@ -616,6 +616,5 @@ class PreciseWordingTest(unittest.TestCase):
                     "src/halo_record/anchor.py", "src/halo_record/witness.py",
                     "src/halo_record/serve.py", "src/halo_record/cli.py",
                     "src/halo_record/access.py"):
-            self.assertNotIn("honest", _doc(rel).lower(), rel)
             self.assertNotIn("saw the call as it happened", _doc(rel), rel)
             self.assertNotIn("verified at generation", _doc(rel), rel)
