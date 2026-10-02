@@ -104,7 +104,7 @@ def _cmd_report(args):
         _, count = write_report(args.log, out, witness_log=args.witness,
                                 witness_url=args.witness_url, policy_path=args.policy,
                                 start=start, end=end, expected_subject=args.expect_subject)
-    except ValueError as e:
+    except (ValueError, OSError) as e:
         print("REFUSED: %s" % e)
         return 1
     print("wrote %s (%d records)" % (out, count))
@@ -113,7 +113,16 @@ def _cmd_report(args):
 
 def _cmd_policy(args):
     from .policy import evaluate_log, render_text, render_html
-    result = evaluate_log(args.log, args.policy)
+    from .export import parse_bound
+    try:
+        start = parse_bound(getattr(args, "from"), end=False)
+        end = parse_bound(args.to, end=True)
+        result = evaluate_log(args.log, args.policy, start=start, end=end,
+                              expected_subject=args.expect_subject)
+    except (ValueError, OSError) as e:
+        # An invalid policy or a chain for someone else is not a verdict.
+        print("REFUSED: %s" % e)
+        return 2
     if args.json:
         print(json.dumps(result, indent=2))
     elif args.html:
@@ -317,13 +326,27 @@ def main(argv=None):
                                "carries a different one")
     p_report.set_defaults(func=_cmd_report)
 
+    from .policy import FORMAT_HELP, bundled_packs
     p_policy = sub.add_parser(
         "policy",
         help="corroborate a chain against a declarative policy (vendor / buyer / "
              "framework rules): per-rule pass / violation / evidence-gap verdict. "
-             "Evaluative only, never enforcement. Non-zero exit on violation.")
+             "Evaluative only, never enforcement. Non-zero exit on violation.",
+        description="Corroborate a chain against a declarative policy. Exit codes: 0 rules "
+                    "exercised, none violated; 1 violated; 2 refused (invalid policy, chain "
+                    "does not verify, or unexpected subject); 3 nothing in scope.",
+        epilog=FORMAT_HELP % (", ".join(bundled_packs()) or "none installed"),
+        formatter_class=argparse.RawDescriptionHelpFormatter)
     p_policy.add_argument("log", help="path to the .jsonl chain")
-    p_policy.add_argument("policy", help="path to a policy JSON file (list of rules, or {\"rules\":[...]})")
+    p_policy.add_argument("policy", help="path to a policy JSON file (list of rules, or "
+                                         "{\"rules\":[...]}), or a bundled pack name")
+    p_policy.add_argument("--from", dest="from", default=None,
+                          help="evaluate only records at or after this time (YYYY-MM-DD or "
+                               "RFC 3339); the whole chain is still verified")
+    p_policy.add_argument("--to", default=None,
+                          help="evaluate only records at or before this time (inclusive)")
+    p_policy.add_argument("--expect-subject", default=None,
+                          help="the customer id you expect; refused if the chain carries another")
     p_policy.add_argument("--html", help="write the verdict panel as standalone HTML to this path")
     p_policy.add_argument("--json", action="store_true", help="emit the raw result as JSON")
     p_policy.add_argument("--subject", help="subject/tenant label for the report footer")

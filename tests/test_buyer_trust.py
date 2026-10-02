@@ -59,8 +59,8 @@ class PolicyOnBrokenChainTest(unittest.TestCase):
         _write(log, recs)
         pol = os.path.join(d, "p.json")
         with open(pol, "w") as fh:
-            json.dump([{"id": "r1", "match": {"category": "security"},
-                        "require": {"category": "security"}}], fh)
+            json.dump([{"id": "r1", "when": {"action.category": "security"},
+                        "require": {"action.category": "security"}}], fh)
         return log, pol
 
     def test_policy_is_not_compliant_on_a_broken_chain(self):
@@ -138,8 +138,8 @@ class ReportVerifiesWholeChainTest(unittest.TestCase):
         _write(log, recs)
         pol = os.path.join(d, "p.json")
         with open(pol, "w") as fh:
-            json.dump([{"id": "r1", "match": {"category": "security"},
-                        "require": {"category": "security"}}], fh)
+            json.dump([{"id": "r1", "when": {"action.category": "security"},
+                        "require": {"action.category": "security"}}], fh)
         html, _ = write_report(log, os.path.join(d, "r.html"), policy_path=pol,
                                start=parse_bound("2026-06-03", end=False),
                                end=parse_bound("2026-06-05", end=True))

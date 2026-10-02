@@ -45,5 +45,14 @@ Rules read dotted record fields; append `[]` to fan out across an array
   ASI09 are runtime/organizational risks a record policy cannot assert, so the
   pack deliberately leaves them out.
 
+Both packs also ship inside the installed package, so they run by name with
+no checkout: `halo policy chain.jsonl owasp-starter` (or `aiuc-1-starter`).
+`halo policy --help` prints the rule format.
+
+A policy is validated before it runs: an unknown key, an unknown matcher, a
+field path that is not a Runtime Record field, or a rule with no `forbid`,
+`require`, or `expect_evidence` is refused (exit 2) rather than reported as a
+pass.
+
 Both are starting points, not official certified mappings; rename and tune the
 rules to your agent's tools and your buyer's contract.
