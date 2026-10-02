@@ -13,14 +13,13 @@ It renders exactly one chain — i.e. one ``subject``/customer — so a report i
 safe to share with that customer and no other (segmentation by construction).
 """
 
-import ast
-import html
 import json
 import re
 import os
 
 from .canon import GENESIS_PREV
 from .anchor import chain_root as _chain_root
+from . import _view
 
 
 def _load(path):
@@ -37,28 +36,6 @@ def _load(path):
     return records
 
 
-def _subject_note(records):
-    """Show the subject id the witness matches on whenever it could mislead: it
-    differs from the displayed name, or it carries invisible or non-ASCII
-    characters (a re-keyed id can look identical to the witnessed one)."""
-    import unicodedata
-    sid = _subject_id(records)
-    if sid is None:
-        return ""
-    sid = str(sid)
-    odd = [c for c in sid if ord(c) > 126 or unicodedata.category(c)[0] in ("C", "Z") and c != " "]
-    if sid != sid.strip() or "  " in sid:
-        odd.append(" ")
-    label = _subject_label(records)
-    if not odd and label == sid:
-        return ""
-    shown = json.dumps(sid)[1:-1]
-    note = "Subject id: <span class=\"mono\">%s</span>" % _esc(shown)
-    if odd:
-        note += " &mdash; contains invisible or non-ASCII characters; compare it to the id the witness holds."
-    return '<div class="meta">%s</div>' % note
-
-
 _LONE_SURROGATE_RE = re.compile("[\ud800-\udfff]")
 
 
@@ -72,51 +49,22 @@ def _record_subject(r):
     return json.dumps(sid, sort_keys=True, default=str)
 
 
-def _subject_label(records):
-    ids = {_record_subject(r) for r in records} - {None}
-    if len(ids) > 1:
-        return "%d subjects" % len(ids)  # never label a mixed chain as one customer
-    for r in records:
-        s = r.get("subject")
-        if isinstance(s, dict) and (s.get("name") or s.get("id")):
-            return s.get("name") or s.get("id")
-    return "Agent runtime"
-
-
-def _subject_id(records):
-    for r in records:
-        s = r.get("subject")
-        if isinstance(s, dict) and s.get("id"):
-            return s["id"]
-    return None
-
-
-def _agents(records):
-    """Ordered distinct agent labels across the chain (a vendor often runs
-    more than one agent against the same tenant)."""
-    seen = []
-    for r in records:
-        a = r.get("agent") or {}
-        label = a.get("name") or a.get("id")
-        if label and label not in seen:
-            seen.append(label)
-    return seen
-
-
-def _agent_meta(agents):
-    """The header fragment: one agent keeps the classic label; a fleet is
-    counted and named."""
-    if not agents:
-        return "Agent <b>unknown</b>"
-    if len(agents) == 1:
-        return "Agent <b>%s</b>" % _esc(agents[0])
-    shown = ", ".join("<b>%s</b>" % _esc(a) for a in agents[:4])
-    more = " (+%d more)" % (len(agents) - 4) if len(agents) > 4 else ""
-    return "%d agents: %s%s" % (len(agents), shown, more)
-
-
-def _fmt_ts(ts):
-    return (ts or "").replace("T", " ").replace("+00:00", "Z")[:19]
+# What the page displays is derived from its records in one place (``_view``),
+# mirrored by the page's own JavaScript so the browser re-renders it from the
+# records it verifies. These names are kept for existing callers.
+_subject_note = _view.subject_note
+_subject_label = _view.subject_label
+_subject_id = _view.subject_id
+_agents = _view.agents
+_agent_meta = _view.agent_meta
+_fmt_ts = _view.fmt_ts
+_summary_stats = _view.stats
+_esc = _view.esc
+_CAP_TITLE = _view.CAP_TITLE
+_PLAIN_VERB = _view.PLAIN_VERB
+_PLAIN_KEYS = _view.PLAIN_KEYS
+_plain = _view.plain
+_row = _view.row
 
 
 def chain_breaks(records):
@@ -143,229 +91,6 @@ def chain_breaks(records):
         elif i and declared_prev != ((records[i - 1].get("integrity") or {}).get("hash")):
             bad.append(i)
     return bad
-
-
-def _summary_stats(records):
-    tools, scopes, severities = {}, set(), {}
-    times = []
-    for r in records:
-        action = r.get("action", {})
-        tool = action.get("tool") or action.get("type") or "—"
-        tools[tool] = tools.get(tool, 0) + 1
-        scope = (action.get("authorization") or {}).get("scope")
-        if scope:
-            scopes.add(scope)
-        sev = r.get("severity", "INFO")
-        severities[sev] = severities.get(sev, 0) + 1
-        if r.get("ts"):
-            times.append(r["ts"])
-    times.sort()
-    return {
-        "total": len(records),
-        "tools": tools,
-        "scopes": sorted(scopes),
-        "severities": severities,
-        "start": _fmt_ts(times[0]) if times else "—",
-        "end": _fmt_ts(times[-1]) if times else "—",
-    }
-
-
-def _esc(x):
-    return html.escape(str(x), quote=True)
-
-
-# How each provenance tier reads to a buyer — kept short for the cell tooltip.
-_CAP_TITLE = {
-    "captured": "Declared captured at the boundary — per this record's own source tag, "
-                "Halo observed the call directly. The tag is set by the integration, "
-                "not independently verified.",
-    "ingested": "Ingested from telemetry the vendor already emits — the witness "
-                "attests \"this is the stream you sent me\", not \"I watched it happen\".",
-}
-
-
-def _provenance(records):
-    """Tally records by their on-ramp (``source.adapter``) and evidentiary tier
-    (``source.capture``). Returns (panel_html, present, n_captured, n_ingested).
-    Records with no ``source`` are skipped, so legacy reports render unchanged."""
-    buckets = {}
-    for r in records:
-        s = r.get("source")
-        if not isinstance(s, dict):
-            continue
-        a = s.get("adapter") or "unknown"
-        b = buckets.setdefault(a, {"via": s.get("via") or a,
-                                   "capture": s.get("capture") or "ingested", "n": 0})
-        b["n"] += 1
-    if not buckets:
-        return "", False, 0, 0
-    order = {"captured": 0, "ingested": 1}
-    items = sorted(buckets.items(),
-                   key=lambda kv: (order.get(kv[1]["capture"], 2), -kv[1]["n"]))
-    n_cap = sum(b["n"] for b in buckets.values() if b["capture"] == "captured")
-    n_ing = sum(b["n"] for b in buckets.values() if b["capture"] == "ingested")
-    cells = []
-    for _, b in items:
-        tier = "cap" if b["capture"] == "captured" else "ing"
-        label = "Captured" if b["capture"] == "captured" else "Ingested"
-        cells.append(
-            '<div class="prov" title="%s">'
-            '<span class="pill %s">%s</span>'
-            '<span class="prov-via">%s</span>'
-            '<span class="prov-n">%d action%s</span>'
-            "</div>" % (
-                _esc(_CAP_TITLE.get(b["capture"], "")), tier, label,
-                _esc(b["via"]), b["n"], "" if b["n"] == 1 else "s"))
-    panel = '<div class="provgrid">%s</div>' % "".join(cells)
-    return panel, True, n_cap, n_ing
-
-
-_PLAIN_VERB = {
-    "tool_call": "Ran", "network": "Fetched", "read": "Read",
-    "write": "Wrote", "agent_message": "Messaged",
-}
-
-# The field in a tool's arguments that a reader actually wants to see first.
-_PLAIN_KEYS = ("command", "file_path", "url", "query", "description", "path",
-               "pattern", "prompt", "to", "summary", "task_id")
-
-
-def _plain(r):
-    """One line a non-engineer can read: what this action did, in words.
-
-    The recorded summary is a serialized argument blob — precise, and unreadable
-    at a glance. This picks the argument that carries the meaning (the command,
-    the file, the URL) and states it as a sentence. It is a *view* of the record,
-    never a replacement: the full summary and its hash stay on the record.
-    """
-    action = r.get("action") or {}
-    tool = action.get("tool") or action.get("type") or "action"
-    # An outcome summary is already a human sentence — prefer it outright over
-    # reconstructing one from the input arguments.
-    outcome_summary = (r.get("outcome") or {}).get("summary") or ""
-    if outcome_summary and not outcome_summary.startswith("{"):
-        return " ".join(outcome_summary.split())
-    summary = (action.get("input") or {}).get("summary") or ""
-    detail = ""
-    if summary.startswith("{") and len(summary) <= 4096:
-        try:
-            parsed = ast.literal_eval(summary)
-        except Exception:
-            parsed = None
-        if isinstance(parsed, dict):
-            for key in _PLAIN_KEYS:
-                if parsed.get(key):
-                    detail = str(parsed[key])
-                    break
-            # No meaningful argument found: name the tool rather than echoing
-            # an arbitrary value (the first dict value is often the tenant id).
-        else:
-            detail = summary
-    else:
-        detail = summary
-    detail = " ".join(detail.split())
-    if not detail:
-        return "Ran %s" % tool
-    verb = _PLAIN_VERB.get(action.get("type"), "Ran")
-    if action.get("type") == "network" and not str(tool).lower().startswith(("http", "web", "fetch")):
-        verb = "Ran"  # "Fetched" is only honest for actual fetch-shaped tools
-    if tool in ("Write", "Edit", "NotebookEdit"):
-        verb = "Edited" if tool == "Edit" else "Wrote file"
-    elif tool in ("WebFetch", "WebSearch"):
-        verb = "Searched the web for" if tool == "WebSearch" else "Fetched"
-    elif tool == "Bash":
-        verb = "Ran the shell command"
-    elif tool == "Agent":
-        verb = "Started a helper agent to"
-    elif tool == "Read":
-        verb = "Read the file"
-    return ("%s %s" % (verb, detail)).strip()
-
-
-def _row(r, show_agent=False):
-    action = r.get("action", {})
-    auth = action.get("authorization") or {}
-    outcome = r.get("outcome") or {}
-    findings = r.get("findings") or []
-    status = outcome.get("status", "—")
-    sev = r.get("severity", "INFO")
-    summary = (action.get("input") or {}).get("summary") or outcome.get("summary") or ""
-    short_hash = (r.get("integrity") or {}).get("hash", "")[:12]
-    # "no flags" — not "clean": an empty findings list means no redaction
-    # pattern matched, which is not a guarantee that no sensitive data is
-    # present (unstructured PII has no pattern; see LIMITS.md).
-    finding_cell = (
-        '<span class="pill warn" title="redaction patterns that matched">%d</span>' % len(findings)
-        if findings else
-        '<span class="pill ok" title="no redaction pattern matched; not a guarantee no sensitive data is present">no flags</span>'
-    )
-    src = r.get("source") or {}
-    cap = src.get("capture")
-    if cap in ("captured", "ingested"):
-        tier = "cap" if cap == "captured" else "ing"
-        source_cell = '<span class="pill %s" title="%s">%s</span>' % (
-            tier, _esc(_CAP_TITLE.get(cap, "")), _esc(src.get("adapter") or cap))
-    else:
-        source_cell = '<span class="dim">—</span>'
-    a = r.get("agent") or {}
-    agent_cell = ('<td class="mono">%s</td>' % _esc(a.get("name") or a.get("id") or "—")
-                  if show_agent else "")
-    # Filter/sort keys ride on the row itself so the table stays searchable
-    # without re-parsing the embedded JSON. `data-text` is the haystack for
-    # free-text search: everything a reader would plausibly search for.
-    haystack = " ".join(str(x) for x in (
-        r.get("ts"), action.get("tool"), action.get("type"), auth.get("scope"),
-        auth.get("decision"), status, sev, summary, outcome.get("summary"),
-        (r.get("agent") or {}).get("name"), short_hash,
-    ) if x).lower()
-    plain = _plain(r)
-    row_attrs = (
-        ' data-ts="%s" data-tool="%s" data-type="%s" data-sev="%s"'
-        ' data-status="%s" data-flags="%d" data-rid="%s" data-text="%s"'
-    ) % (
-        _esc(r.get("ts") or ""),
-        _esc(action.get("tool") or "—"),
-        _esc(action.get("type") or "—"),
-        _esc(sev),
-        _esc(status),
-        len(findings),
-        _esc(r.get("record_id") or ""),
-        _esc((haystack + " " + plain.lower())),
-    )
-    return (
-        '<tr%s tabindex="0" class="rowclick" title="Click for the full record">'
-        '<td class="mono dim ts-cell">%s</td>'
-        "%s"
-        '<td class="mono">%s</td>'
-        '<td>%s</td>'
-        '<td>%s</td>'
-        '<td class="mono">%s</td>'
-        '<td><span class="pill %s">%s</span></td>'
-        '<td><span class="pill %s">%s</span></td>'
-        '<td>%s</td>'
-        '<td class="trunc dim">%s</td>'
-        '<td class="mono dim">%s</td>'
-        "</tr>"
-    ) % (
-        row_attrs,
-        _esc(_fmt_ts(r.get("ts"))),
-        agent_cell,
-        _esc(action.get("tool") or "—"),
-        _esc(action.get("type") or "—"),
-        source_cell,
-        _esc(auth.get("scope") or "—"),
-        # No decision = no gate reported: a statement, not an alarm. Green is
-        # reserved for a supplied allow/approval; amber for a supplied denial.
-        ("neutral" if not auth.get("decision")
-         else "ok" if auth.get("decision") in ("allowed", "human_approved") else "warn"),
-        _esc(auth.get("decision") or "—"),
-        "ok" if status == "ok" else ("warn" if status == "error" else "neutral"),
-        _esc(status),
-        finding_cell,
-        _esc(plain[:110]),
-        _esc(short_hash),
-    )
-
 
 
 _ANCHOR_RE = re.compile(r"^[0-9a-f]{64}$")
@@ -470,11 +195,17 @@ function completeness(records, cps){
     } else {
       if (n < 1 || n > records.length) return {ok:false, why:"witnessed count out of range", at:n};
       const h = (records[n-1].integrity || {}).hash;
-      if (h !== c.head) return {ok:false, why:"record altered or dropped before witnessed point", at:n};
+      if (h !== c.head){
+        const root = (records[0].integrity || {}).hash;
+        const other = (typeof c.chain_root === "string" && c.chain_root !== root);
+        return {ok:false, at:n, why:"record altered or dropped before witnessed point" +
+          (other ? "; the witness holds this checkpoint for a different chain root under the same subject" +
+                   " (a second or restarted chain, or this chain was re-rooted)" : "")};
+      }
     }
   }
   if (WINDOW && !inWin)
-    return {ok:null, windowed:true, before:before, beyond:beyond};
+    return {ok:null, windowed:true, before:before, beyond:beyond, latest:latest};
   return {ok:true, witnessed:cps.length, latest:latest, inWin:inWin, before:before, beyond:beyond};
 }
 async function liveCheckpoints(cfg, embedded){
@@ -499,49 +230,76 @@ async function liveCheckpoints(cfg, embedded){
     return {cps: cleanCheckpoints(embedded), live: false, error: e.message};
   }
 }
-(async function(){
-  const el = document.getElementById("verdict");
+function haloSet(id, html){
+  const node = document.getElementById(id);
+  if (node) node.innerHTML = html;
+}
+async function haloBind(records, cfg){
+  // Re-render everything the page derives from its records, from the records
+  // this script just verified, so edited static HTML cannot show under the badge.
+  if (typeof HaloView === "undefined") return false;
+  const polEl = document.getElementById("halo-policy");
+  const rules = polEl ? JSON.parse(polEl.textContent || "null") : null;
+  const chainOk = WINDOW ? cfg.chainVerified !== false : true;
+  let digest = null;
+  if (rules){
+    try {
+      digest = hex(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(canon(rules))));
+    } catch (e){ digest = null; }
+  }
+  const R = HaloView.regions(records, rules, chainOk, digest);
+  haloSet("r-h1", R.h1);
+  haloSet("r-meta", R.meta);
+  haloSet("r-subject-note", R.subject_note);
+  haloSet("r-period", R.period);
+  haloSet("r-cards", R.cards);
+  haloSet("r-scopes", R.scopes);
+  haloSet("r-provenance", R.provenance);
+  haloSet("r-policy", R.policy);
+  try { document.title = R.title + " — Runtime Report"; } catch (e){}
+  if (typeof window.__haloSetRows === "function") window.__haloSetRows(R.rows);
+  else haloSet("activity-body", R.rows.join("\n"));
+  return true;
+}
+function haloWithhold(why){
+  // Nothing derived from unverified records is presented as if it verified.
+  const msg = "<div class='verdict fail'>Withheld &mdash; " + why + " The table below is the page's " +
+              "unverified static text.</div>";
+  haloSet("r-policy", document.getElementById("halo-policy") &&
+          document.getElementById("halo-policy").textContent.trim() !== "null"
+          ? "<div class='verdict fail'>Policy verdict withheld &mdash; " + why + "</div>" : "");
+  haloSet("r-cards", "");
+  haloSet("rowcount", msg);
+}
+function haloEsc(s){
+  return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+async function haloCompleteness(records, embedded, cfg, pinned){
   const cel = document.getElementById("completeness");
-  const records = JSON.parse(document.getElementById("records").textContent);
-  const embedded = JSON.parse(document.getElementById("checkpoints").textContent);
-  const cfg = JSON.parse(document.getElementById("halo-config").textContent);
-  if (!(window.crypto && crypto.subtle)){
-    el.className = "verdict neutral";
-    el.innerHTML = "Self-verification needs a secure context — serve this page over https or localhost to re-check the chain in your browser.";
-    return;
-  }
-  try {
-    if (!records.length){
-      el.className = "verdict neutral";
-      el.innerHTML = "0 records — an empty chain; nothing to attest.";
-      if (cel){ cel.className = "verdict neutral"; cel.innerHTML = "No records to check for completeness."; }
-      return;
-    }
-    const res = await verify(records);
-    window.__haloVerify = res;  // the drawer's chain-position note reads this
-    if (res.ok && WINDOW){
-      el.className = "verdict ok";
-      el.innerHTML = "&#10003; Verified in your browser — records " + WINDOW.first +
-        "&ndash;" + WINDOW.last + " of " + WINDOW.total +
-        ", window chain intact relative to its anchor. <span class='dim'>window head " +
-        res.head.slice(0,16) + "&hellip;</span>";
-    } else if (res.ok){
-      el.className = "verdict ok";
-      el.innerHTML = "&#10003; Verified in your browser — " + records.length +
-        " records, hash chain intact. <span class='dim'>chain head " +
-        res.head.slice(0,16) + "&hellip;</span>";
-    } else {
-      el.className = "verdict fail";
-      el.innerHTML = "&#10007; Verification FAILED at record " + res.at + " (" + res.why + ").";
-      return;
-    }
-  } catch (e){
-    el.className = "verdict fail";
-    el.textContent = "Verification error: " + e.message;
-    return;
-  }
   if (!cel) return;
-  const src = await liveCheckpoints(cfg, embedded);
+  const lookup = pinned || cfg.subject;
+  const pinNote = pinned
+    ? ""
+    : (cfg.subject
+        ? " <span class='dim'>Subject not pinned: looked up by the id the records carry (" +
+          haloEsc(JSON.stringify(cfg.subject)) + "), which the vendor writes. Enter the customer id " +
+          "you expect below to check against that id instead.</span>"
+        : "");
+  if (pinned){
+    const ids = new Set(records.map(function(r){
+      const s = r.subject; return (s && typeof s === "object" && s.id) ? s.id : null; }));
+    if (ids.size !== 1 || !ids.has(pinned)){
+      cel.className = "verdict fail";
+      cel.innerHTML = "&#10007; SUBJECT MISMATCH &mdash; you expect " + haloEsc(JSON.stringify(pinned)) +
+        "; the records carry " + haloEsc(JSON.stringify(Array.from(ids))) + ".";
+      return;
+    }
+  }
+  const pinnedEmbedded = (Array.isArray(embedded) ? embedded : []).filter(function(c){
+    return !(c && typeof c === "object" && "subject" in c && c.subject !== null) || c.subject === lookup;
+  });
+  const src = await liveCheckpoints({witnessUrl: cfg.witnessUrl, subject: lookup, chainRoot: cfg.chainRoot},
+                                    pinnedEmbedded);
   let comp;
   try {
     comp = completeness(records, src.cps);
@@ -549,50 +307,121 @@ async function liveCheckpoints(cfg, embedded){
     comp = {ok:false, why:"completeness could not be checked (" + e.message + ")"};
   }
   const witness = src.live ? "the live witness log" : "the witness log embedded in this report";
-  const note = src.error
+  const note = (src.error
     ? " <span class='dim'>(couldn't reach the live witness — checked the embedded snapshot instead)</span>"
-    : "";
+    : "") + pinNote;
+  const forWho = pinned ? " for " + haloEsc(JSON.stringify(pinned)) : "";
   if (comp.ok === null && comp.windowed){
     cel.className = "verdict neutral";
-    cel.innerHTML = "No witness checkpoint falls inside this window — window integrity is " +
+    cel.innerHTML = "No witness checkpoint" + forWho + " falls inside this window — window integrity is " +
       "verified against its anchor above" +
-      (comp.beyond ? "; the chain is witnessed beyond this window" : "") +
+      (comp.beyond ? "; the witness holds " + comp.beyond + " checkpoint(s) beyond this window, up to record " +
+                     comp.latest + " of the " + WINDOW.total + "-record chain" : "") +
       (comp.before ? "; " + comp.before + " checkpoint(s) precede the window and cannot be checked from this page (run halo anchor --check on the full chain)" : "") +
       "." + note;
   } else if (comp.ok === null){
     cel.className = "verdict open";
-    cel.innerHTML = "<b>Not yet anchored.</b> No independent witness exists for this report — " +
+    cel.innerHTML = "<b>Not yet anchored" + forWho + ".</b> No witness checkpoint was found — " +
       "completeness rests on the vendor alone until the chain is witnessed. " +
       "Integrity is verified above; completeness is not." + note;
   } else if (comp.ok && WINDOW){
     cel.className = "verdict neutral";
     cel.innerHTML = (src.live
-        ? "Consistent within window &mdash; "
-        : "Self-attested &mdash; the checkpoint was supplied with this report by its operator, so treat completeness as self-attested until a witness outside the operator confirms it. Within the window it is consistent: ") +
+        ? "Consistent within window" + forWho + " &mdash; "
+        : "Self-attested" + forWho + " &mdash; the checkpoint was supplied with this report by its operator, so treat completeness as self-attested until a witness outside the operator confirms it. Within the window it is consistent: ") +
       witness + " confirmed " + comp.inWin +
       " checkpoint(s) inside this window" +
       (comp.beyond ? "; chain continues beyond the window (witnessed to record " + comp.latest + ")" : "") +
       (comp.before ? "; " + comp.before + " earlier checkpoint(s) precede it" : "") +
       ". No witnessed record in this window has been dropped or altered." +
       (src.live
-        ? " Whether this counts as independent verification depends on who operates the witness at " + String(witnessBase(cfg.witnessUrl) || "the configured URL").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;") + " &mdash; treat it as self-attested unless that party is outside the operator's control."
+        ? " Whether this counts as independent verification depends on who operates the witness at " + haloEsc(String(witnessBase(cfg.witnessUrl) || "the configured URL")) + " &mdash; treat it as self-attested unless that party is outside the operator's control."
         : "") + note;
   } else if (comp.ok){
     cel.className = "verdict neutral";
     cel.innerHTML = (src.live
-        ? "Consistent &mdash; "
-        : "Self-attested &mdash; the checkpoint was supplied with this report by its operator, so treat completeness as self-attested until a witness outside the operator confirms it. Against that checkpoint the chain is consistent: ") +
+        ? "Consistent" + forWho + " &mdash; "
+        : "Self-attested" + forWho + " &mdash; the checkpoint was supplied with this report by its operator, so treat completeness as self-attested until a witness outside the operator confirms it. Against that checkpoint the chain is consistent: ") +
       witness + " confirmed " + comp.witnessed +
       " checkpoint(s) up to record " + comp.latest +
-      ". No record the notary saw has been dropped or altered." +
+      ". No record the witness saw has been dropped or altered." +
       (src.live
-        ? " Whether this counts as independent verification depends on who operates the witness at " + String(witnessBase(cfg.witnessUrl) || "the configured URL").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;") + " &mdash; treat it as self-attested unless that party is outside the operator's control."
+        ? " Whether this counts as independent verification depends on who operates the witness at " + haloEsc(String(witnessBase(cfg.witnessUrl) || "the configured URL")) + " &mdash; treat it as self-attested unless that party is outside the operator's control."
         : "") + note;
   } else {
     cel.className = "verdict fail";
-    cel.innerHTML = "&#10007; INCOMPLETE &mdash; conflicts with " + witness + " (" +
-      comp.why + (comp.at ? " at record " + comp.at : "") + ")." + note;
+    cel.innerHTML = "&#10007; INCOMPLETE" + forWho + " &mdash; conflicts with " + witness + " (" +
+      haloEsc(comp.why) + (comp.at ? " at record " + comp.at : "") + ")." + note;
   }
+}
+(async function(){
+  const el = document.getElementById("verdict");
+  const records = JSON.parse(document.getElementById("records").textContent);
+  const embedded = JSON.parse(document.getElementById("checkpoints").textContent);
+  const cfg = JSON.parse(document.getElementById("halo-config").textContent);
+  const cel = document.getElementById("completeness");
+  if (!(window.crypto && crypto.subtle)){
+    el.className = "verdict neutral";
+    el.innerHTML = "Not verified &mdash; self-verification needs a secure context (https or localhost). " +
+      "Nothing on this page has been checked; run halo verify on the JSONL instead.";
+    haloWithhold("this browser could not verify the records.");
+    return;
+  }
+  try {
+    if (!records.length){
+      el.className = "verdict neutral";
+      el.innerHTML = "0 records — an empty chain; nothing to attest.";
+      await haloBind(records, cfg);
+      if (cel){ cel.className = "verdict neutral"; cel.innerHTML = "No records to check for completeness."; }
+      return;
+    }
+    const res = await verify(records);
+    window.__haloVerify = res;  // the drawer's chain-position note reads this
+    if (!res.ok){
+      el.className = "verdict fail";
+      el.innerHTML = "&#10007; Verification FAILED at record " + res.at + " (" + res.why + ").";
+      haloWithhold("the records embedded in this page failed verification.");
+      if (cel){ cel.className = "verdict fail"; cel.innerHTML = "Completeness not checked: the records failed verification."; }
+      return;
+    }
+    const bound = await haloBind(records, cfg);
+    const shown = bound
+      ? " The heading, period, counts, table and policy verdict below were re-rendered from these verified records."
+      : "";
+    const limit = " <span class='dim'>Integrity relative to this head only: compare it with a head you hold " +
+      "(a witness checkpoint, or <span class='mono'>halo verify</span> on the JSONL). This page runs code " +
+      "supplied with the report.</span>";
+    el.className = "verdict ok";
+    if (WINDOW){
+      el.innerHTML = "&#10003; Verified in your browser — records " + WINDOW.first +
+        "&ndash;" + WINDOW.last + " of " + WINDOW.total +
+        ", window chain intact from its anchor to window head <span class='mono'>" +
+        res.head.slice(0,16) + "&hellip;</span>." + shown + limit;
+    } else {
+      el.innerHTML = "&#10003; Verified in your browser — " + records.length +
+        " records, hash chain intact from the first record to head <span class='mono'>" +
+        res.head.slice(0,16) + "&hellip;</span>." + shown + limit;
+    }
+  } catch (e){
+    el.className = "verdict fail";
+    el.textContent = "Verification error: " + e.message;
+    haloWithhold("the records could not be verified.");
+    return;
+  }
+  let pinned = cfg.expectedSubject || null;
+  try {
+    const m = /(?:^#|&)expect=([^&]*)/.exec(String((window.location && window.location.hash) || ""));
+    if (m) pinned = decodeURIComponent(m[1]) || pinned;
+  } catch (e){}
+  const input = document.getElementById("pin-subject");
+  if (input && pinned) input.value = pinned;
+  await haloCompleteness(records, embedded, cfg, pinned);
+  const form = document.getElementById("pin");
+  if (form && form.addEventListener) form.addEventListener("submit", function(ev){
+    ev.preventDefault();
+    const v = input ? String(input.value).trim() : "";
+    haloCompleteness(records, embedded, cfg, v || null);
+  });
 })();
 """
 
@@ -625,6 +454,18 @@ _PAGINATE_JS = r"""
   var view = ALL.slice();     // current filtered+sorted set
   var drawn = 0;              // how many of `view` are in the DOM
 
+  /* The verifier re-renders the rows from the records it verified and hands
+     them over here; from then on the table is that set, not the static one. */
+  window.__haloSetRows = function(rowsHtml){
+    var t = document.createElement("template");
+    t.innerHTML = rowsHtml.join("");
+    ALL = Array.prototype.slice.call(t.content.querySelectorAll("tr"));
+    fillOptions(fTool, "data-tool");
+    fillOptions(fType, "data-type");
+    paintTimes();
+    apply();
+  };
+
   /* --- local time -------------------------------------------------------
      Records are sealed in UTC. A reader investigating "what happened at 3pm"
      means their own 3pm, so the displayed time follows the viewer's clock by
@@ -636,7 +477,7 @@ _PAGINATE_JS = r"""
   } catch (e) { TZ = ""; }
   function pad(n){ return (n < 10 ? "0" : "") + n; }
   function stamp(iso){
-    if (!localMode) return String(iso).replace("T", " ").replace("+00:00", "Z").slice(0, 19);
+    if (!localMode) return (typeof HaloView !== "undefined") ? HaloView.fmtTs(iso) : String(iso).slice(0, 19);
     var d = new Date(iso);
     if (isNaN(d)) return String(iso).slice(0, 19);
     return d.getFullYear() + "-" + pad(d.getMonth()+1) + "-" + pad(d.getDate()) + " " +
@@ -666,6 +507,7 @@ _PAGINATE_JS = r"""
 
   function fillOptions(sel, attr){
     if (!sel) return;
+    while (sel.options.length > 1) sel.remove(1);
     var seen = {}, vals = [];
     for (var i = 0; i < ALL.length; i++){
       var v = ALL[i].getAttribute(attr);
@@ -714,6 +556,13 @@ _PAGINATE_JS = r"""
   function cmp(a, b){
     var av = a.getAttribute(sortKey) || "", bv = b.getAttribute(sortKey) || "";
     if (sortKey === "data-flags"){ av = +av; bv = +bv; }
+    if (sortKey === "data-ts"){
+      // Sort by instant, not by text: offsets and precision vary across records.
+      var ta = (typeof HaloView !== "undefined") ? HaloView.tsUtc(av) : null,
+          tb = (typeof HaloView !== "undefined") ? HaloView.tsUtc(bv) : null;
+      av = ta ? ta.ms * 1000 + ta.us % 1000 / 1000 : -Infinity;
+      bv = tb ? tb.ms * 1000 + tb.us % 1000 / 1000 : -Infinity;
+    }
     if (sortKey === "data-sev"){
       var rank = {INFO:0, LOW:1, MEDIUM:2, HIGH:3, CRITICAL:4};
       av = rank[av] === undefined ? -1 : rank[av];
@@ -862,6 +711,14 @@ _PAGINATE_JS = r"""
     h += field("Category", a.category);
     h += field("Agent", (r.agent || {}).name || (r.agent || {}).id);
     h += field("Session", r.session_id, true);
+    h += field("Parent action", r.parent_id, true);
+    var pr = r.principal || {};
+    if (pr && typeof pr === "object"){
+      h += field("On behalf of (human)", pr.human_id);
+      h += field("Creator", pr.creator_id);
+      h += field("Service account", pr.service_account);
+      h += field("Role scope", pr.role_scope);
+    }
     h += '<div class="d-sec">Arguments (as recorded)</div>';
     h += '<pre class="d-pre">' + esc(inp.summary || "(none recorded)") + "</pre>";
     h += field("Argument hash", inp.hash, true);
@@ -869,11 +726,34 @@ _PAGINATE_JS = r"""
     h += field("Scope", auth.scope);
     h += field("Decision", auth.decision);
     h += field("Approver", auth.approver);
+    var ver = (r.verification && typeof r.verification === "object") ? r.verification : null;
+    h += '<div class="d-sec">Verification gate</div>';
+    if (ver){
+      h += field("Status", ver.status);
+      h += field("Verifier", ver.verifier);
+      h += field("Policy ref", ver.policy_ref, true);
+      h += field("Checked at", ver.checked_at, true);
+      h += '<div class="d-note">As supplied by the reporting gate; not re-checked by the recorder.</div>';
+    } else {
+      h += '<div class="d-note">No verification claim was recorded for this action.</div>';
+    }
     h += '<div class="d-sec">Result</div>';
     h += field("Status", o.status);
     if (o.summary){ h += '<pre class="d-pre">' + esc(o.summary) + "</pre>"; }
     h += field("Result hash", o.hash, true);
+    var th = Array.isArray(r.threats) ? r.threats : [];
+    h += '<div class="d-sec">Threat flags (' + esc(String(th.length)) + ")</div>";
+    if (!th.length){
+      h += '<div class="d-note">No threat flag was supplied with this record.</div>';
+    } else {
+      for (var ti = 0; ti < th.length; ti++){
+        var tt = (th[ti] && typeof th[ti] === "object") ? th[ti] : {};
+        h += field(tt.type || "?", tt.ref || "(no reference)");
+      }
+      h += '<div class="d-note">Threat flags are ingested from an upstream detector, not judged by the recorder.</div>';
+    }
     h += '<div class="d-sec">Flags (' + esc(String(f.length)) + ")</div>";
+    h += field("Severity", r.severity);
     if (!f.length){
       h += '<div class="d-note">No redaction pattern matched. That is not a ' +
            "guarantee no sensitive data is present — unstructured personal data " +
@@ -1073,37 +953,27 @@ footer a{color:var(--gold);text-decoration:none}
 """
 
 
-def _policy_block(records, policy, subject, chain_verified=True):
-    """Render the deterministic policy-corroboration verdict for the report.
-
-    ``policy`` is a list of rule dicts. The verdict panel is computed by
-    ``policy.evaluate`` from explicit rules (never a model), so it is safe to sit
-    beside the integrity/completeness verdicts, which the page proves with its
-    own live checks."""
-    if not policy:
-        return ""
-    from .policy import evaluate, verdict_panel
-    result = evaluate(records, policy)
-    result["chain_verified"] = bool(chain_verified)
-    if not chain_verified:
-        result["compliant"] = False
-    return ('<h2>Policy corroboration</h2>\n<div style="margin:0 0 30px">%s</div>'
-            % verdict_panel(result, subject=subject))
-
-
-def render(records, checkpoints=None, *, witness_url=None, policy=None, window=None):
+def render(records, checkpoints=None, *, witness_url=None, policy=None, window=None,
+           expected_subject=None):
     """Return the full HTML for a runtime-record report over ``records``.
 
     If ``checkpoints`` (a list of notary witnesses for this chain) is given, the
     page re-checks completeness in the browser against those witnesses. If
     ``witness_url`` (a hosted Halo witness) is given, the page instead fetches
-    the checkpoints live from that witness — so completeness is verified against
-    a party the vendor doesn't control, not the snapshot embedded in the page.
-    The embedded checkpoints remain as an offline fallback.
+    the checkpoints live from that witness. The embedded checkpoints remain as
+    an offline fallback.
 
     If ``policy`` (a list of rule dicts) is given, a deterministic
     policy-corroboration verdict is rendered beside the integrity/completeness
     verdicts.
+
+    Everything the page derives from the records (heading, period, counts,
+    scopes, provenance, the activity table, the policy verdict) is rendered here
+    and re-rendered in the browser from the records the page verifies, so the
+    verification badge covers what is displayed (see ``_view``).
+
+    ``expected_subject`` pins the customer id the page checks completeness
+    under; a reader can also pin one on the page itself.
 
     If ``window`` is given (see ``write_report``), the page carries only the
     windowed records: in-browser verification is seeded with the window's
@@ -1114,13 +984,17 @@ def render(records, checkpoints=None, *, witness_url=None, policy=None, window=N
     if len(ids) != len(set(ids)):
         raise ValueError("halo-record: duplicate record_id in chain; refusing to render "
                          "a report whose rows could not be told apart")
-    subject = _subject_label(records)
-    agents = _agents(records)
-    multi_agent = len(agents) > 1
-    stats = _summary_stats(records)
-    # Display is newest-first; the embedded JSON stays in chain order because
-    # in-browser verification walks the chain from its anchor forward.
-    row_html = [_row(r, show_agent=multi_agent) for r in reversed(records)]
+    if policy:
+        from .policy import validate_policy
+        validate_policy(policy)
+    if window is not None:
+        chain_verified = window.get("chain_verified", True)
+    else:
+        from .verify import verify_records
+        chain_verified = verify_records(records)
+    reg = _view.regions(records, policy, chain_verified)
+    multi_agent = len(_view.agents(records)) > 1
+    row_html = reg["rows"]
     if row_html:
         rows = "\n".join(row_html[:_ROW_BATCH])
         more_rows = "\n".join(row_html[_ROW_BATCH:])
@@ -1130,79 +1004,52 @@ def render(records, checkpoints=None, *, witness_url=None, policy=None, window=N
             % (min(len(row_html), _ROW_BATCH), len(row_html),
                " — scroll the table for more" if len(row_html) > _ROW_BATCH else ""))
         noscript = (
-            '<noscript><div class="note">JavaScript is off — showing the newest '
-            "%d recorded actions only; the full list and in-browser verification "
-            "need JavaScript.</div></noscript>" % _ROW_BATCH
-            if len(row_html) > _ROW_BATCH else "")
+            '<noscript><div class="note">JavaScript is off — nothing on this page has been '
+            "verified, and only the newest %d recorded actions are shown. Run "
+            "<span class=\"mono\">halo verify</span> on the JSONL to check the records.</div>"
+            "</noscript>" % _ROW_BATCH)
     else:
         rows = (
             '<tr><td colspan="%d" class="dim" style="padding:24px;text-align:center">'
             "No actions recorded yet — this report populates as the agent operates."
             "</td></tr>" % (11 if multi_agent else 10))
         more_rows = ""
-        rowcount = ""
+        rowcount = '<div class="rowcount" id="rowcount"></div>'
         noscript = ""
     agent_th = "<th>Agent</th>" if multi_agent else ""
-    prov_panel, prov_present, n_cap, n_ing = _provenance(records)
-    if prov_present:
-        if n_ing and n_cap:
-            prov_note = (
-                "Each action is tagged with how Halo observed it. "
-                "<b>Captured</b> means the record's source tag declares Halo observed the call "
-                "at the boundary as it happened — the tag comes from the integration that wrote "
-                "the record. <b>Ingested</b> means the record was built "
-                "from telemetry the vendor already emits (a gateway, tracing store, or OTel span) — "
-                "real and anchorable, but the witness attests “this is the stream you sent me,” "
-                "not “I watched it happen.” The tier is disclosed, never flattened.")
-        elif n_ing:
-            prov_note = (
-                "These records were <b>ingested</b> from telemetry the vendor already emits — "
-                "real and anchorable, but the witness attests “this is the stream you sent me,” "
-                "not “I watched it happen.” Source-capture would strengthen them to the "
-                "<b>captured</b> tier.")
-        else:
-            prov_note = (
-                "Every action is <b>declared captured</b> at the boundary — per each record's "
-                "own source tag, Halo saw the call as it happened, so nothing could be reshaped "
-                "before it was recorded. The strongest tier the source field asserts; the tag is "
-                "set by the integration, not independently verified.")
-        provenance_block = (
-            '<h2>Captured via</h2>\n%s\n<div class="note prov-note">%s</div>'
-            % (prov_panel, prov_note))
-    else:
-        provenance_block = ""
-    if window is not None:
-        chain_verified = window.get("chain_verified", True)
-    else:
-        from .verify import verify_records
-        chain_verified = verify_records(records)
-    policy_block = _policy_block(records, policy, subject, chain_verified)
-    scope_pills = "".join('<span class="pill">%s</span>' % _esc(s) for s in stats["scopes"]) \
-        or '<span class="dim">none</span>'
     # Escape "<" so a record value containing "</script>" can't break out of
     # the embedded JSON block. The in-browser JSON.parse reads these unchanged.
     records_json = json.dumps(records, separators=(",", ":")).replace("<", "\\u003c")
     checkpoints_json = json.dumps(checkpoints, separators=(",", ":")).replace("<", "\\u003c")
+    policy_json = json.dumps(policy or None, separators=(",", ":")).replace("<", "\\u003c")
     # The completeness half of the banner only holds when the report is actually
     # anchored; an un-anchored report is integrity-only and must say so, not imply
     # a witness it never had.
     anchored = bool(checkpoints) or bool(witness_url)
+    own_check = ("This page runs code supplied with the report; for a check that does not "
+                 "depend on it, run <span class=\"mono\">halo verify</span> on the JSONL "
+                 "yourself (see REVIEWERS.md).")
     if anchored:
-        integrity_note = ("This report re-computes its own SHA-256 / RFC 8785 hash chain in your "
-                          "browser (integrity) and checks it against the witness checkpoints it "
-                          "was anchored to (completeness). Whether completeness counts as independently "
-                          "verified depends on who operates the witness — confirm that before "
-                          "relying on it.")
+        integrity_note = ("This page re-computes the SHA-256 / RFC 8785 hash chain of the records it "
+                          "embeds, in your browser (integrity), re-renders what it displays from "
+                          "those records, and checks them against the witness checkpoints for the "
+                          "pinned customer id (completeness). Whether completeness counts as "
+                          "independently verified depends on who operates the witness — confirm "
+                          "that before relying on it. " + own_check)
     else:
-        integrity_note = ("This report re-computes its own SHA-256 / RFC 8785 hash chain in your "
-                          "browser (integrity) — you don't take that on trust. Completeness — that "
-                          "no records were dropped — is <b>not yet witnessed</b>: this report is "
-                          "anchored to no external witness, so completeness rests on the vendor "
-                          "until one holds checkpoints for this chain (see below).")
+        integrity_note = ("This page re-computes the SHA-256 / RFC 8785 hash chain of the records it "
+                          "embeds, in your browser (integrity), and re-renders what it displays from "
+                          "those records. Completeness — that no records were dropped — is "
+                          "<b>not yet witnessed</b>: this report is anchored to no external witness, "
+                          "so completeness rests on the vendor until one holds checkpoints for this "
+                          "chain (see below). " + own_check)
     config_json = json.dumps(
         {"witnessUrl": witness_url, "subject": _subject_id(records),
-         "chainRoot": (_chain_root(records) if records and _subject_id(records) is None else None)},
+         "chainRoot": (_chain_root(records) if records and _subject_id(records) is None else None),
+         "expectedSubject": expected_subject,
+         "chainVerified": bool(chain_verified)},
         separators=(",", ":")).replace("<", "\\u003c")
+    review_window = ""
     if window:
         window_json = json.dumps(
             {"first": window["first"], "last": window["last"], "total": window["total"]},
@@ -1224,12 +1071,14 @@ def render(records, checkpoints=None, *, witness_url=None, policy=None, window=N
                 'break(s)%s; those records are not part of this report and are '
                 'not covered by its verdict.'
                 % (n_outside,
-                   (" (%s to %s)" % (_esc(_fmt_ts(window.get("outside_first_ts"))),
-                                     _esc(_fmt_ts(window.get("outside_last_ts")))))
+                   (" (%s to %s UTC)" % (_esc(_fmt_ts(window.get("outside_first_ts"))),
+                                         _esc(_fmt_ts(window.get("outside_last_ts")))))
                    if window.get("outside_first_ts") else ""))
         else:
-            outside_note = (" The rest of the chain verified at generation "
-                            '<span class="mono">(head %s&hellip;)</span>.'
+            outside_note = (" When this page was generated, halo-record reported the full chain "
+                            '<span class="mono">(head %s&hellip;)</span> as verifying; this page '
+                            "cannot re-check records outside the window &mdash; run "
+                            '<span class="mono">halo verify</span> on the full JSONL to confirm.'
                             % _esc((window["chain_head"] or "")[:16]))
         window_block = (
             '<div class="verdict neutral">Date-windowed report &mdash; showing %s%s. '
@@ -1240,39 +1089,50 @@ def render(records, checkpoints=None, *, witness_url=None, policy=None, window=N
                (" (%s)" % _esc(bounds)) if bounds else "",
                _esc((window["anchor"] or GENESIS_PREV)[:16]),
                outside_note))
+        review_window = (
+            '<div class="period"><span class="period-l">Review window</span> '
+            "<b>%s</b> &ndash; <b>%s</b> <span class=\"period-tz\">UTC, as requested</span></div>\n"
+            % (_esc(_fmt_ts(window.get("from")) if window.get("from") else "start of chain"),
+               _esc(_fmt_ts(window.get("to")) if window.get("to") else "end of chain")))
     else:
         verify_js = _VERIFY_JS % {"genesis": _js_anchor(GENESIS_PREV), "window_json": "null"}
         window_block = ""
+    policy_block = ""
+    if policy:
+        from .policy import _PANEL_CSS
+        policy_block = ('<h2>Policy corroboration</h2>\n<style>%s</style>'
+                        '<div style="margin:0 0 30px" id="r-policy">%s<!--/r-policy--></div>'
+                        % (_PANEL_CSS, reg["policy"]))
+    pin_value = _esc(expected_subject) if expected_subject is not None else ""
 
     return """<!doctype html>
 <html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>%(subject)s — Runtime Report</title>
+<title>%(title)s — Runtime Report</title>
 <style>%(style)s</style>
 </head><body><div class="wrap">
 <div class="eyebrow">Halo Runtime Report</div>
-<h1>%(subject)s</h1>
-<div class="meta">%(agent_meta)s &middot; <b>%(total)s</b> recorded actions</div>%(subject_note)s
-<div class="period"><span class="period-l">Period covered</span>
-<b>%(start)s</b> &ndash; <b>%(end)s</b> <span class="period-tz">UTC</span></div>
-<div id="verdict" class="verdict neutral">Verifying hash chain&hellip;</div>
+<h1 id="r-h1">%(h1)s<!--/r-h1--></h1>
+<div class="meta" id="r-meta">%(meta)s</div><div id="r-subject-note">%(subject_note)s</div>
+%(review_window)s<div class="period" id="r-period">%(period)s<!--/r-period--></div>
+<div id="verdict" class="verdict neutral">Not verified yet &mdash; this page verifies its records in your browser with JavaScript.</div>
 <div id="completeness" class="verdict neutral">Checking completeness against the witness checkpoints&hellip;</div>
+<form id="pin" class="filters" autocomplete="off">
+  <label class="f-lab" for="pin-subject">Expected customer id</label>
+  <input type="search" id="pin-subject" class="f-grow" value="%(pin_value)s" placeholder="the id you expect, e.g. from your contract" aria-label="Expected customer id">
+  <button type="submit" class="f-btn">Check against witness</button>
+</form>
+<div class="note">Pin the id you expect: the page then requires every record to carry it and looks the witness up under it, rather than under the id the records carry (which the vendor writes).</div>
 %(window_block)s
 <div class="note">%(integrity_note)s</div>
 %(policy_block)s
-<div class="cards">
-  <div class="card"><div class="n">%(total)s</div><div class="l">Actions</div></div>
-  <div class="card"><div class="n">%(ntools)s</div><div class="l">Tools</div></div>
-  <div class="card"><div class="n">%(nscopes)s</div><div class="l">Scopes</div></div>
-  <div class="card"><div class="n">%(nflagged)s</div><div class="l">Flagged (MEDIUM+)</div></div>
-  <div class="card"><div class="n">%(nlow)s</div><div class="l">Low notes</div></div>
-</div>
+<div class="cards" id="r-cards">%(cards)s<!--/r-cards--></div>
 <h2>Authorized scopes</h2>
-<div class="scopes">%(scope_pills)s</div>
-%(provenance_block)s
+<div class="scopes" id="r-scopes">%(scopes)s</div>
+<div id="r-provenance">%(provenance)s</div>
 <h2>Activity</h2>
 <div class="filters" id="filters">
-  <input type="search" id="f-q" class="f-grow" placeholder="Search time, tool, scope, summary, hash&hellip;" aria-label="Search actions">
+  <input type="search" id="f-q" class="f-grow" placeholder="Search time, tool, scope, summary, record id, hash&hellip;" aria-label="Search actions">
   <select id="f-tool" aria-label="Filter by tool"><option value="">All tools</option></select>
   <select id="f-type" aria-label="Filter by action type"><option value="">All types</option></select>
   <select id="f-sev" aria-label="Filter by severity">
@@ -1310,27 +1170,26 @@ def render(records, checkpoints=None, *, witness_url=None, policy=None, window=N
 <script id="records" type="application/json">%(records_json)s</script>
 <script id="checkpoints" type="application/json">%(checkpoints_json)s</script>
 <script id="halo-config" type="application/json">%(config_json)s</script>
+<script id="halo-policy" type="application/json">%(policy_json)s</script>
+<script>%(render_js)s</script>
 <script>%(verify_js)s</script>
 <script>%(paginate_js)s</script>
 </body></html>""" % {
-        "subject": _esc(subject),
-        "agent_meta": _agent_meta(agents),
+        "title": _esc(reg["title"]),
+        "h1": reg["h1"],
+        "meta": reg["meta"],
+        "subject_note": reg["subject_note"],
+        "review_window": review_window,
+        "period": reg["period"],
+        "cards": reg["cards"],
+        "scopes": reg["scopes"],
+        "provenance": reg["provenance"],
         "agent_th": agent_th,
         "style": _STYLE,
-        "start": _esc(stats["start"]),
-        "end": _esc(stats["end"]),
-        "total": stats["total"],
-        "ntools": len(stats["tools"]),
-        "nscopes": len(stats["scopes"]),
-        # Headline counts are severity-weighted: LOW notes (readable paths that
-        # merely looked secret-like) do not count as flags.
-        "nflagged": sum(1 for r in records if r.get("severity") in ("MEDIUM", "HIGH", "CRITICAL")),
-        "nlow": sum(1 for r in records if r.get("severity") == "LOW"),
-        "scope_pills": scope_pills,
         "integrity_note": integrity_note,
-        "provenance_block": provenance_block,
         "policy_block": policy_block,
         "window_block": window_block,
+        "pin_value": pin_value,
         "rows": rows,
         "more_rows": more_rows,
         "rowcount": rowcount,
@@ -1338,7 +1197,8 @@ def render(records, checkpoints=None, *, witness_url=None, policy=None, window=N
         "records_json": records_json,
         "checkpoints_json": checkpoints_json,
         "config_json": config_json,
-        "subject_note": _subject_note(records),
+        "policy_json": policy_json,
+        "render_js": _view.render_js(with_policy=bool(policy)),
         "verify_js": verify_js,
         "paginate_js": _PAGINATE_JS,
     }
@@ -1470,7 +1330,7 @@ def write_report(log_path, out_path=None, witness_log=None, witness_url=None,
                 "windowed report that could not show it" % (log_path, completeness.get("why")))
         records = win_records
     html_doc = render(records, checkpoints, witness_url=witness_url, policy=policy,
-                      window=window)
+                      window=window, expected_subject=expected_subject)
     html_doc = _LONE_SURROGATE_RE.sub("\ufffd", html_doc)  # displayable and encodable
     if out_path:
         with open(out_path, "w", encoding="utf-8") as fh:

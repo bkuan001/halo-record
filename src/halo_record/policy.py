@@ -422,6 +422,8 @@ def evaluate_log(log_path, policy_path, *, start=None, end=None, expected_subjec
         # An unverifiable log may not even have record shapes to evaluate.
         result = {"compliant": False, "checked": 0, "violations": 0, "gaps": 0,
                   "violating_records": 0, "unexercised": 0, "rules": []}
+    from ._view import rules_digest
+    result["rules_sha256"] = rules_digest(policy)
     result["chain_verified"] = chain_verified
     if not chain_verified:
         result["compliant"] = False
@@ -435,10 +437,14 @@ def evaluate_log(log_path, policy_path, *, start=None, end=None, expected_subjec
 
 def _counts_line(result):
     unex = result.get("unexercised", 0)
-    return ("%d record(s) checked against %d rule(s): %d rule(s) violated by %d record(s), "
+    line = ("%d record(s) checked against %d rule(s): %d rule(s) violated by %d record(s), "
             "%d evidence gap(s), %d rule(s) not exercised." % (
                 result["checked"], len(result["rules"]), result["violations"],
                 result.get("violating_records", 0), result["gaps"], unex))
+    if result.get("rules_sha256"):
+        line += (" Rules evaluated: sha256 %s\u2026 (compare with the policy file you hold)."
+                 % result["rules_sha256"][:16])
+    return line
 
 
 # --------------------------------------------------------------------------- #
@@ -549,6 +555,19 @@ def verdict_panel(result, subject=None):
     completeness with its own live in-browser verdicts; a static pill would
     only compete with — and could contradict — the real one.
     """
+    return "<style>%s</style>%s" % (_PANEL_CSS, panel_card(result, subject))
+
+
+_FOOT = ("Each verdict is computed by deterministic rules over the record fields, "
+         "when this panel was generated.")
+_FOOT_PAGE = ("Each verdict is computed by deterministic rules over the record fields; "
+              "this page re-computes it in your browser from the records it verifies.")
+
+
+def panel_card(result, subject=None, in_page=False):
+    """The verdict card without its styles. The Runtime Report page re-renders
+    this card in the browser from the records it verifies (see ``_view``), so
+    any change here must be mirrored in ``_view.RENDER_JS``."""
     order = {"violated": 0, "no_evidence": 1, "no_match": 2, "pass": 3}
     rows = []
     for r in sorted(result["rules"], key=lambda x: order[x["status"]]):
@@ -588,21 +607,15 @@ def verdict_panel(result, subject=None):
 
     sub = _counts_line(result)
     subj = ("halo-record &middot; %s" % _html.escape(subject)) if subject else "halo-record"
-
     return (
-        '<style>%s</style>'
         '<div class="hp-card"><div class="hp-top">'
         '<div class="hp-eyebrow">Runtime Report &middot; Policy Corroboration</div>'
         '<div class="hp-h1">Verdict: <span style="color:%s">%s</span></div>'
         '<div class="hp-sub">%s</div></div>'
         '<div class="hp-rows">%s</div>'
         '<div class="hp-foot"><span>%s <b>No model judgment.</b></span><span>%s</span></div></div>'
-        % (_PANEL_CSS, vcolor, verdict, _html.escape(sub), "".join(rows),
-           _html.escape(_FOOT), subj))
-
-
-_FOOT = ("Each verdict is computed by deterministic rules over the record fields, "
-         "when this panel was generated.")
+        % (vcolor, verdict, _html.escape(sub), "".join(rows),
+           _html.escape(_FOOT_PAGE if in_page else _FOOT), subj))
 
 
 def render_html(result, subject=None):
