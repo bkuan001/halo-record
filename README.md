@@ -324,8 +324,8 @@ record_model_call(rec, provider="anthropic", model="claude-sonnet-4-6",
 
 The model is also sealed as `agent.model` and the retention terms as `data.zdr`,
 so the export's model column and policy rules can read them, and both survive
-`summaries=False`. Pass `messages=` and the record stores how many there were — a
-count, never their content.
+`summaries=False`. Pass `messages=` and the record's input carries how many there
+were — a count, never their content.
 
 ## Where this sits in a compliance stack
 
