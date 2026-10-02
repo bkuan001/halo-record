@@ -391,16 +391,25 @@ class _Handler(BaseHTTPRequestHandler):
 
     do_HEAD = do_GET
 
+    def send_response(self, *args, **kwargs):
+        self._response_started = True
+        return super().send_response(*args, **kwargs)
+
     def _guarded(self, handler):
         # A malformed request (odd bytes in the path, a bad form body) gets a
-        # plain 400, never a traceback or a dropped connection.
+        # plain 400, never a traceback. If a response had already started, the
+        # connection is closed instead of writing a second response into it.
+        self._response_started = False
         try:
             return handler()
         except Exception:
+            if self._response_started:
+                self.close_connection = True
+                return None
             try:
                 self._send(400, "Bad request.", "text/plain; charset=utf-8")
             except Exception:
-                pass
+                self.close_connection = True
             return None
 
     def log_message(self, fmt, *args):

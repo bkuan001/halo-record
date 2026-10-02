@@ -85,3 +85,9 @@ class LinearScrubTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class KeyNameScrubTest(unittest.TestCase):
+    def test_secret_bearing_key_names_are_scrubbed(self):
+        r = build("tool_call", "security", tool="t", data={SECRET: 1})
+        self.assertNotIn(SECRET, json.dumps(r))

@@ -47,9 +47,9 @@ PATTERNS = [
     # Often embedded in a URL path, where path-readable fields keep the rest.
     ("bot_token",    "HIGH",     re.compile(r'(?<![0-9])\d{8,10}:[A-Za-z0-9_-]{30,40}(?![A-Za-z0-9_-])')),
     ("bearer_token", "HIGH",     re.compile(r'Bearer\s+[a-zA-Z0-9\-_\.]{20,}')),
-    # Bounded quantifiers (RFC 5321 local part <= 64, label <= 63, at most 8
+    # Bounded quantifiers (RFC 5321 local part <= 64, label <= 63, at most 16
     # labels) keep this linear on hostile input such as "a." * 40000.
-    ("email",        "MEDIUM",   re.compile(r'\b[A-Za-z0-9._%+-]{1,64}@(?:[A-Za-z0-9-]{1,63}\.){1,8}[A-Za-z]{2,24}\b')),
+    ("email",        "MEDIUM",   re.compile(r'\b[A-Za-z0-9._%+-]{1,64}@(?:[A-Za-z0-9-]{1,63}\.){1,16}[A-Za-z]{2,24}\b')),
     ("ip_internal",  "MEDIUM",   re.compile(r'\b(10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(?:1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3})\b')),
     ("phone",        "MEDIUM",   re.compile(r'\b(?:\+?1[-.\s])?\(?\d{3}\)?[-.\s]\d{3}[-.\s]\d{4}\b')),
 ]

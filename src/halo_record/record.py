@@ -248,8 +248,15 @@ def _canon_safe(value):
     if isinstance(value, str):
         return _no_lone_surrogates(value)
     if isinstance(value, dict):
-        return {_no_lone_surrogates(k) if isinstance(k, str) else k: _canon_safe(v)
-                for k, v in value.items()}
+        out = {}
+        for k, v in value.items():
+            key = _no_lone_surrogates(k) if isinstance(k, str) else k
+            n = 2
+            while key in out:  # never let a normalized key overwrite another
+                key = "%s#%d" % (_no_lone_surrogates(k) if isinstance(k, str) else k, n)
+                n += 1
+            out[key] = _canon_safe(v)
+        return out
     if isinstance(value, (list, tuple)):
         return [_canon_safe(v) for v in value]
     return value
@@ -589,8 +596,8 @@ def build(action_type, category, tool=None, tool_input=None, *,
 
 # Fields the recorder itself produces or has already redacted; everything else
 # a caller can set is scrubbed before sealing.
-_SCRUB_SKIP = {"schema_version", "record_id", "ts", "integrity", "findings",
-               "authority", "severity", "source"}
+_SCRUB_SKIP = {"schema_version", "record_id", "ts", "integrity",
+               "authority", "severity"}
 # Fields that name a person or account: credentials are masked, but the email or
 # phone the field exists to carry is kept (an approver must stay identifiable).
 _IDENTITY_PATHS = {("action", "authorization", "approver"), ("subject", "name")}
@@ -599,16 +606,23 @@ _IDENTITY_PATHS = {("action", "authorization", "approver"), ("subject", "name")}
 def _scrub_fields(record):
     def walk(node, path):
         if isinstance(node, dict):
+            out = {}
             for k in list(node):
                 p = path + (k,)
-                if not path and k in _SCRUB_SKIP:
+                if (not path and k in _SCRUB_SKIP) or p in (
+                        ("subject", "id"), ("data", "pii_types"), ("data", "purpose"),
+                        ("action", "input"), ("outcome", "summary"), ("outcome", "hash"),
+                        ("action", "type"), ("action", "category")):
+                    out[k] = node[k]
                     continue
-                if p in (("subject", "id"), ("data", "pii_types"), ("data", "purpose"),
-                         ("action", "input"), ("outcome", "summary"), ("outcome", "hash"),
-                         ("action", "type"), ("action", "category")):
-                    continue
-                node[k] = walk(node[k], p)
-            return node
+                # Caller-chosen key names are scrubbed too; a collision keeps both.
+                key = k if not path or not isinstance(k, str) else mask_known_secrets(k)
+                n = 2
+                while key in out:
+                    key = "%s#%d" % (mask_known_secrets(k), n)
+                    n += 1
+                out[key] = walk(node[k], p)
+            return out
         if isinstance(node, list):
             return [walk(v, path) for v in node]
         if isinstance(node, str):
@@ -618,7 +632,9 @@ def _scrub_fields(record):
                 return mask_secrets_only(node)
             return mask_known_secrets(node) if _identifier_like(path) else redact_text(node)
         return node
-    walk(record, ())
+    scrubbed = walk(record, ())
+    record.clear()
+    record.update(scrubbed)
 
 
 _OPAQUE_ID = re.compile(
