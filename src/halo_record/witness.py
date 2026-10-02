@@ -45,6 +45,7 @@ from .anchor import Notary, checkpoint, _now
 WITNESS_FILE = "witness.jsonl"
 KEY_FILE = ".halo_witness_key"
 MAX_BODY = 8192
+MAX_COUNT = 10 ** 12
 DEFAULT_PORT = 8730
 
 _HEX64 = re.compile(r"^[0-9a-f]{64}$")
@@ -100,8 +101,9 @@ def _key_match(presented, keys):
     if not presented:
         return None
     found = None
+    given = presented.encode("utf-8", "replace")
     for entry in parse_key_spec(keys):
-        if hmac.compare_digest(presented, entry[0]):
+        if hmac.compare_digest(given, entry[0].encode("utf-8", "replace")):
             found = entry
     return found
 
@@ -132,8 +134,8 @@ def _clean_checkpoint(payload):
         if not isinstance(subject, str) or not _SUBJECT_RE.fullmatch(subject):
             raise ValueError("invalid subject")
     count = payload.get("count")
-    if not isinstance(count, int) or isinstance(count, bool) or count < 1:
-        raise ValueError("count must be a positive integer")
+    if not isinstance(count, int) or isinstance(count, bool) or not 1 <= count <= MAX_COUNT:
+        raise ValueError("count must be a positive integer no larger than %d" % MAX_COUNT)
     head = payload.get("head")
     if not isinstance(head, str) or not _HEX64.match(head):
         raise ValueError("head must be a 64-char sha-256 hex digest")
@@ -205,6 +207,9 @@ class _Handler(BaseHTTPRequestHandler):
             self.wfile.write(data)
 
     def do_GET(self):
+        return self._guarded(self._do_get)
+
+    def _do_get(self):
         parsed = urlparse(self.path)
         if parsed.path == "/healthz":
             return self._send(200, "ok", "text/plain; charset=utf-8")
@@ -232,6 +237,9 @@ class _Handler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def do_POST(self):
+        return self._guarded(self._do_post)
+
+    def _do_post(self):
         if urlparse(self.path).path != "/anchor":
             return self._send(404, {"error": "not found"})
 
@@ -241,15 +249,18 @@ class _Handler(BaseHTTPRequestHandler):
         if entry is None:
             return self._send(401, {"error": "unauthorized"})
 
-        length = int(self.headers.get("Content-Length") or 0)
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            return self._send(400, {"error": "bad Content-Length"})
         if length < 0 or length > MAX_BODY:
             return self._send(413, {"error": "payload too large"})
         raw = self.rfile.read(length) if length else b""
         try:
             payload = json.loads(raw.decode("utf-8"))
             cp = _clean_checkpoint(payload)
-        except (ValueError, UnicodeDecodeError) as exc:
-            return self._send(400, {"error": str(exc)})
+        except (ValueError, UnicodeDecodeError, RecursionError) as exc:
+            return self._send(400, {"error": str(exc)[:200]})
 
         keys = parse_key_spec(self.config["keys"])
         if len(keys) > 1 and entry[1] is None:
@@ -261,6 +272,25 @@ class _Handler(BaseHTTPRequestHandler):
         with self._lock():
             receipt = self.config["notary"].record_checkpoint(cp)
         return self._send(201, {"ok": True, "receipt": receipt})
+
+    def send_response(self, *args, **kwargs):
+        self._response_started = True
+        return super().send_response(*args, **kwargs)
+
+    def _guarded(self, handler):
+        # Malformed requests get a 400, never a traceback or a dropped connection.
+        self._response_started = False
+        try:
+            return handler()
+        except Exception:
+            if self._response_started:
+                self.close_connection = True
+                return None
+            try:
+                self._send(400, {"error": "bad request"})
+            except Exception:
+                self.close_connection = True
+            return None
 
     _default_lock = threading.Lock()
 

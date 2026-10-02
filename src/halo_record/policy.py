@@ -232,7 +232,15 @@ def evaluate_log(log_path, policy_path):
     computed over records that fail verification is not attestable."""
     from .verify import verify_log
     chain_verified = verify_log(log_path, out=lambda *_a, **_k: None)
-    result = evaluate(load_records(log_path), load_policy(policy_path))
+    policy = load_policy(policy_path)
+    try:
+        result = evaluate(load_records(log_path), policy)
+    except Exception:
+        if chain_verified:
+            raise
+        # An unverifiable log may not even have record shapes to evaluate.
+        result = {"compliant": False, "checked": 0, "violations": 0, "gaps": 0,
+                  "unexercised": 0, "rules": []}
     result["chain_verified"] = chain_verified
     if not chain_verified:
         result["compliant"] = False

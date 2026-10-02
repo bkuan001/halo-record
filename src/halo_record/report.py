@@ -790,10 +790,10 @@ _PAGINATE_JS = r"""
   try {
     RECORDS = JSON.parse(document.getElementById("records").textContent) || [];
   } catch (e) { RECORDS = []; }
-  var byId = {};
+  var byId = new Map();
   for (var ri = 0; ri < RECORDS.length; ri++){
     var rid = RECORDS[ri].record_id;
-    if (rid) byId[rid] = ri;
+    if (rid) byId.set(String(rid), ri);
   }
   var panel = document.getElementById("detail");
   var panelBody = document.getElementById("detail-body");
@@ -808,8 +808,8 @@ _PAGINATE_JS = r"""
     return '<div class="d-row"><div class="d-k">' + esc(label) + '</div>' +
            '<div class="d-v' + (mono ? " mono" : "") + '">' + esc(value) + '</div></div>';
   }
-  function openDetail(rid){
-    var idx = byId[rid];
+  function openDetail(rid, rowEl){
+    var idx = byId.get(String(rid));
     if (idx === undefined || !panel || !panelBody) return;
     var r = RECORDS[idx];
     var a = r.action || {}, auth = a.authorization || {}, o = r.outcome || {},
@@ -819,8 +819,8 @@ _PAGINATE_JS = r"""
     var linkOk = prev ? ((prev.integrity || {}).hash === integ.prev_hash) : null;
 
     var h = "";
-    h += '<div class="d-plain">' + esc(document.querySelector('tr[data-rid="' +
-         rid.replace(/"/g, "") + '"] td:nth-last-child(2)').textContent) + "</div>";
+    var plainCell = rowEl ? rowEl.querySelector("td:nth-last-child(2)") : null;
+    h += '<div class="d-plain">' + esc(plainCell ? plainCell.textContent : "") + "</div>";
     h += '<div class="d-sec">When</div>';
     h += field("Recorded at", stamp(r.ts) + (localMode ? " (your time)" : " (UTC)"));
     h += field("Sealed timestamp", r.ts, true);
@@ -894,12 +894,12 @@ _PAGINATE_JS = r"""
   }
   tbody.addEventListener("click", function(ev){
     var tr = ev.target.closest("tr[data-rid]");
-    if (tr) openDetail(tr.getAttribute("data-rid"));
+    if (tr) openDetail(tr.getAttribute("data-rid"), tr);
   });
   tbody.addEventListener("keydown", function(ev){
     if (ev.key !== "Enter" && ev.key !== " ") return;
     var tr = ev.target.closest("tr[data-rid]");
-    if (tr){ ev.preventDefault(); openDetail(tr.getAttribute("data-rid")); }
+    if (tr){ ev.preventDefault(); openDetail(tr.getAttribute("data-rid"), tr); }
   });
   if (panelClose) panelClose.addEventListener("click", closeDetail);
   document.addEventListener("keydown", function(ev){

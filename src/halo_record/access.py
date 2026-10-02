@@ -38,6 +38,7 @@ OTP_TTL = 600           # codes expire after 10 minutes
 OTP_MAX_ATTEMPTS = 5    # wrong guesses before a code is burned
 OTP_MAX_ISSUES = 5      # codes per (chain, email) per OTP_ISSUE_WINDOW
 OTP_ISSUE_WINDOW = 3600 # seconds
+OTP_MAX_ISSUES_PER_CHAIN = 30  # codes per report per OTP_ISSUE_WINDOW, across addresses
 OTP_LEN = 6
 
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
@@ -182,8 +183,16 @@ class OtpStore:
         key = (chain, email.strip().lower())
         now = time.time()
         with self._lock:
+            # Forget what has aged out, so the tables never grow without bound.
+            for k in [k for k, ts in self._issued.items()
+                      if all(now - t >= OTP_ISSUE_WINDOW for t in ts)]:
+                del self._issued[k]
+            for k in [k for k, v in self._d.items() if v["exp"] < now]:
+                del self._d[k]
             recent = [t for t in self._issued.get(key, []) if now - t < OTP_ISSUE_WINDOW]
-            if len(recent) >= OTP_MAX_ISSUES:
+            chain_total = sum(1 for (c, _e), ts in self._issued.items() if c == chain
+                              for t in ts if now - t < OTP_ISSUE_WINDOW)
+            if len(recent) >= OTP_MAX_ISSUES or chain_total >= OTP_MAX_ISSUES_PER_CHAIN:
                 self._issued[key] = recent
                 return None
             recent.append(now)

@@ -74,8 +74,12 @@ def verify_records(records, schema=None, out=None):
 def verify_log(path, schema=None, out=print):
     # JSON Lines are separated by "\n" only; U+2028/U+2029/U+0085 are legal
     # inside JSON strings and must not split a record.
-    with open(path, "r", encoding="utf-8") as fh:
-        lines = [ln for ln in fh.read().split("\n") if ln.strip()]
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            lines = [ln for ln in fh.read().split("\n") if ln.strip()]
+    except UnicodeDecodeError as e:
+        out("FAIL: log is not valid UTF-8 (%s)" % e)
+        return False
     return _verify_lines(lines, schema, out)
 
 
@@ -99,6 +103,27 @@ def _verify_lines(lines, schema, out):
         except json.JSONDecodeError as e:
             out("record %d: not valid JSON: %s" % (n, e))
             ok = False
+            continue
+        if not isinstance(record, dict):
+            out("record %d: not a JSON object" % n)
+            ok = False
+            chain_ok = False
+            if chain_broken_at is None:
+                chain_broken_at = n
+            continue
+        shape_ok = True
+        if not isinstance(record.get("integrity", {}), dict):
+            out("record %d: integrity is not an object" % n)
+            shape_ok = False
+        for key in ("record_id", "parent_id"):
+            if key in record and not isinstance(record[key], str):
+                out("record %d: %s is not a string" % (n, key))
+                shape_ok = False
+        if not shape_ok:
+            ok = False
+            chain_ok = False
+            if chain_broken_at is None:
+                chain_broken_at = n
             continue
 
         for err in validate_record(record, schema):

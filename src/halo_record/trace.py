@@ -46,7 +46,7 @@ def _profile_log_name(profile):
     import hashlib
     raw = str(profile)
     safe = _safe(raw)
-    if safe != raw:
+    if safe != raw or raw != raw.lower():
         safe = "%s~%s" % (safe, hashlib.sha256(raw.encode("utf-8")).hexdigest()[:24])
     return safe + ".jsonl"
 
@@ -60,9 +60,6 @@ def _make_recorder(profile, log, directory):
         home = os.path.expanduser(DEFAULT_HOME)
         os.makedirs(home, exist_ok=True)
         log = os.path.join(home, _profile_log_name(profile))
-        legacy = os.path.join(home, _safe(profile) + ".jsonl")
-        if not os.path.exists(log) and os.path.exists(legacy) and legacy != log:
-            log = legacy  # keep appending to a log written before digested names
     else:
         log = os.path.expanduser(log)
         parent = os.path.dirname(log)
