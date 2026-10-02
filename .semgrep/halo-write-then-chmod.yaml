@@ -1,0 +1,45 @@
+rules:
+  - id: halo-write-then-chmod
+    languages: [python]
+    severity: HIGH
+    message: >-
+      File '$PATH' is created with open() (default umask, typically 0o644) and
+      only restricted afterwards with os.chmod(). Between the two calls the
+      secret is readable by other local users. Create it with restrictive
+      permissions atomically instead:
+      fd = os.open($PATH, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600);
+      with os.fdopen(fd, "w") as f: ...
+    metadata:
+      cwe: "CWE-732: Incorrect Permission Assignment for Critical Resource"
+      category: security
+    patterns:
+      - pattern-either:
+          - pattern: |
+              with open($PATH, $MODE, ...) as $F:
+                  ...
+              ...
+              os.chmod($PATH, $PERM)
+          - pattern: |
+              with open($PATH, $MODE, ...) as $F:
+                  ...
+                  os.chmod($PATH, $PERM)
+                  ...
+          - pattern: |
+              $F = open($PATH, $MODE, ...)
+              ...
+              os.chmod($PATH, $PERM)
+          - pattern: |
+              $P.write_text(...)
+              ...
+              os.chmod($P, $PERM)
+          - pattern: |
+              $P.write_bytes(...)
+              ...
+              os.chmod($P, $PERM)
+          - pattern: |
+              $P.write_text(...)
+              ...
+              $P.chmod($PERM)
+      - metavariable-regex:
+          metavariable: $PERM
+          regex: ^(0o?[0-7]00|384|448|stat\.S_IRUSR.*)$

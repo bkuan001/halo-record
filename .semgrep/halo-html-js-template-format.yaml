@@ -1,0 +1,32 @@
+rules:
+  - id: halo-html-js-template-format
+    languages: [python]
+    severity: MEDIUM
+    message: >-
+      String formatting into an HTML/JS template ('$TPL'). Values interpolated
+      with %, .format() or f-strings are not escaped for HTML or JavaScript
+      context. Escape with html.escape() / json.dumps() at the interpolation
+      site, or build the payload as data (e.g. a JSON blob) instead of code.
+    metadata:
+      cwe: "CWE-79: Improper Neutralization of Input During Web Page Generation"
+      category: security
+    pattern-either:
+      # TEMPLATE_JS % (...)  /  REPORT_HTML.format(...)
+      - patterns:
+          - pattern-either:
+              - pattern: $TPL % $ARGS
+              - pattern: $TPL.format(...)
+          - metavariable-regex:
+              metavariable: $TPL
+              regex: (?i)^.*(_js|html)
+      # html = "..." % x  /  html = "...".format(x)  /  page_html = f"...{x}..."
+      - patterns:
+          - pattern-either:
+              - pattern: $VAR = $STR % $ARGS
+              - pattern: $VAR = $STR.format(...)
+              - pattern: $VAR = f"..."
+              - pattern: $VAR += f"..."
+              - pattern: $VAR += $STR % $ARGS
+          - metavariable-regex:
+              metavariable: $VAR
+              regex: (?i)^.*(_js|html)
