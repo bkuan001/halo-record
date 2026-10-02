@@ -23,7 +23,7 @@ import inspect
 
 from .canon import input_hash
 from .record import build
-from .redact import path_value
+from .redact import CREDENTIAL_MASK, credential_value, path_value
 from .session import current_recorder, current_agent
 
 
@@ -42,8 +42,11 @@ def _extract_text(obj, depth=0):
         # high-entropy secrets. Leave them out of the response summary.
         parts = []
         for k, v in obj.items():
-            if isinstance(v, (list, tuple)):
-                kept = [el for el in v if not path_value(k, el)]
+            if credential_value(k, v):
+                parts.append(CREDENTIAL_MASK)  # a credential-named field, masked whole
+            elif isinstance(v, (list, tuple)):
+                kept = [CREDENTIAL_MASK if credential_value(k, el) else el
+                        for el in v if not path_value(k, el)]
                 parts.append(_extract_text(kept, depth + 1))
             elif not path_value(k, v):
                 parts.append(_extract_text(v, depth + 1))

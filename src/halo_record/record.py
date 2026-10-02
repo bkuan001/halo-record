@@ -20,7 +20,7 @@ except ImportError:  # pragma: no cover
     fcntl = None
 
 from .canon import GENESIS_PREV, canon, compute_hash, input_hash, sha256_hex
-from .redact import SEVERITY_RANK, mask_known_secrets, mask_secrets_only, redact_fields, redact_text, scan, scan_fields, top_severity
+from .redact import CREDENTIAL_MASK, SEVERITY_RANK, credential_value, mask_known_secrets, mask_secrets_only, redact_fields, redact_text, scan, scan_fields, top_severity
 
 SCHEMA_VERSION = "0.1"
 
@@ -657,7 +657,13 @@ def _scrub_fields(record):
                 while key in out:
                     key = "%s#%d" % (mask_known_secrets(k), n)
                     n += 1
-                out[key] = walk(node[k], p)
+                if credential_value(k, node[k]):
+                    out[key] = CREDENTIAL_MASK  # a credential-named field, masked whole
+                elif isinstance(node[k], list):
+                    out[key] = [CREDENTIAL_MASK if credential_value(k, el) else walk(el, p)
+                                for el in node[k]]
+                else:
+                    out[key] = walk(node[k], p)
             return out
         if isinstance(node, list):
             return [walk(v, path) for v in node]
