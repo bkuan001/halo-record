@@ -566,3 +566,56 @@ class ServeKeyedByChainTest(unittest.TestCase):
         key, path = h._resolve(token_for(h.config["secret"], "acme_eu"))
         self.assertEqual(key, "acme_eu")
         self.assertEqual(os.path.abspath(path), os.path.abspath(live))
+
+
+def _doc(name):
+    with open(os.path.join(ROOT, name), encoding="utf-8") as fh:
+        return fh.read()
+
+
+class PreciseWordingTest(unittest.TestCase):
+    def test_framework_docs_scope_the_record_to_its_capture_surface(self):
+        for name in ("OWASP.md", "ATC.md"):
+            text = _doc(name)
+            self.assertNotIn("proves what happened", text, name)
+            self.assertIn("declared capture surface", text, name)
+
+    def test_reviewers_guide_matches_the_cli(self):
+        text = _doc("REVIEWERS.md")
+        self.assertNotIn("let it.", text)
+        self.assertIn("--expect-subject", text)
+        self.assertIn("--remote", text)
+        self.assertIn("halo verify", text)
+        self.assertNotIn("No account, no key", text)
+
+    def test_audit_partner_line_is_singular_and_carries_no_percentage(self):
+        text = _doc("AIUC.md")
+        self.assertNotIn("Audit partners", text)
+        self.assertNotIn("25%", text)
+        self.assertIn("An audit partner we've worked with mapped halo-record against AIUC-1 "
+                      "and estimated it can directly evidence part of an audit", text)
+
+    def test_contact_addresses_agree(self):
+        pat = r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+"
+        sec = re.findall(pat, _doc("SECURITY.md"))[0]
+        found = re.findall(pat, _doc("AIUC.md"))
+        self.assertTrue(found)
+        for addr in found:
+            self.assertEqual(addr, sec)
+
+    def test_readme_describes_what_the_page_verifies(self):
+        text = _doc("README.md")
+        self.assertNotIn("self-verifying HTML page", text)
+
+    def test_shipped_source_states_limits_without_overclaiming(self):
+        for rel in ("src/halo_record/anchor.py", "src/halo_record/witness.py"):
+            self.assertNotIn("guarantee on its own", _doc(rel))
+            self.assertNotIn("complete guarantee", _doc(rel))
+        for rel in ("src/halo_record/report.py", "src/halo_record/_view.py",
+                    "src/halo_record/policy.py", "src/halo_record/export.py",
+                    "src/halo_record/anchor.py", "src/halo_record/witness.py",
+                    "src/halo_record/serve.py", "src/halo_record/cli.py",
+                    "src/halo_record/access.py"):
+            self.assertNotIn("honest", _doc(rel).lower(), rel)
+            self.assertNotIn("saw the call as it happened", _doc(rel), rel)
+            self.assertNotIn("verified at generation", _doc(rel), rel)

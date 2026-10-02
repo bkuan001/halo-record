@@ -7,11 +7,16 @@ You've been handed halo-record output as evidence — in a security review, an a
 ```
 pip install halo-record                      # zero dependencies; the whole install
 halo verify audit.jsonl                      # integrity: nothing edited (exit 0 = pass, 1 = fail)
-halo anchor audit.jsonl witness.jsonl --check  # completeness against a witness (exit 0 = complete, 1 = incomplete, 3 = unwitnessed)
-halo report audit.jsonl -o report.html       # the report re-verifies itself in your browser
+halo anchor audit.jsonl --remote https://<witness> --check --expect-subject <customer-id>
+                                             # completeness, fetched from the witness yourself, under the
+                                             # customer id YOU expect (0 = complete, 1 = incomplete, 3 = unwitnessed)
+halo report audit.jsonl -o report.html --expect-subject <customer-id> --witness-url https://<witness>
+                                             # your own render of the report from the JSONL
 ```
 
-No account, no key, no network access required for integrity — and verification is recomputation, not attestation: if you'd rather not run this code at all, recompute the SHA-256 chain with any implementation on earth. The chain format is documented in the schema (`halo-record.schema.json`).
+With a local witness file instead of a hosted one: `halo anchor audit.jsonl witness.jsonl --check --expect-subject <customer-id>`. Always pass `--expect-subject`: the subject id inside the records is written by the vendor, so a re-keyed chain would otherwise pick its own witness lookup.
+
+Integrity needs no account and no network. `--check` against a hosted witness needs no vendor key; a witness that scopes its reads asks for a read key (`--key`). Verification is recomputation, not attestation: if you'd rather not run this code at all, recompute the SHA-256 chain with any implementation on earth. The chain format is documented in the schema (`halo-record.schema.json`).
 
 For a checkpoint's RFC 3161 timestamp, validate the TSA signature with a standard tool — the exact `openssl ts -verify` recipe is in the [README](README.md) (this library deliberately checks only that the token binds the chain state; the signature check is yours, through a tool that owes us nothing).
 
@@ -26,7 +31,7 @@ For a checkpoint's RFC 3161 timestamp, validate the TSA signature with a standar
 
 - A verify run performed by the producer, on the producer's machine, with results relayed to you. Run it yourself; that's the point.
 - Checkpoints presented by the operator rather than fetched from the witness.
-- "The report says verified" without opening the report — it re-verifies in-browser; let it.
+- A report page the vendor rendered, as your verification. It runs code supplied with the report; edit that code and it can say anything. Verify the JSONL yourself with `halo verify` (and `halo anchor … --check`), and render your own report from it if you want the page.
 - Any claim beyond the claims table at the top of the README. If the words say more than the table, the table wins — and [LIMITS.md](LIMITS.md) wins over both.
 
 ## Citing halo-record evidence
