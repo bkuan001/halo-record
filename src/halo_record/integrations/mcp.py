@@ -20,6 +20,8 @@ the session already has, so this adapter has no dependency of its own and works
 across SDK versions. Recording is best-effort and never breaks the tool call.
 """
 
+import sys
+
 from ._common import record_tool_call
 
 _AGENT = {"id": "mcp", "name": "mcp-client"}
@@ -74,19 +76,29 @@ def instrument_client_session(session, recorder, *, server="mcp", agent=None,
     if original is None or getattr(original, "_halo_wrapped", False):
         return session
 
+    def record(**kw):
+        # The tool has already run (or already failed). A recording failure is
+        # reported, never raised: raising here would turn a completed call into
+        # an exception, and a retry would repeat the tool's side effects.
+        try:
+            record_mcp_call(recorder, server=server, agent=agent,
+                            session_id=session_id, subject=subject,
+                            summaries=summaries, **kw)
+        except Exception as exc:
+            sys.stderr.write(
+                "halo-record: could not record MCP tool call %r (%s: %s); the "
+                "call's result is returned unchanged\n"
+                % (kw.get("name"), type(exc).__name__, exc))
+
     if asyncio.iscoroutinefunction(original):
         @functools.wraps(original)
         async def wrapper(name, arguments=None, *args, **kwargs):
             try:
                 result = await original(name, arguments, *args, **kwargs)
             except Exception as exc:  # record the failure, then re-raise
-                record_mcp_call(recorder, name, arguments, error=exc,
-                                server=server, agent=agent, session_id=session_id,
-                                subject=subject, summaries=summaries)
+                record(name=name, arguments=arguments, error=exc)
                 raise
-            record_mcp_call(recorder, name, arguments, response=result,
-                            server=server, agent=agent, session_id=session_id,
-                            subject=subject, summaries=summaries)
+            record(name=name, arguments=arguments, response=result)
             return result
     else:
         @functools.wraps(original)
@@ -94,13 +106,9 @@ def instrument_client_session(session, recorder, *, server="mcp", agent=None,
             try:
                 result = original(name, arguments, *args, **kwargs)
             except Exception as exc:
-                record_mcp_call(recorder, name, arguments, error=exc,
-                                server=server, agent=agent, session_id=session_id,
-                                subject=subject, summaries=summaries)
+                record(name=name, arguments=arguments, error=exc)
                 raise
-            record_mcp_call(recorder, name, arguments, response=result,
-                            server=server, agent=agent, session_id=session_id,
-                            subject=subject, summaries=summaries)
+            record(name=name, arguments=arguments, response=result)
             return result
 
     wrapper._halo_wrapped = True

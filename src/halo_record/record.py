@@ -19,7 +19,7 @@ try:  # POSIX inter-process append lock; on other platforms appends are
 except ImportError:  # pragma: no cover
     fcntl = None
 
-from .canon import GENESIS_PREV, canon, compute_hash, input_hash, sha256_hex
+from .canon import CIRCULAR, GENESIS_PREV, MAX_DEPTH, TOO_DEEP, canon, compute_hash, input_hash, json_key, sha256_hex
 from .redact import CREDENTIAL_MASK, SEVERITY_RANK, credential_value, mask_known_secrets, mask_secrets_only, pseudonymize_secrets, redact_fields, redact_text, scan, scan_fields, top_severity
 
 SCHEMA_VERSION = "0.1"
@@ -222,7 +222,7 @@ def _pii_types_from_findings(findings):
 _MAX_EXACT_JSON_INT = 2**53 - 1
 
 
-def _canon_safe(value):
+def _canon_safe(value, _depth=0, _active=None):
     """Recursively make a value safe for RFC 8785 canonicalization, which permits
     only integer-valued numbers. A non-integer float is preserved as a string
     instead of crashing the recorder when the record is hashed, and an integer
@@ -247,18 +247,31 @@ def _canon_safe(value):
         return str(value)
     if isinstance(value, str):
         return _no_lone_surrogates(value)
-    if isinstance(value, dict):
-        out = {}
-        for k, v in value.items():
-            key = _no_lone_surrogates(k) if isinstance(k, str) else k
-            n = 2
-            while key in out:  # never let a normalized key overwrite another
-                key = "%s#%d" % (_no_lone_surrogates(k) if isinstance(k, str) else k, n)
-                n += 1
-            out[key] = _canon_safe(v)
-        return out
-    if isinstance(value, (list, tuple)):
-        return [_canon_safe(v) for v in value]
+    if isinstance(value, (dict, list, tuple)):
+        # A cycle or runaway nesting in caller data is marked, not recursed
+        # into, so it can neither crash the recorder nor the host.
+        if _depth >= MAX_DEPTH:
+            return TOO_DEEP
+        _active = _active if _active is not None else set()
+        if id(value) in _active:
+            return CIRCULAR
+        _active.add(id(value))
+        try:
+            if isinstance(value, dict):
+                out = {}
+                for k, v in value.items():
+                    # Keys become strings the way a JSON encoder writes them.
+                    base = _no_lone_surrogates(json_key(k))
+                    key = base
+                    n = 2
+                    while key in out:  # never let a normalized key overwrite another
+                        key = "%s#%d" % (base, n)
+                        n += 1
+                    out[key] = _canon_safe(v, _depth + 1, _active)
+                return out
+            return [_canon_safe(v, _depth + 1, _active) for v in value]
+        finally:
+            _active.discard(id(value))
     return value
 
 
@@ -525,6 +538,7 @@ def build(action_type, category, tool=None, tool_input=None, *,
     if outcome is not None:
         outcome = dict(outcome)
         outcome_scan = outcome.pop("_scan", None)
+        outcome = _canon_safe(outcome)
         if "summary" in outcome and outcome["summary"] is not None:
             outcome_summary_raw = str(outcome["summary"])
         if not summaries:
@@ -590,7 +604,7 @@ def build(action_type, category, tool=None, tool_input=None, *,
     if source is not None:
         record["source"] = source
     if authority is not None:
-        record["authority"] = _sanitize_authority(authority)
+        record["authority"] = _sanitize_authority(_canon_safe(authority))
     threats = _norm_threats(threats)
     if threats is not None:
         record["threats"] = threats
@@ -934,6 +948,11 @@ class Recorder:
         return record
 
 
+# File-name budget: 255 bytes less the ".jsonl.lock" sidecar suffix. Cleaned
+# names are ASCII, so characters are bytes.
+_NAME_MAX = 255 - len(".jsonl.lock")
+_NAME_CUT = 128
+
 _ASCII_NAME_CHARS = frozenset(
     "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_.")
 
@@ -988,9 +1007,22 @@ class TenantRecorder:
         # Uppercase also takes a digest: case-insensitive filesystems (macOS,
         # Windows) would otherwise store "ACME" and "acme" in one file.
         if (safe != raw or raw != raw.lower()) and subject_id != self.default:
-            digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()[:24]
-            safe = "%s~%s" % (safe, digest)
+            safe = self._digested(raw)
+        elif len(safe) > _NAME_MAX:
+            safe = self._digested(raw)
         return os.path.join(self.directory, safe + ".jsonl")
+
+    @classmethod
+    def _digested(cls, raw):
+        """``<cleaned>~<digest>``; a long cleaned name is cut so the file name
+        (with its ``.jsonl.lock`` sidecar) fits a 255-byte file-name limit. The
+        digest of the full id keeps two long ids that share a prefix apart.
+        Names that already fit are unchanged."""
+        safe = cls._safe_ascii(raw)
+        digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()[:24]
+        if len(safe) + 1 + len(digest) > _NAME_MAX:
+            safe = safe[:_NAME_CUT]
+        return "%s~%s" % (safe, digest)
 
     def chain_path_for(self, subject_id):
         """The file this recorder actually appends to for ``subject_id`` — the
@@ -1043,8 +1075,7 @@ class TenantRecorder:
                 # Continue this subject in its own digested chain rather than
                 # raise into the agent, and say so.
                 raw = str(subject_id)
-                alt = os.path.join(self.directory, "%s~%s.jsonl" % (
-                    self._safe_ascii(raw), hashlib.sha256(raw.encode("utf-8")).hexdigest()[:24]))
+                alt = os.path.join(self.directory, self._digested(raw) + ".jsonl")
                 if self._file_subjects(alt) - expected:
                     raise ValueError("halo-record: %s and %s both hold records for other "
                                      "subjects; refusing to mix tenants" % (path, alt))
