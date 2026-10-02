@@ -343,12 +343,16 @@ action did not execute. And `policy_ref` is only as strong as its resolution:
 a content hash of a retained ruleset can be produced and compared; an
 unresolvable label cannot.
 
-A gate's `blocked` does not outrank the recorded outcome. When a record says
-`verification.status: blocked` (or `authorization.decision: denied`) and its
-outcome is recorded as `ok`, the report shows both ("Gate reported blocked;
-outcome recorded: ok") and prefers neither. The starter packs' egress rules
-take a record out of scope only when its outcome is recorded as `denied`, so a
-gate's report alone never removes a record from an egress check.
+A gate's `blocked` does not outrank the recorded outcome. The report reads a
+record as stopped ("Blocked by gate", "Denied") only when its outcome is
+recorded as `denied`. When a record says `verification.status: blocked` (or
+`authorization.decision: denied`) and its outcome is recorded as `ok` or
+`error`, or not recorded at all, the report shows both ("Gate reported
+blocked; outcome recorded: error", "Decision recorded denied; outcome not
+recorded") and prefers neither. The starter packs' egress rules draw the same
+line: they take a record out of scope only when its outcome is recorded as
+`denied`, so a gate's report alone never removes a record from an egress
+check, and the page never calls a record blocked that the egress rule counts.
 
 **What you say to a reviewer:** "`verification.status` is the named gate's own
 report of its decision, written by the operator's integration and sealed so it

@@ -278,21 +278,31 @@ def _squash(s):
     return " ".join(p for p in _PY_WS.split(s) if p)
 
 
+def _recorded(out):
+    status = out.get("status")
+    if isinstance(status, str) and status:
+        return "outcome recorded: " + status
+    return "outcome not recorded"
+
+
 def _gate(r):
-    """'Blocked by gate' / 'Denied' when the record says the action was stopped.
-    A gate's "blocked" is its own report: when the outcome records the action
-    as ok, both are shown and neither is preferred (LIMITS section 11)."""
+    """How the page states a gate's "blocked" or a "denied" decision.
+
+    Only an outcome recorded as denied reads as stopped ("Blocked by gate",
+    "Denied"), the same line the starter packs' egress rules draw. A gate's
+    "blocked" or a decision of "denied" is the reporting layer's claim: with an
+    outcome of ok or error, or none, both are shown and neither is preferred
+    (LIMITS section 11)."""
     action = _dict(r.get("action"))
     auth = _dict(action.get("authorization"))
     ver = _dict(r.get("verification"))
     out = _dict(r.get("outcome"))
+    stopped = out.get("status") == "denied"
     if ver.get("status") == "blocked":
-        if out.get("status") == "ok":
-            return "Gate reported blocked; outcome recorded: ok"
-        return "Blocked by gate"
-    if auth.get("decision") == "denied" or out.get("status") == "denied":
-        if out.get("status") == "ok":
-            return "Decision recorded denied; outcome recorded: ok"
+        return "Blocked by gate" if stopped else "Gate reported blocked; " + _recorded(out)
+    if auth.get("decision") == "denied":
+        return "Denied" if stopped else "Decision recorded denied; " + _recorded(out)
+    if stopped:
         return "Denied"
     return None
 
@@ -326,7 +336,7 @@ def plain(r):
     detail = _squash(detail)
     gate = _gate(r)
     if gate:
-        sep = " \u2014 " if gate.endswith(": ok") else ": "
+        sep = " \u2014 " if "; outcome" in gate else ": "
         return ("%s%s%s \u2014 %s" % (gate, sep, tool, detail)) if detail else ("%s%s%s" % (gate, sep, tool))
     if not detail:
         o = _dict(r.get("outcome")).get("summary")
@@ -881,14 +891,16 @@ var HaloView = (function(){
   }
 
   /* --- plain-language summary (mirror _view.plain) --- */
+  function recorded(out){
+    return (typeof out.status === "string" && out.status) ? "outcome recorded: " + out.status
+                                                          : "outcome not recorded";
+  }
   function gate(r){
     var action = dict(r.action), auth = dict(action.authorization),
-        ver = dict(r.verification), out = dict(r.outcome);
-    if (ver.status === "blocked")
-      return out.status === "ok" ? "Gate reported blocked; outcome recorded: ok" : "Blocked by gate";
-    if (auth.decision === "denied" || out.status === "denied")
-      return out.status === "ok" ? "Decision recorded denied; outcome recorded: ok" : "Denied";
-    return null;
+        ver = dict(r.verification), out = dict(r.outcome), stopped = out.status === "denied";
+    if (ver.status === "blocked") return stopped ? "Blocked by gate" : "Gate reported blocked; " + recorded(out);
+    if (auth.decision === "denied") return stopped ? "Denied" : "Decision recorded denied; " + recorded(out);
+    return stopped ? "Denied" : null;
   }
   function plain(r){
     var action = dict(r.action);
@@ -909,7 +921,7 @@ var HaloView = (function(){
     detail = squash(detail);
     var g = gate(r);
     if (g){
-      var sep = g.slice(-4) === ": ok" ? " \u2014 " : ": ";
+      var sep = g.indexOf("; outcome") >= 0 ? " \u2014 " : ": ";
       return detail ? (g + sep + tool + " \u2014 " + detail) : (g + sep + tool);
     }
     if (!detail){
