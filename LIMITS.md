@@ -1,7 +1,7 @@
 # halo-record — Architectural Limits
 
 What halo-record does not do, by design. These are boundaries, documented so a
-reviewer can evaluate the system honestly. Each one states what holds, what
+reviewer can evaluate the system on its own terms. Each one states what holds, what
 does not, and what to say when an assessor asks.
 
 ---
@@ -549,3 +549,29 @@ those records stay where they are, the subject's new records start their own
 chain in its digested file (`<name>~<digest>.jsonl`), and the recorder says so
 on stderr, naming both files. Verify and report the two files separately; the
 new chain starts at genesis and does not link to the earlier records.
+
+---
+
+## 18. A record that cannot be written is reported, not raised
+
+Records are written after the action runs; halo-record never blocks an action
+on its record, and writing before the action is not offered. When an append
+fails (disk full, permissions, a lock held past its timeout), `trace()`,
+`record_call`, `@record`, the OpenAI Agents, LangChain, LiteLLM and OTel
+adapters, the MCP wrapper and `halo hook` pass the action's own result or
+exception through unchanged and print one line to stderr:
+
+    halo-record: FAILED to record '<tool>' (<ErrorType>: <message>); the action ran, but its record is NOT in the evidence log. The action's own result or error is passed through unchanged (set HALO_STRICT_RECORDING=1 to raise instead).
+
+The chain itself cannot show a record that was never written: the remaining
+records still verify. Witness checkpoints on a cadence are what reveal a
+stalled chain (section 1).
+
+`strict_recording=True`, or `HALO_STRICT_RECORDING=1` in the environment,
+raises the recording error instead. The action has already happened by then; a
+caller that reads the error as a failed action and retries repeats the action.
+
+**What you say to a reviewer:** "A failed write is reported on stderr and the
+action's outcome is unchanged; the chain has a gap there that only a witness
+cadence or the stderr log reveals. Strict mode turns that into an error at the
+cost of a possible repeated action."

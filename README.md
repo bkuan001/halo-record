@@ -237,12 +237,11 @@ One chain, one writer at a time. A chain is a linked list: two writers that read
 
 ## When recording fails
 
-The two integration styles fail in opposite directions, on purpose — pick the one whose failure you can live with:
+Records are written after the action runs. Halo does not block an action when its record cannot be written; writing the record before the action is not offered.
 
-- **Framework adapters (LangChain, hooks via callback managers) fail open.** If a record cannot be written (disk full, permissions), the agent's action completes normally and the record is lost. The LangChain handler prints a loud warning to stderr and counts the loss (`handler.lost_records`), but nothing in the chain itself can show a record that was never written — a stalled chain still verifies. Witness checkpoints on a cadence are what make a stalled chain visible: an expected checkpoint that never arrives is the alarm.
-- **The native `trace()` wrapper fails closed.** If the record cannot be written, the exception propagates into the agent's action — no evidence, no action. Stricter, and it can interrupt your agent.
-
-Neither default is right for everyone; know which one you are running.
+- **Default: the action's result passes through.** If a record cannot be written (disk full, permissions, a lock timeout), `trace()`, `record_call`, `@record`, the framework adapters (OpenAI Agents, LangChain, LiteLLM, OpenTelemetry), the MCP wrapper and `halo hook` return the action's own result unchanged, or re-raise the action's own exception if it failed. A warning on stderr names the missing record: `halo-record: FAILED to record '<tool>' (<error>); the action ran, but its record is NOT in the evidence log. ...`. The LangChain handler and the OTel exporter also count losses (`lost_records`). Nothing in the chain can show a record that was never written, so a stalled chain still verifies; witness checkpoints on a cadence make it visible, because an expected checkpoint that never arrives is the alarm.
+- **Strict mode raises instead.** Pass `strict_recording=True` (to `trace`, `record_call`, `@record`, `instrument_client_session`, or an adapter's constructor), or set `HALO_STRICT_RECORDING=1`, and the recording error is raised to the caller. The action has already run when it is raised, so a caller that treats the error as "the action failed" and retries will repeat the action's side effects (a refund issued twice). Use strict mode only where a missing record is worse than that risk.
+- `record_call` and `@record` with no recorder (none passed, none bound by `trace`) raise `RuntimeError` before the wrapped code runs.
 
 ## Integrity vs. completeness (read this part)
 
