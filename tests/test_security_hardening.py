@@ -61,6 +61,19 @@ class TenantIsolationTest(unittest.TestCase):
             fh.write(b'\xff\xfe[]\n')
         TenantRecorder(d).append(build("tool_call", "security", tool="b", subject="initech"))
 
+    def test_empty_subject_id_counts_as_default(self):
+        d = tempfile.mkdtemp()
+        tr = TenantRecorder(d)
+        tr.append(build("tool_call", "security", tool="a"))
+        with open(tr.path_for("_local"), "a", encoding="utf-8") as fh:
+            fh.write('{"subject": {"id": ""}}\n')
+        TenantRecorder(d).append(build("tool_call", "security", tool="b"))
+
+    def test_purpose_is_capped(self):
+        d = tempfile.mkdtemp()
+        rec = Recorder(os.path.join(d, "m.jsonl"))
+        self.assertEqual(len(record_model_call(rec, provider="a", model="m", purpose="p" * 501)["data"]["purpose"]), 500)
+
     def test_refuses_a_file_holding_another_subject(self):
         d = tempfile.mkdtemp()
         tr = TenantRecorder(d)

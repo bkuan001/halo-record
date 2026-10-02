@@ -815,7 +815,9 @@ class TenantRecorder:
                     continue
                 subj = rec.get("subject")
                 sid = subj.get("id") if isinstance(subj, dict) else None
-                if sid is not None and not isinstance(sid, (str, int, float, bool)):
+                if not sid:
+                    sid = None  # same truthiness rule as _subject_id: falsy = default
+                elif not isinstance(sid, (str, int, float, bool)):
                     sid = json.dumps(sid, sort_keys=True)
                 found.add(sid)
         return found
