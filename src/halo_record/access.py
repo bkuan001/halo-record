@@ -41,7 +41,11 @@ OTP_ISSUE_WINDOW = 3600 # seconds
 OTP_MAX_ISSUES_PER_CHAIN = 30  # codes per report per OTP_ISSUE_WINDOW, across addresses
 OTP_LEN = 6
 
-_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+# Deliberately narrower than RFC 5322: an address that passes may be shown in
+# an operator page or a downstream tool, so no markup or quote characters.
+_EMAIL_RE = re.compile(
+    r"^[A-Za-z0-9._%+-]{1,64}@"
+    r"(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}\Z")
 
 
 def _access_path(directory):
@@ -82,6 +86,16 @@ def email_ok(email):
     return bool(email) and len(email) <= 254 and bool(_EMAIL_RE.match(email))
 
 
+_DOMAIN_RE = re.compile(
+    r"^(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}\Z")
+
+
+def recipient_ok(entry):
+    """A grant entry: an exact address or a bare domain."""
+    entry = (entry or "").strip().lstrip("@")
+    return email_ok(entry) if "@" in entry else bool(_DOMAIN_RE.match(entry))
+
+
 def is_allowed(email, allow):
     """Match an email against an allow list of exact addresses and/or domains."""
     if not email_ok(email):
@@ -99,7 +113,10 @@ def is_allowed(email, allow):
 
 
 def capture_lead(directory, email, chain, subject=None, extra=None):
-    """Append one captured lead. Best-effort; never raises into the request path."""
+    """Append one captured lead. Best-effort; never raises into the request path.
+    An address that does not pass ``email_ok`` is not recorded."""
+    if not email_ok((email or "").strip()):
+        return None
     rec = {
         "email": email.strip().lower(),
         "chain": chain,

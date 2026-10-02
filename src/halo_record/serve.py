@@ -48,6 +48,63 @@ def _chains(directory):
     return out
 
 
+def _file_subject(path):
+    """The single subject id a chain file holds, or None (subjectless, mixed,
+    or not a plain string)."""
+    from .record import TenantRecorder
+    found = TenantRecorder._file_subjects(path)
+    if len(found) == 1:
+        (sid,) = found
+        if isinstance(sid, str) and sid:
+            return sid
+    return None
+
+
+def _served_chains(directory):
+    """(key, path) for each servable chain. A file holding exactly one subject
+    is keyed by that subject id; any other file by its stem. Share links,
+    grants, sessions, and leads all use the key, so they follow a customer's
+    chain when its file name changes (for example a subject whose records
+    continue in a new file after an upgrade) instead of pinning a frozen file.
+    When several files carry one subject, the file the recorder appends to
+    now is served."""
+    from .record import TenantRecorder
+    groups = {}
+    for stem, path in _chains(directory):
+        sid = _file_subject(path)
+        groups.setdefault(sid if sid is not None else stem, []).append((sid, path))
+    out = []
+    tr = TenantRecorder(directory)
+    for key, entries in groups.items():
+        single = [p for sid, p in entries if sid is not None]
+        if not single:
+            out.append((key, entries[0][1]))
+            continue
+        if len(single) == 1:
+            out.append((key, single[0]))
+            continue
+        import hashlib
+        prefer = [tr.path_for(key),
+                  os.path.join(directory, tr._safe(key) + ".jsonl"),
+                  os.path.join(directory, "%s~%s.jsonl" % (
+                      tr._safe_ascii(key), hashlib.sha256(key.encode("utf-8")).hexdigest()[:24]))]
+        norm = {os.path.abspath(p): p for p in single}
+        chosen = next((norm[os.path.abspath(p)] for p in prefer if os.path.abspath(p) in norm),
+                      None)
+        if chosen is None:
+            chosen = max(single, key=lambda p: os.path.getmtime(p))
+        out.append((key, chosen))
+    return sorted(out)
+
+
+def chain_key(directory, name):
+    """The serving key for a chain named by key or by file stem."""
+    for key, path in _served_chains(directory):
+        if name == key or name == os.path.basename(path)[: -len(".jsonl")]:
+            return key
+    return name
+
+
 def load_secret(directory):
     """A stable server secret: ``$HALO_SERVE_SECRET`` if set, else a random one
     persisted in ``<dir>/.halo_serve_secret`` so share links survive restarts."""
@@ -98,7 +155,7 @@ def _console_payload(directory, secret, witness_log):
 
     chains = []
     totals = {"records": 0, "intact": 0, "complete": 0, "chains": 0}
-    for stem, path in _chains(directory):
+    for stem, path in _served_chains(directory):
         records = _load(path)
         subject = _subject_label(records)
         stats = _summary_stats(records)
@@ -117,8 +174,11 @@ def _console_payload(directory, secret, witness_log):
             "completeness": ("complete" if comp.get("ok") is True
                              else "incomplete" if comp.get("ok") is False
                              else "unwitnessed"),
+            "file": os.path.basename(path),
+            # Leads are read back from disk; anything a client might render is
+            # escaped here so a stored value can never become markup downstream.
             "recipients": [
-                {"email": l.get("email"), "ts": l.get("ts")}
+                {"email": _esc(l.get("email") or ""), "ts": _esc(l.get("ts") or "")}
                 for l in leads_by_chain.get(stem, [])
             ],
         })
@@ -141,7 +201,7 @@ report. Ask the operator for yours.</p></div>""" % _STYLE)
 
     notary = Notary(witness_log) if witness_log else None
     rows = []
-    for stem, path in _chains(directory):
+    for stem, path in _served_chains(directory):
         tok = token_for(secret, stem)
         records = _load(path)
         subject = _subject_label(records)
@@ -169,7 +229,7 @@ report. Ask the operator for yours.</p></div>""" % _STYLE)
 <p class="meta">%(n)s chain(s) in <b>%(dir)s</b>. Each row's link is private to that customer.</p>
 <table><thead><tr><th>Customer</th><th>Chain</th><th>Actions</th><th>Integrity</th>
 <th>Completeness</th><th>Share link</th></tr></thead><tbody>%(rows)s</tbody></table>
-</div>""" % {"style": _STYLE, "n": len(_chains(directory)),
+</div>""" % {"style": _STYLE, "n": len(_served_chains(directory)),
              "dir": _esc(directory), "rows": body}
 
 
@@ -249,9 +309,9 @@ class _Handler(BaseHTTPRequestHandler):
         HMAC of each known chain name, so traversal is impossible."""
         if not token:
             return None, None
-        for stem, path in _chains(self.config["dir"]):
-            if hmac.compare_digest(token_for(self.config["secret"], stem), token):
-                return stem, path
+        for key, path in _served_chains(self.config["dir"]):
+            if hmac.compare_digest(token_for(self.config["secret"], key), token):
+                return key, path
         return None, None
 
     def _render_report(self, path):

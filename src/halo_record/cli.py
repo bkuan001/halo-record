@@ -248,7 +248,15 @@ def _cmd_serve(args):
 
 def _cmd_grant(args):
     from . import access
-    allow = access.grant(args.dir, args.chain, args.recipient)
+    from .serve import chain_key
+    if not access.recipient_ok(args.recipient):
+        print("not a valid email address or domain: %r" % args.recipient, file=sys.stderr)
+        return 2
+    key = chain_key(args.dir, args.chain)
+    if key != args.chain:
+        print("note: %s is served as chain %r" % (args.chain, key))
+    allow = access.grant(args.dir, key, args.recipient)
+    args.chain = key
     print("recipients for %s: %s" % (args.chain, ", ".join(allow)))
     return 0
 

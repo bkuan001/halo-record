@@ -512,3 +512,57 @@ class AnchorCheckKeylessTest(unittest.TestCase):
         code, out, err = _run(["anchor", log, "--remote", "http://127.0.0.1:9", "--check"])
         self.assertNotIn("requires --key", err)
         self.assertEqual(code, 1)    # unreachable, not a usage error
+
+
+class StrictEmailTest(unittest.TestCase):
+    def test_markup_in_an_address_is_not_admitted(self):
+        from halo_record import access
+        allow = ["acme.com"]
+        for bad in ('<img/src=x>@acme.com', '"><script>@acme.com', "a'b@acme.com",
+                    "a&b@acme.com", "x@acme.com<", "a@acme..com"):
+            self.assertFalse(access.is_allowed(bad, allow), bad)
+        self.assertTrue(access.is_allowed("first.last+tag@acme.com", allow))
+
+    def test_capture_lead_refuses_an_invalid_address(self):
+        from halo_record import access
+        d = tempfile.mkdtemp()
+        access.capture_lead(d, "<svg onload=x>@acme.com", "acme")
+        self.assertEqual(access.read_leads(d), [])
+
+    def test_console_payload_escapes_stored_leads(self):
+        from halo_record import access
+        from halo_record.serve import _console_payload, load_secret
+        from halo_record.record import TenantRecorder
+        d = tempfile.mkdtemp()
+        TenantRecorder(d).append(build("tool_call", "security", tool="t", subject="acme"))
+        with open(os.path.join(d, access.LEADS_FILE), "w") as fh:   # written by an older version
+            fh.write(json.dumps({"email": "<b>x</b>@acme.com", "chain": "acme"}) + "\n")
+        payload = _console_payload(d, load_secret(d), None)
+        text = json.dumps(payload)
+        self.assertNotIn("<b>", text)
+
+
+class ServeKeyedByChainTest(unittest.TestCase):
+    def test_link_and_grant_follow_a_subject_whose_file_moved(self):
+        from halo_record import access
+        from halo_record.record import TenantRecorder
+        from halo_record.serve import _served_chains, load_secret, token_for
+        d = tempfile.mkdtemp()
+        merged = os.path.join(d, "acme_eu.jsonl")     # a file an older version shared
+        raw = Recorder(merged)
+        raw.append(build("tool_call", "security", tool="old", subject="acme_eu"))
+        raw.append(build("tool_call", "security", tool="old", subject="acme/eu"))
+        access.grant(d, "acme_eu", "cfo@acme.com")
+        with redirect_stderr(io.StringIO()):
+            live = TenantRecorder(d).chain_path_for("acme_eu")
+            TenantRecorder(d).append(build("tool_call", "security", tool="new", subject="acme_eu"))
+        self.assertNotEqual(os.path.abspath(live), os.path.abspath(merged))
+        chains = dict(_served_chains(d))
+        self.assertEqual(os.path.abspath(chains["acme_eu"]), os.path.abspath(live))
+        self.assertTrue(access.is_allowed("cfo@acme.com", access.allowed_for(d, "acme_eu")))
+        from halo_record.serve import _Handler
+        h = _Handler.__new__(_Handler)
+        h.config = {"dir": d, "secret": load_secret(d)}
+        key, path = h._resolve(token_for(h.config["secret"], "acme_eu"))
+        self.assertEqual(key, "acme_eu")
+        self.assertEqual(os.path.abspath(path), os.path.abspath(live))
