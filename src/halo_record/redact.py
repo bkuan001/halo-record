@@ -93,6 +93,9 @@ def _looks_like_secret(tok):
     return _shannon_bits(tok) >= HIGH_ENTROPY_BITS
 
 
+_DB_USERINFO_RE = re.compile(r'^([A-Za-z][A-Za-z0-9+.\-]*://)([^:/@\s]*):.*@')
+
+
 def redact_sample(ftype, value):
     v = str(value)
     if ftype == "aws_secret_key":
@@ -105,7 +108,11 @@ def redact_sample(ftype, value):
         m = re.match(r'^([A-Za-z0-9._%+-])[A-Za-z0-9._%+-]*(@.+)$', v)
         return (m.group(1) + "****" + m.group(2)) if m else "****"
     if ftype == "db_conn":
-        return re.sub(r'://([^:/@]+):[^@]+@', r'://\1:****@', v)
+        # Anchored at the scheme: one attempt per match, linear in its length.
+        # Everything from the user's ":" to the last "@" is masked, so an empty
+        # user (redis://:pw@) or an unescaped "@" or "/" in the password is
+        # still covered; over-masking the host is the safe failure.
+        return _DB_USERINFO_RE.sub(r'\1\2:****@', v, count=1)
     if ftype == "bearer_token":
         return "Bearer ****"
     if ftype == "private_key":
@@ -297,7 +304,10 @@ def scan(text, entropy=True):
                 elif name == "credit_card" and any(a <= m.start() < b for a, b in iban_spans):
                     continue
                 raw = span
-            sample = redact_sample(name, str(raw)[:120])
+            # A connection string's password can sit past the excerpt cut, so
+            # its sample is masked whole first, then cut.
+            sample = (redact_sample(name, str(raw))[:120] if name == "db_conn"
+                      else redact_sample(name, str(raw)[:120]))
             key = name + ":" + sample
             if key in seen:
                 continue

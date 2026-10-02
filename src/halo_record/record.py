@@ -272,6 +272,21 @@ def _no_lone_surrogates(s):
 
 _PURPOSE_MAX = 500
 
+# A stored summary is at most 200 characters, so the text it is redacted from is
+# cut to a window first: masking work stays bounded however long a tool's
+# response is. The cut lands on whitespace when it can, so a secret is not split
+# into a fragment the patterns no longer recognize. Findings still scan the
+# whole text.
+_SUMMARY_WINDOW = 8192
+
+
+def _summary_window(text):
+    if len(text) <= _SUMMARY_WINDOW:
+        return text
+    cut = text[:_SUMMARY_WINDOW]
+    ws = max(cut.rfind(" "), cut.rfind("\n"), cut.rfind("\t"))
+    return cut[:ws] if ws > _SUMMARY_WINDOW // 2 else cut
+
 
 def _norm_data(data):
     """Normalize the caller's ``data`` block so intuitive input can neither crash
@@ -499,7 +514,8 @@ def build(action_type, category, tool=None, tool_input=None, *,
             # Leaves the field redactor does not treat as text (numbers, sets,
             # bytes, object reprs, credential-bearing URL paths) are caught by a
             # final pass over the rendered summary.
-            inp["summary"] = mask_known_secrets(str(redact_fields(tool_input)))[:200]
+            inp["summary"] = mask_known_secrets(
+                _summary_window(str(redact_fields(tool_input))))[:200]
         action["input"] = inp
 
     # Normalize the outcome up front so its summary is redacted before it is
@@ -524,7 +540,7 @@ def build(action_type, category, tool=None, tool_input=None, *,
             outcome = kept
         else:
             if outcome_summary_raw is not None:
-                outcome["summary"] = redact_text(outcome_summary_raw)[:200]
+                outcome["summary"] = redact_text(_summary_window(outcome_summary_raw))[:200]
             h = outcome.get("hash")
             if h is not None and not (isinstance(h, str) and _OUTCOME_HASH_RE.fullmatch(h)):
                 outcome.pop("hash")  # only a hash-shaped value is kept under that name
