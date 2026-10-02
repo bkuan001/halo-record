@@ -14,8 +14,8 @@
       "id": "pii-egress-controlled",
       "source": "AIUC-1 A006 (PII handling)",
       "severity": "HIGH",
-      "description": "Records of network actions that ran must not carry SSNs off the boundary (actions recorded as denied or blocked did not egress and are out of scope). Corroborates over data.pii_types, which reflects the scanner's named categories (email/ssn/credit_card/phone/iban) — a PII shape the scanner does not detect will not appear here.",
-      "when": {"action.type": "network", "action.authorization.decision": {"ne": "denied"}, "outcome.status": {"ne": "denied"}, "verification.status": {"ne": "blocked"}},
+      "description": "Records of network actions must not carry SSNs off the boundary. Only an outcome recorded as denied takes a record out of scope: a gate's report of blocked, or an authorization decision of denied, is the reporting layer's claim and does not show the action did not run (LIMITS.md section 11). Corroborates over data.pii_types, which reflects the scanner's named categories (email/ssn/credit_card/phone/iban) — a PII shape the scanner does not detect will not appear here.",
+      "when": {"action.type": "network", "outcome.status": {"ne": "denied"}},
       "forbid": {"data.pii_types": {"contains": "ssn"}}
     },
     {

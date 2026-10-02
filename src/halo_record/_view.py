@@ -279,14 +279,20 @@ def _squash(s):
 
 
 def _gate(r):
-    """'Blocked by gate' / 'Denied' when the record says the action was stopped."""
+    """'Blocked by gate' / 'Denied' when the record says the action was stopped.
+    A gate's "blocked" is its own report: when the outcome records the action
+    as ok, both are shown and neither is preferred (LIMITS section 11)."""
     action = _dict(r.get("action"))
     auth = _dict(action.get("authorization"))
     ver = _dict(r.get("verification"))
     out = _dict(r.get("outcome"))
     if ver.get("status") == "blocked":
+        if out.get("status") == "ok":
+            return "Gate reported blocked; outcome recorded: ok"
         return "Blocked by gate"
     if auth.get("decision") == "denied" or out.get("status") == "denied":
+        if out.get("status") == "ok":
+            return "Decision recorded denied; outcome recorded: ok"
         return "Denied"
     return None
 
@@ -320,7 +326,8 @@ def plain(r):
     detail = _squash(detail)
     gate = _gate(r)
     if gate:
-        return ("%s: %s — %s" % (gate, tool, detail)) if detail else ("%s: %s" % (gate, tool))
+        sep = " \u2014 " if gate.endswith(": ok") else ": "
+        return ("%s%s%s \u2014 %s" % (gate, sep, tool, detail)) if detail else ("%s%s%s" % (gate, sep, tool))
     if not detail:
         o = _dict(r.get("outcome")).get("summary")
         o = _squash(o) if isinstance(o, str) and not o.startswith("{") else ""
@@ -877,8 +884,10 @@ var HaloView = (function(){
   function gate(r){
     var action = dict(r.action), auth = dict(action.authorization),
         ver = dict(r.verification), out = dict(r.outcome);
-    if (ver.status === "blocked") return "Blocked by gate";
-    if (auth.decision === "denied" || out.status === "denied") return "Denied";
+    if (ver.status === "blocked")
+      return out.status === "ok" ? "Gate reported blocked; outcome recorded: ok" : "Blocked by gate";
+    if (auth.decision === "denied" || out.status === "denied")
+      return out.status === "ok" ? "Decision recorded denied; outcome recorded: ok" : "Denied";
     return null;
   }
   function plain(r){
@@ -899,7 +908,10 @@ var HaloView = (function(){
     } else detail = summary;
     detail = squash(detail);
     var g = gate(r);
-    if (g) return detail ? (g + ": " + tool + " \u2014 " + detail) : (g + ": " + tool);
+    if (g){
+      var sep = g.slice(-4) === ": ok" ? " \u2014 " : ": ";
+      return detail ? (g + sep + tool + " \u2014 " + detail) : (g + sep + tool);
+    }
     if (!detail){
       var o = dict(r.outcome).summary;
       o = (typeof o === "string" && o.slice(0, 1) !== "{") ? squash(o) : "";
