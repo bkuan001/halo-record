@@ -616,15 +616,35 @@ exception through unchanged and print one line to stderr:
 
     halo-record: FAILED to record '<tool>' (<ErrorType>: <message>); the action ran, but its record is NOT in the evidence log. The action's own result or error is passed through unchanged (set HALO_STRICT_RECORDING=1 to raise instead).
 
+When there is no usable stderr (`pythonw`, a closed file descriptor 2), the
+same line is logged on the `halo_record` logger instead, and the action's
+result still passes through.
+
 The chain itself cannot show a record that was never written: the remaining
-records still verify. Witness checkpoints on a cadence are what reveal a
-stalled chain (section 1).
+records still verify. A witness checkpoint cadence reveals a chain that has
+*stalled* (an expected checkpoint that never arrives, section 1), but no
+witness can reveal a single record that was never written while later records
+were: the stderr line is the only signal for that.
 
 `strict_recording=True`, or `HALO_STRICT_RECORDING=1` in the environment,
-raises the recording error instead. The action has already happened by then; a
-caller that reads the error as a failed action and retries repeats the action.
+raises the recording error after writing the same line (its tail then says
+strict recording is on). The action has already happened by then; a caller
+that reads the error as a failed action and retries repeats the action. Where
+the error goes depends on the wrapper:
+
+| Wrapper | Strict mode |
+|---|---|
+| `trace()`, `record_call`, `@record`, MCP wrapper, OpenAI Agents hooks | raised to the caller |
+| LangChain `HaloCallbackHandler` | the handler sets LangChain's `raise_error`, so LangChain raises it to the caller of the tool |
+| OTel `HaloSpanExporter` | cannot reach the application: the SDK's span processor catches what an exporter raises and logs "Exception while exporting Span". The exporter tries every span in the batch, writes a line per lost span, then raises the first error to the SDK |
+| LiteLLM `HaloLiteLLMLogger` | cannot reach the caller: LiteLLM runs callbacks after returning the response and logs what they raise ("LiteLLM.LoggingError: [Non-Blocking] ...") |
+| `halo hook` | the hook exits 1 with the error; the agent harness decides what that means |
+
+For the OTel and LiteLLM adapters the stderr line (and the framework's own
+log) is the only signal in either mode.
 
 **What you say to a reviewer:** "A failed write is reported on stderr and the
-action's outcome is unchanged; the chain has a gap there that only a witness
-cadence or the stderr log reveals. Strict mode turns that into an error at the
-cost of a possible repeated action."
+action's outcome is unchanged; only the stderr log reveals a single missing
+record (a witness cadence shows a chain that stopped). Strict mode turns that
+into an error, raised to the caller wherever the framework lets it through, at
+the cost of a possible repeated action."
