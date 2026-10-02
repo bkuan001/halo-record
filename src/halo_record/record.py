@@ -27,7 +27,7 @@ SCHEMA_VERSION = "0.1"
 ACTION_TYPES = {"tool_call", "agent_message", "read", "write", "network"}
 CATEGORIES = {"security", "safety", "reliability", "privacy"}
 
-# Where a record came from. ``capture`` is the honest evidentiary tier:
+# Where a record came from. ``capture`` is the evidentiary tier:
 #   "captured"  — Halo saw the call at the trust boundary (in-process interceptor
 #                 or the native recorder). Strongest: nothing could be shaped
 #                 before Halo recorded it.
@@ -35,8 +35,8 @@ CATEGORIES = {"security", "safety", "reliability", "privacy"}
 #                 (OTel spans, gateway/proxy logs, a tracing store). Useful and
 #                 low-friction, but weaker: the stream is the vendor's own, so the
 #                 witness attests "this is what you sent me", not "I watched it happen".
-# This distinction is the product's honesty: an independent attestor discloses
-# provenance and strength per record rather than flattening every source to "logged".
+# The distinction is disclosed per record: an independent attestor states
+# provenance and strength for each record rather than flattening every source to "logged".
 SOURCES = {
     "recorder":      {"adapter": "recorder",      "via": "Halo recorder (native)",        "capture": "captured"},
     "mcp":           {"adapter": "mcp",           "via": "MCP interceptor",               "capture": "captured"},

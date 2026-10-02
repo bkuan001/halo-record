@@ -7,7 +7,7 @@ gateway). This adapter maps a plain log row — whatever fields you can supply �
 into a Halo Runtime Record, so even a team with nothing but proxy logs has an
 on-ramp.
 
-These are the honest ``ingested`` tier and, being a generic log, often the
+These are the ``ingested`` tier and, being a generic log, often the
 weakest of all: the row is whatever the proxy chose to write, after the fact, so
 the witness attests "this is the log you gave me" (see ``record.SOURCES``). It is
 still real, anchorable evidence — and the Runtime Report is explicit that it was

@@ -7,7 +7,7 @@ core package has no third-party dependencies.
 
 Every adapter records through one shared funnel (``_common.record_tool_call``)
 and tags each record with its ``source`` — both which on-ramp saw the call and
-its honest evidentiary tier (see ``record.SOURCES``):
+its evidentiary tier (see ``record.SOURCES``):
 
   captured (boundary; strongest) — Halo saw the call as it happened:
     from halo_record.integrations.mcp import instrument_client_session
