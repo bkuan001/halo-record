@@ -164,13 +164,15 @@ def _cmd_policy(args):
 def _cmd_anchor(args):
     from .anchor import (Notary, verify_completeness, _subject_id,
                          checkpoint, attach_timestamp, TimestampError)
+    from .anchor import chain_root as _chain_root
     from .report import _load
     records = _load(args.log)
 
     if args.remote:
         from .witness import anchor_remote, fetch_checkpoints
-        if not args.key:
-            print("anchor --remote requires --key (the vendor bearer key)", file=sys.stderr)
+        if not args.key and not args.check:
+            print("anchor --remote requires --key (the vendor bearer key) to anchor; "
+                  "--check reads without one", file=sys.stderr)
             return 2
         if args.timestamp:
             print("note: --timestamp is not carried over --remote; the hosted "
@@ -178,7 +180,9 @@ def _cmd_anchor(args):
         try:
             if args.check:
                 pinned = args.expect_subject or _subject_id(records)
-                cps = fetch_checkpoints(args.remote, subject=pinned)
+                cps = fetch_checkpoints(args.remote, subject=pinned, key=args.key,
+                                        chain_root=(_chain_root(records)
+                                                    if pinned is None and records else None))
                 result = verify_completeness(records, cps, expected_subject=args.expect_subject)
                 status = {True: "COMPLETE", False: "INCOMPLETE", None: "UNWITNESSED"}[result["ok"]]
                 print("%s — %s" % (status, json.dumps(result)))
@@ -389,7 +393,8 @@ def main(argv=None):
                           help="URL of a hosted Halo witness (e.g. https://witness.example) "
                                "to anchor to / check against instead of a local file")
     p_anchor.add_argument("--key",
-                          help="vendor bearer key for --remote anchoring")
+                          help="vendor bearer key for --remote anchoring; with --check, a "
+                               "read key (only for a witness that requires one)")
     p_anchor.add_argument("--check", action="store_true",
                           help="verify completeness against existing witnesses instead of adding one")
     p_anchor.add_argument("--expect-subject", default=None,

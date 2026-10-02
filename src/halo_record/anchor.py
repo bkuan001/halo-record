@@ -14,10 +14,12 @@ would have to rewrite history on the witness log too. Completeness
 becomes something the buyer checks against a party with no incentive to help the
 vendor hide — which is exactly the guarantee the vendor's own logs can never give.
 
-This module is pure-stdlib, consistent with the rest of the package. Offline,
-*signed* receipts (so a buyer can verify a witness without contacting Halo) are a
-planned extra (asymmetric signatures) and intentionally not implemented here; the
-witness store is the complete guarantee on its own.
+This module is pure-stdlib, consistent with the rest of the package. Its limits
+(LIMITS.md §1): checkpoints are unsigned, so a reader trusts whoever operates the
+witness log, and that operator can rewrite it; completeness is only as
+independent as that operator, and there is no hosted Halo witness today. Offline
+*signed* receipts (verifiable without contacting the witness) need asymmetric
+signatures and are not implemented here.
 """
 
 import base64
@@ -272,6 +274,26 @@ def verify_completeness(records, checkpoints, expected_subject=None):
     if not relevant:
         return _out({"ok": None, "why": "no witnesses for this chain", "witnessed": 0})
 
+    # Checkpoints are keyed by subject, so one subject can carry checkpoints for
+    # more than one chain (a restarted or second chain under the same id). Name
+    # that plainly when it is the reason a check fails.
+    roots = sorted({c.get("chain_root") for c in relevant if c.get("chain_root")})
+    mine = chain_root(records)
+
+    def _fail(d):
+        foreign = [r for r in roots if r != mine]
+        if foreign:
+            d["chain_roots"] = roots
+            d["why"] += ("; the witness holds checkpoints for %d distinct chains under this "
+                         "subject (chain roots %s; this chain's root is %s) — a second or "
+                         "restarted chain shares the subject id, or this chain was re-rooted"
+                         % (len(roots), ", ".join(r[:12] + "…" for r in roots),
+                            (mine or "none")[:12] + "…")) if len(roots) > 1 else (
+                         "; the witnessed chain has a different root (%s) than this chain "
+                         "(%s) — this is a different or re-rooted chain under the same subject"
+                         % (roots[0][:12] + "…", (mine or "none")[:12] + "…"))
+        return _out(d)
+
     broken_at = _chain_intact(records)
     if broken_at:
         return _out({"ok": False, "why": "chain integrity broken", "at": broken_at,
@@ -279,19 +301,19 @@ def verify_completeness(records, checkpoints, expected_subject=None):
 
     latest = max(c["count"] for c in relevant)
     if len(records) < latest:
-        return _out({"ok": False, "why": "chain truncated below witnessed length",
+        return _fail({"ok": False, "why": "chain truncated below witnessed length",
                      "have": len(records), "witnessed_count": latest,
                      "witnessed": len(relevant)})
 
     for c in relevant:
         n = c["count"]
         if n < 1 or n > len(records):
-            return _out({"ok": False, "why": "witnessed count out of range", "at": n,
-                         "witnessed": len(relevant)})
+            return _fail({"ok": False, "why": "witnessed count out of range", "at": n,
+                          "witnessed": len(relevant)})
         present_head = (records[n - 1].get("integrity") or {}).get("hash")
         if present_head != c["head"]:
-            return _out({"ok": False, "why": "record altered or dropped before witnessed point",
-                         "at": n, "witnessed": len(relevant)})
+            return _fail({"ok": False, "why": "record altered or dropped before witnessed point",
+                          "at": n, "witnessed": len(relevant)})
 
     result = {"ok": True, "witnessed": len(relevant), "latest_count": latest,
               "head": head(records)}

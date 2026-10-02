@@ -393,3 +393,122 @@ class ExportColumnsTest(unittest.TestCase):
             self.assertTrue(_neutralize(v).startswith("'"), repr(v))
         self.assertEqual(_neutralize(" plain text"), " plain text")
         self.assertEqual(_neutralize("ok"), "ok")
+
+
+class _WitnessServer(unittest.TestCase):
+    KEY = "k-surface"
+    extra = {}
+
+    def setUp(self):
+        import threading
+        from http.server import ThreadingHTTPServer
+        from halo_record.anchor import Notary
+        from halo_record.witness import _Handler
+        self.store = tempfile.mkdtemp()
+        self.notary = Notary(os.path.join(self.store, "witness.jsonl"))
+        cfg = {"notary": self.notary, "keys": [self.KEY]}
+        cfg.update(self.extra)
+        handler = type("_B", (_Handler,), {"config": cfg})
+        self.httpd = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+        self.url = "http://127.0.0.1:%d" % self.httpd.server_address[1]
+        threading.Thread(target=self.httpd.serve_forever, daemon=True).start()
+
+    def tearDown(self):
+        self.httpd.shutdown()
+        self.httpd.server_close()
+
+    def _raw(self, method, path, body=b"", headers=None):
+        import http.client
+        c = http.client.HTTPConnection("127.0.0.1", self.httpd.server_address[1], timeout=5)
+        c.putrequest(method, path)
+        for k, v in (headers or {}).items():
+            c.putheader(k, v)
+        c.endheaders()
+        if body:
+            c.send(body)
+        r = c.getresponse()
+        data = r.read()
+        c.close()
+        return r.status, data
+
+
+class WitnessHardeningTest(_WitnessServer):
+    def test_negative_content_length_is_a_bad_request(self):
+        code, _ = self._raw("POST", "/anchor", headers={
+            "Authorization": "Bearer " + self.KEY, "Content-Length": "-5"})
+        self.assertEqual(code, 400)
+
+    def test_parser_errors_are_not_echoed(self):
+        body = b'{"subject": "acme", "count": 1, "head": <script>}'
+        code, data = self._raw("POST", "/anchor", body=body, headers={
+            "Authorization": "Bearer " + self.KEY, "Content-Length": str(len(body)),
+            "Content-Type": "application/json"})
+        self.assertEqual(code, 400)
+        self.assertNotIn(b"char", data)          # json's "Expecting value: line 1 column N (char M)"
+        self.assertNotIn(b"line 1", data)
+
+    def test_reads_do_not_reparse_the_whole_log(self):
+        from halo_record import witness as W
+        recs = _chain(os.path.join(self.store, "c.jsonl"), 2)
+        from halo_record.witness import anchor_remote, fetch_checkpoints
+        anchor_remote(self.url, self.KEY, recs)
+        fetch_checkpoints(self.url, subject="acme")
+        calls = []
+        orig = self.notary.checkpoints
+        self.notary.checkpoints = lambda *a, **k: calls.append(1) or orig(*a, **k)
+        for _ in range(3):
+            self.assertEqual(len(fetch_checkpoints(self.url, subject="acme")), 1)
+        self.assertEqual(calls, [])   # served from the incremental index
+
+    def test_anchor_posts_are_rate_limited_per_key(self):
+        from halo_record import witness as W
+        recs = _chain(os.path.join(self.store, "c.jsonl"), 1)
+        body = json.dumps({"subject": "acme", "count": 1,
+                           "head": recs[0]["integrity"]["hash"]}).encode()
+        codes = []
+        for _ in range(W.POST_RATE_LIMIT + 2):
+            code, _ = self._raw("POST", "/anchor", body=body, headers={
+                "Authorization": "Bearer " + self.KEY, "Content-Length": str(len(body)),
+                "Content-Type": "application/json"})
+            codes.append(code)
+        self.assertIn(429, codes)
+        self.assertEqual(codes[0], 201)
+
+
+class WitnessReadKeysTest(_WitnessServer):
+    extra = {"read_keys": [("rk-acme", ["acme"])]}
+
+    def test_subject_reads_need_a_scoped_read_key_when_configured(self):
+        from halo_record.witness import fetch_checkpoints
+        import urllib.error
+        with self.assertRaises(urllib.error.HTTPError) as cm:
+            fetch_checkpoints(self.url, subject="acme")
+        self.assertEqual(cm.exception.code, 401)
+        with self.assertRaises(urllib.error.HTTPError) as cm:
+            fetch_checkpoints(self.url, subject="globex", key="rk-acme")
+        self.assertEqual(cm.exception.code, 403)
+        self.assertEqual(fetch_checkpoints(self.url, subject="acme", key="rk-acme"), [])
+
+
+class TwoChainsOneSubjectTest(unittest.TestCase):
+    def test_a_second_chain_under_the_same_subject_is_named_as_such(self):
+        from halo_record.anchor import Notary, verify_completeness
+        d = tempfile.mkdtemp()
+        a = _chain(os.path.join(d, "a.jsonl"), 3)
+        b = _chain(os.path.join(d, "b.jsonl"), 2)
+        n = Notary(os.path.join(d, "w.jsonl"))
+        n.witness(a)
+        n.witness(b)
+        res = verify_completeness(a, n.checkpoints_for(a))
+        self.assertIs(res["ok"], False)
+        self.assertIn("2 distinct chains", res["why"])
+
+
+class AnchorCheckKeylessTest(unittest.TestCase):
+    def test_remote_check_does_not_require_a_vendor_key(self):
+        d = tempfile.mkdtemp()
+        log = os.path.join(d, "c.jsonl")
+        _chain(log, 1)
+        code, out, err = _run(["anchor", log, "--remote", "http://127.0.0.1:9", "--check"])
+        self.assertNotIn("requires --key", err)
+        self.assertEqual(code, 1)    # unreachable, not a usage error
