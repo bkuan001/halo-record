@@ -46,5 +46,58 @@ class InvisibleCharactersTest(unittest.TestCase):
         self.assertEqual(redact.normalize_invisible("a ‎ b"), "a ‎ b")
 
 
+class BlankAndIgnorableCharactersTest(unittest.TestCase):
+    """Characters that render blank without being format characters: the Khmer
+    inherent vowels, the braille blank, the musical null notehead, and every
+    Default_Ignorable_Code_Point of Unicode 15.1."""
+
+    # DerivedCoreProperties.txt (Unicode 15.1), Default_Ignorable_Code_Point
+    DEFAULT_IGNORABLE = [
+        (0x00AD, 0x00AD), (0x034F, 0x034F), (0x061C, 0x061C), (0x115F, 0x1160),
+        (0x17B4, 0x17B5), (0x180B, 0x180F), (0x200B, 0x200F), (0x202A, 0x202E),
+        (0x2060, 0x206F), (0x3164, 0x3164), (0xFE00, 0xFE0F), (0xFEFF, 0xFEFF),
+        (0xFFA0, 0xFFA0), (0xFFF0, 0xFFF8), (0x1BCA0, 0x1BCA3), (0x1D173, 0x1D17A),
+        (0xE0000, 0xE0FFF),
+    ]
+
+    def test_blank_characters_are_dropped_inside_a_key(self):
+        for ch in ("\u17b4", "\u17b5", "\u2800", "\U0001d159"):
+            text = _spliced(ch)
+            self.assertIn("stripe_key", [f["type"] for f in redact.scan(text)], "U+%04X" % ord(ch))
+            self.assertNotIn(KEY[8:], redact.redact_text(text), "U+%04X" % ord(ch))
+
+    def test_every_default_ignorable_code_point_is_covered(self):
+        missing = ["U+%04X" % c for a, b in self.DEFAULT_IGNORABLE for c in range(a, b + 1)
+                   if chr(c) not in redact.INVISIBLE_CHARS]
+        self.assertEqual(missing, [])
+
+
 if __name__ == "__main__":
     unittest.main()
+
+
+class IdentifiersKeepTheirTextTest(unittest.TestCase):
+    """Invisible characters are dropped only to find secrets. An identifier
+    (agent id, tool name, session id) with nothing to mask is stored exactly
+    as given; one that hides a secret is still masked."""
+
+    def test_identifiers_without_a_secret_are_stored_as_given(self):
+        zw = "​"
+        rec = build("tool_call", "security", tool="look" + zw + "up",
+                    session_id="sess" + zw + "1", parent_id="p" + zw + "1",
+                    agent={"id": "bot" + zw + "1", "name": "support" + zw + "bot",
+                           "version": "1" + zw + ".2"})
+        self.assertEqual(rec["action"]["tool"], "look" + zw + "up")
+        self.assertEqual(rec["session_id"], "sess" + zw + "1")
+        self.assertEqual(rec["parent_id"], "p" + zw + "1")
+        self.assertEqual(rec["agent"]["id"], "bot" + zw + "1")
+        self.assertEqual(rec["agent"]["name"], "support" + zw + "bot")
+        self.assertEqual(rec["agent"]["version"], "1" + zw + ".2")
+
+    def test_an_identifier_hiding_a_secret_is_still_masked(self):
+        text = _spliced("​")
+        rec = build("tool_call", "security", tool=text, session_id=text,
+                    agent={"id": text, "name": "n"})
+        for value in (rec["action"]["tool"], rec["session_id"], rec["agent"]["id"]):
+            self.assertNotIn(KEY[8:], value)
+            self.assertNotIn(KEY[14:], value)

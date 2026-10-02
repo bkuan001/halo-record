@@ -167,11 +167,17 @@ whole (and masked) or withheld whole. Within that rule the cut lands after
 whitespace, else after a character that cannot be part of a token. A single
 match longer than 4,096 characters that runs past that window is seen only as
 far as the window reaches. Findings still cover the whole text, scanned in
-overlapping windows. Invisible characters spliced inside a token — every Unicode format
-character (category Cf, as of Unicode 15.1), the combining grapheme joiner,
-variation selectors, and Hangul fillers — are dropped before matching, so they
-cannot split a key; outside a token (an emoji sequence, a bidi mark in prose)
-they are kept.
+overlapping windows. Invisible characters spliced inside a token are dropped before
+matching, so they cannot split a key. The set is every Unicode format character
+(category Cf) and every Default_Ignorable_Code_Point, both as of Unicode 15.1
+(this covers the soft hyphen, the combining grapheme joiner, Hangul fillers,
+the Khmer inherent vowels U+17B4/U+17B5, variation selectors and tag
+characters), plus U+2800 BRAILLE PATTERN BLANK and U+1D159 MUSICAL SYMBOL NULL
+NOTEHEAD. "Inside a token" means between two of `A-Z a-z 0-9 _ - + / = . :`
+(the second may also be `@`). Outside a token (an emoji sequence, a bidi mark
+in prose) they are kept. They are dropped only to find secrets: a value in
+which nothing is masked (an agent id, a tool name, a session id, prose) is
+stored exactly as given, invisible characters included.
 
 The credential coverage, by finding type:
 
