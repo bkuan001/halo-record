@@ -23,6 +23,8 @@ import math
 import re
 from collections import Counter
 
+from .canon import int_text, sort_key
+
 PATTERNS = [
     ("api_key",      "CRITICAL", re.compile(r'(?:sk-[A-Za-z0-9_\-]{20,}|AKIA[0-9A-Z]{16}|xox[baprs]-[a-zA-Z0-9\-]{10,})')),
     ("gcp_api_key",  "CRITICAL", re.compile(r'AIza[0-9A-Za-z_\-]{35,}')),
@@ -680,7 +682,12 @@ def redact_fields(obj, _entropy=True, _depth=0):
     if isinstance(obj, dict):
         out = {}
         for k, v in obj.items():
-            rk = redact_text(k) if isinstance(k, str) else k
+            if isinstance(k, str):
+                rk = redact_text(k)
+            elif isinstance(k, int) and not isinstance(k, bool) and int_text(k)[:1] == "[":
+                rk = int_text(k)
+            else:
+                rk = k
             if credential_value(k, v):
                 out[rk] = CREDENTIAL_MASK
             elif isinstance(v, (list, tuple)):
@@ -692,8 +699,11 @@ def redact_fields(obj, _entropy=True, _depth=0):
     if isinstance(obj, (list, tuple)):
         return [redact_fields(v, _entropy, _depth + 1) for v in obj]
     if isinstance(obj, (set, frozenset)):
-        return [redact_fields(v, _entropy, _depth + 1) for v in sorted(obj, key=repr)]
-    if obj is None or isinstance(obj, (bool, int, float)):
+        return [redact_fields(v, _entropy, _depth + 1) for v in sorted(obj, key=sort_key)]
+    if isinstance(obj, int) and not isinstance(obj, bool):
+        text = int_text(obj)
+        return obj if text[:1] != "[" else text
+    if obj is None or isinstance(obj, (bool, float)):
         return obj
     # Bytes, objects, anything else: redact the text it renders as, so the
     # summary carries no more than the scan found and reported.
@@ -759,8 +769,12 @@ def scan_fields(obj, _entropy=True, _depth=0, _seen=None, _key=None):
             else:
                 out += scan_fields(v, _entropy, _depth + 1, _seen, k)
         return out
-    if isinstance(obj, (list, tuple)):
-        for v in obj:
+    if isinstance(obj, (list, tuple, set, frozenset)):
+        items = sorted(obj, key=sort_key) if isinstance(obj, (set, frozenset)) else obj
+        for v in items:
             out += scan_fields(v, _entropy, _depth + 1, _seen, None)
         return out
-    return scan_fields(str(obj), _entropy, _depth + 1, _seen, None) if obj is not None else out
+    if obj is None:
+        return out
+    text = int_text(obj) if isinstance(obj, int) and not isinstance(obj, bool) else str(obj)
+    return scan_fields(text, _entropy, _depth + 1, _seen, None)

@@ -144,6 +144,23 @@ CIRCULAR = "[circular]"
 TOO_DEEP = "[nested too deeply]"
 
 
+_HUGE_INT = 10 ** 4300
+
+
+def int_text(v):
+    """``str(v)``, or ``[integer of N bits]`` for an integer of more than 4300
+    digits: Python 3.11+ refuses to print one, and every runtime must store
+    the same text for it."""
+    if -_HUGE_INT < v < _HUGE_INT:
+        return str(v)
+    return "[integer of %d bits]" % v.bit_length()
+
+
+def sort_key(v):
+    """``repr(v)`` for ordering set members, safe for any integer."""
+    return int_text(v) if isinstance(v, int) and not isinstance(v, bool) else repr(v)
+
+
 def json_key(k):
     """The string a JSON encoder would use for a non-string key (``True`` ->
     ``"true"``, ``None`` -> ``"null"``, ``1`` -> ``"1"``); ``str()`` otherwise."""
@@ -155,7 +172,9 @@ def json_key(k):
         return "false"
     if k is None:
         return "null"
-    if isinstance(k, (int, float)):
+    if isinstance(k, int):
+        return int_text(k)
+    if isinstance(k, float):
         return json.dumps(k)
     return str(k)
 
@@ -168,7 +187,7 @@ def json_safe(value, _depth=0, _active=None):
     if value is None or isinstance(value, (bool, str)):
         return value
     if isinstance(value, int):
-        return value if abs(value) <= MAX_SAFE_INT else str(value)
+        return value if abs(value) <= MAX_SAFE_INT else int_text(value)
     if isinstance(value, float):
         if value == value and value not in (float("inf"), float("-inf")) and value.is_integer() \
                 and abs(value) <= MAX_SAFE_INT:
@@ -192,7 +211,7 @@ def json_safe(value, _depth=0, _active=None):
                         n += 1
                     out[key] = json_safe(v, _depth + 1, _active)
                 return out
-            items = sorted(value, key=repr) if isinstance(value, (set, frozenset)) else value
+            items = sorted(value, key=sort_key) if isinstance(value, (set, frozenset)) else value
             return [json_safe(v, _depth + 1, _active) for v in items]
         finally:
             _active.discard(id(value))
