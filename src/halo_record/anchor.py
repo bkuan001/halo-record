@@ -115,13 +115,12 @@ def attach_timestamp(cp, tsa_url=None):
 
 
 def checkpoint_verified_time(cp):
-    """Re-derive a checkpoint's attested time from its stored RFC 3161 token —
-    never from the (operator-editable) ``tsa.gen_time`` field. Returns the ISO
-    time only if the token is present and its imprint matches this checkpoint's
-    recomputed digest; otherwise None (a forged or missing token yields no time,
-    so editing the JSON cannot fabricate an attestation). NOTE: this confirms the
-    token binds this chain state and reads its claimed time; it does NOT validate
-    the TSA's signature — run ``openssl ts -verify`` for that."""
+    """Read a checkpoint's CLAIMED time from its stored RFC 3161 token — never
+    from the (operator-editable) ``tsa.gen_time`` field. Returns the ISO time
+    only if the token is present and its imprint matches this checkpoint's
+    recomputed digest; otherwise None. This does NOT validate the TSA's
+    signature, so a hand-built token with a matching imprint can claim any time:
+    treat the result as unverified until ``openssl ts -verify`` passes."""
     tsa = cp.get("tsa")
     if not isinstance(tsa, dict) or not tsa.get("token_b64"):
         return None
@@ -171,14 +170,29 @@ class Notary:
             fh.write(json.dumps(cp, separators=(",", ":")) + "\n")
         return cp
 
-    def checkpoints(self, subject=None):
+    def checkpoints(self, subject=None, chain_root=None):
+        """All checkpoints, or those for one subject, or (subject None and
+        ``chain_root`` given) those for one subjectless chain."""
         if not os.path.exists(self.path):
             return []
         with open(self.path, "r", encoding="utf-8") as fh:
             cps = [json.loads(ln) for ln in fh.read().splitlines() if ln.strip()]
         if subject is not None:
             cps = [c for c in cps if c.get("subject") == subject]
+        elif chain_root is not None:
+            cps = [c for c in cps if c.get("subject") is None and c.get("chain_root") == chain_root]
         return cps
+
+    def checkpoints_for(self, records):
+        """Only the checkpoints that belong to this chain: by subject when it has
+        one, else by chain_root. Never the whole log — a page or response built
+        for one customer must not carry other customers' checkpoints."""
+        subj = _subject_id(records)
+        if subj is not None:
+            return self.checkpoints(subject=subj)
+        if not records:
+            return []
+        return self.checkpoints(chain_root=chain_root(records))
 
 
 def _matches(cp, records):
@@ -252,10 +266,12 @@ def verify_completeness(records, checkpoints):
             if not t:
                 tsa_unverified += 1
     if tsa_times:
-        result["tsa_time"] = max(tsa_times)   # upper bound: chain reached this
-        # state no later than tsa_time. Time only, not completeness — and the
-        # TSA signature must be checked (openssl ts -verify) to trust the source.
-        result["tsa_time_status"] = "claimed — verify the TSA signature with `openssl ts -verify`"
+        result["tsa_time"] = max(tsa_times)   # claimed upper bound: chain reached
+        # this state no later than tsa_time — IF the token is genuine. The TSA
+        # signature is not checked here, so the time is an unverified claim.
+        result["tsa_time_status"] = ("unverified claim — the TSA signature is not checked here, "
+                                     "and a crafted token can state any time; verify with "
+                                     "`openssl ts -verify` before relying on it")
     if tsa_unverified:
         result["tsa_unverified"] = tsa_unverified  # a stored token that does not bind this state
     return _out(result)

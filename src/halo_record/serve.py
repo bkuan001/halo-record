@@ -102,7 +102,7 @@ def _console_payload(directory, secret, witness_log):
         records = _load(path)
         subject = _subject_label(records)
         stats = _summary_stats(records)
-        cps = notary.checkpoints(subject=_subject_id(records)) if notary else []
+        cps = notary.checkpoints_for(records) if notary else []
         intact, comp, _ = _verdict(path, cps)
         totals["chains"] += 1
         totals["records"] += stats["total"]
@@ -146,7 +146,7 @@ report. Ask the operator for yours.</p></div>""" % _STYLE)
         records = _load(path)
         subject = _subject_label(records)
         stats = _summary_stats(records)
-        cps = notary.checkpoints(subject=_subject_id(records)) if notary else []
+        cps = notary.checkpoints_for(records) if notary else []
         intact, comp, _ = _verdict(path, cps)
         ipill = ('<span class="pill ok">intact</span>' if intact
                  else '<span class="pill warn">broken</span>')
@@ -267,7 +267,7 @@ class _Handler(BaseHTTPRequestHandler):
                     'report is withheld. Each customer\'s records belong in their own chain.</p>')
         cps = None
         if cfg["witness"]:
-            cps = Notary(cfg["witness"]).checkpoints(subject=_subject_id(records))
+            cps = Notary(cfg["witness"]).checkpoints_for(records)
         return render(records, cps, witness_url=cfg.get("witness_url"))
 
     def _session_email(self, stem, token):

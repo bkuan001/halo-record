@@ -835,7 +835,9 @@ class TenantRecorder:
         never produced by cleaning, so a plain name cannot imitate a digested one."""
         raw = str(subject_id)
         safe = self._safe(raw)
-        if safe != raw:
+        # The default (subjectless) chain keeps its established name; a real
+        # subject that cleans to the same name is refused by the mixed-file check.
+        if safe != raw and subject_id != self.default:
             digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()[:24]
             safe = "%s~%s" % (safe, digest)
         return os.path.join(self.directory, safe + ".jsonl")

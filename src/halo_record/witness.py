@@ -29,7 +29,6 @@ deliberately deferred; the hosted append-only store is the guarantee on its own.
 """
 
 import fnmatch
-import hashlib
 import hmac
 import json
 import threading
@@ -44,7 +43,6 @@ from . import __version__
 from .anchor import Notary, checkpoint, _now
 
 WITNESS_FILE = "witness.jsonl"
-OWNERS_FILE = "witness_owners.json"
 KEY_FILE = ".halo_witness_key"
 MAX_BODY = 8192
 DEFAULT_PORT = 8730
@@ -58,8 +56,9 @@ def load_keys(store):
     separated) if set, else a single random key persisted in the store so it
     survives restarts. Several vendors can share one witness, each with its own
     key; scope a key with ``<key>=<subject-or-glob>|…`` (for example
-    ``k1=vendor-a-*,k2=vendor-b-*``). Whether scoped or not, a key can only add
-    checkpoints to subjects it anchored first. Returns ``[(key, scopes), …]``."""
+    ``k1=vendor-a-*,k2=vendor-b-*``). With more than one key, every key must be
+    scoped, so no vendor can write another vendor's subjects. Returns
+    ``[(key, scopes), …]``."""
     env = os.environ.get("HALO_WITNESS_KEYS")
     if env:
         return parse_key_spec(env.split(","))
@@ -77,8 +76,8 @@ def parse_key_spec(entries):
     """Parse authorized vendor keys. Each entry is ``<key>`` or
     ``<key>=<scope>|<scope>…``, where a scope is a subject ID or a glob
     (``vendor-a-*``). Returns ``[(key, scopes_or_None), …]``. A scoped key may
-    anchor only subjects its scopes match; every key, scoped or not, may only
-    extend subjects it anchored first (see ``_Handler``)."""
+    anchor only subjects its scopes match; an unscoped key is accepted only when
+    it is the witness's single key."""
     out = []
     for raw in entries:
         if isinstance(raw, tuple):
@@ -118,8 +117,6 @@ def _in_scope(subject, scopes):
     return any(fnmatch.fnmatchcase(subject, sc) for sc in scopes)
 
 
-def _fingerprint(key):
-    return hashlib.sha256(key.encode("utf-8")).hexdigest()[:16]
 
 
 def _clean_checkpoint(payload):
@@ -173,13 +170,15 @@ def anchor_remote(witness_url, key, records, *, timeout=10):
     return out.get("receipt", out)
 
 
-def fetch_checkpoints(witness_url, subject=None, *, timeout=10):
+def fetch_checkpoints(witness_url, subject=None, *, chain_root=None, timeout=10):
     """Fetch the witness's independently held checkpoints for a subject. This is
     what a viewer's browser (or a buyer's tooling) calls to check completeness
     against a party the vendor does not control."""
     url = witness_url.rstrip("/") + "/v1/checkpoints"
     if subject is not None:
         url += "?" + urlencode({"subject": subject})
+    elif chain_root is not None:
+        url += "?" + urlencode({"chain_root": chain_root})
     with urllib.request.urlopen(url, timeout=timeout) as resp:
         out = json.loads(resp.read().decode("utf-8"))
     return out.get("checkpoints", [])
@@ -208,9 +207,15 @@ class _Handler(BaseHTTPRequestHandler):
         if parsed.path == "/healthz":
             return self._send(200, "ok", "text/plain; charset=utf-8")
         if parsed.path == "/v1/checkpoints":
-            subject = (parse_qs(parsed.query).get("subject") or [None])[0]
+            qs = parse_qs(parsed.query)
+            subject = (qs.get("subject") or [None])[0]
+            root = (qs.get("chain_root") or [None])[0]
+            # A filter is required: listing every subject would disclose each
+            # vendor's customers and volumes to any origin.
+            if subject is None and not (root and _HEX64.match(root)):
+                return self._send(400, {"error": "subject or chain_root required"}, cors=True)
             # subject is only ever a filter, never a path — traversal impossible.
-            cps = self.config["notary"].checkpoints(subject=subject)
+            cps = self.config["notary"].checkpoints(subject=subject, chain_root=root)
             return self._send(200, {"checkpoints": cps, "count": len(cps)}, cors=True)
         return self._send(404, {"error": "not found"})
 
@@ -244,11 +249,14 @@ class _Handler(BaseHTTPRequestHandler):
         except (ValueError, UnicodeDecodeError) as exc:
             return self._send(400, {"error": str(exc)})
 
+        keys = parse_key_spec(self.config["keys"])
+        if len(keys) > 1 and entry[1] is None:
+            # On a witness shared by several vendors, an unscoped key could write
+            # (or squat) any vendor's subject. Each key must name its subjects.
+            return self._send(403, {"error": "shared witness: this key has no subject scope"})
         if not _in_scope(cp["subject"], entry[1]):
             return self._send(403, {"error": "key not authorized for this subject"})
         with self._lock():
-            if not self._claim(cp, entry[0]):
-                return self._send(403, {"error": "subject is anchored by another key"})
             receipt = self.config["notary"].record_checkpoint(cp)
         return self._send(201, {"ok": True, "receipt": receipt})
 
@@ -256,29 +264,6 @@ class _Handler(BaseHTTPRequestHandler):
 
     def _lock(self):
         return self.config.get("lock") or self._default_lock
-
-    def _claim(self, cp, key):
-        """First key to anchor a subject owns it; other keys are refused, so one
-        vendor cannot append checkpoints to another vendor's chain. Ownership is
-        kept beside the witness log (never in the public checkpoints)."""
-        path = self.config.get("owners_path")
-        if not path:
-            return True
-        owner_id = cp["subject"] if cp["subject"] is not None else "root:%s" % cp.get("chain_root")
-        owners = {}
-        if os.path.exists(path):
-            with open(path, "r", encoding="utf-8") as fh:
-                owners = json.load(fh)
-        fp = _fingerprint(key)
-        held = owners.get(owner_id)
-        if held is not None:
-            return hmac.compare_digest(held, fp)
-        owners[owner_id] = fp
-        tmp = path + ".tmp"
-        with open_private(tmp, "w") as fh:
-            json.dump(owners, fh, separators=(",", ":"), sort_keys=True)
-        os.replace(tmp, path)
-        return True
 
     def log_message(self, fmt, *args):
         pass
@@ -291,9 +276,11 @@ def serve(store, *, host="127.0.0.1", port=DEFAULT_PORT):
         os.makedirs(store, exist_ok=True)
     notary = Notary(os.path.join(store, WITNESS_FILE))
     keys = load_keys(store)
+    if len(keys) > 1 and any(scopes is None for _k, scopes in keys):
+        raise SystemExit("halo witness: several vendor keys are configured, so every key "
+                         "needs a subject scope (key=glob|glob); refusing to start")
     handler = type("_BoundWitness", (_Handler,),
                    {"config": {"notary": notary, "keys": keys,
-                               "owners_path": os.path.join(store, OWNERS_FILE),
                                "lock": threading.Lock()}})
     httpd = ThreadingHTTPServer((host, port), handler)
     print("Halo witness serving from %s" % os.path.join(store, WITNESS_FILE))

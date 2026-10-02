@@ -20,6 +20,7 @@ import re
 import os
 
 from .canon import GENESIS_PREV
+from .anchor import chain_root as _chain_root
 
 
 def _load(path):
@@ -34,6 +35,26 @@ def _load(path):
                 "record %d is not valid JSON (%s) — run `halo verify %s` for "
                 "the full picture" % (n, e, path)) from e
     return records
+
+
+def _subject_note(records):
+    """Show the subject id the witness matches on whenever it could mislead: it
+    differs from the displayed name, or it carries invisible or non-ASCII
+    characters (a re-keyed id can look identical to the witnessed one)."""
+    import unicodedata
+    sid = _subject_id(records)
+    if sid is None:
+        return ""
+    sid = str(sid)
+    odd = [c for c in sid if ord(c) > 126 or unicodedata.category(c)[0] in ("C", "Z") and c != " "]
+    label = _subject_label(records)
+    if not odd and label == sid:
+        return ""
+    shown = json.dumps(sid)[1:-1]
+    note = "Subject id: <span class=\"mono\">%s</span>" % _esc(shown)
+    if odd:
+        note += " &mdash; contains invisible or non-ASCII characters; compare it to the id the witness holds."
+    return '<div class="meta">%s</div>' % note
 
 
 def _subject_label(records):
@@ -433,7 +454,10 @@ async function liveCheckpoints(cfg, embedded){
   const base = witnessBase(cfg.witnessUrl);
   if (!base) return {cps: cleanCheckpoints(embedded), live: false, error: "witness URL must be https"};
   try {
-    const u = base + "/v1/checkpoints" + (cfg.subject ? "?subject=" + encodeURIComponent(cfg.subject) : "");
+    const q = cfg.subject ? "subject=" + encodeURIComponent(cfg.subject)
+            : (cfg.chainRoot ? "chain_root=" + encodeURIComponent(cfg.chainRoot) : null);
+    if (!q) return {cps: cleanCheckpoints(embedded), live: false, error: "no subject or chain root to look up"};
+    const u = base + "/v1/checkpoints?" + q;
     const resp = await fetch(u, {mode: "cors"});
     if (!resp.ok) throw new Error("HTTP " + resp.status);
     const data = await resp.json();
@@ -1130,7 +1154,8 @@ def render(records, checkpoints=None, *, witness_url=None, policy=None, window=N
                           "anchored to no external witness, so completeness rests on the vendor "
                           "until one holds checkpoints for this chain (see below).")
     config_json = json.dumps(
-        {"witnessUrl": witness_url, "subject": _subject_id(records)},
+        {"witnessUrl": witness_url, "subject": _subject_id(records),
+         "chainRoot": (_chain_root(records) if records and _subject_id(records) is None else None)},
         separators=(",", ":")).replace("<", "\\u003c")
     if window:
         window_json = json.dumps(
@@ -1181,7 +1206,7 @@ def render(records, checkpoints=None, *, witness_url=None, policy=None, window=N
 </head><body><div class="wrap">
 <div class="eyebrow">Halo Runtime Report</div>
 <h1>%(subject)s</h1>
-<div class="meta">%(agent_meta)s &middot; <b>%(total)s</b> recorded actions</div>
+<div class="meta">%(agent_meta)s &middot; <b>%(total)s</b> recorded actions</div>%(subject_note)s
 <div class="period"><span class="period-l">Period covered</span>
 <b>%(start)s</b> &ndash; <b>%(end)s</b> <span class="period-tz">UTC</span></div>
 <div id="verdict" class="verdict neutral">Verifying hash chain&hellip;</div>
@@ -1267,6 +1292,7 @@ def render(records, checkpoints=None, *, witness_url=None, policy=None, window=N
         "records_json": records_json,
         "checkpoints_json": checkpoints_json,
         "config_json": config_json,
+        "subject_note": _subject_note(records),
         "verify_js": verify_js,
         "paginate_js": _PAGINATE_JS,
     }
@@ -1292,7 +1318,7 @@ def write_report(log_path, out_path=None, witness_log=None, witness_url=None,
     checkpoints = None
     if witness_log:
         from .anchor import Notary
-        checkpoints = Notary(witness_log).checkpoints(subject=_subject_id(records))
+        checkpoints = Notary(witness_log).checkpoints_for(records)
     elif witness_url:
         try:
             from .witness import fetch_checkpoints

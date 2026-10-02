@@ -37,6 +37,10 @@ class TenantIsolationTest(unittest.TestCase):
             subjects = [json.loads(l)["subject"]["id"] for l in fh if l.strip()]
         self.assertEqual(subjects, ["acme_a"])
 
+    def test_default_chain_keeps_its_filename(self):
+        tr = TenantRecorder(tempfile.mkdtemp())
+        self.assertEqual(os.path.basename(tr.path_for(tr.default)), "local.jsonl")
+
     def test_plain_ids_keep_their_existing_filename(self):
         tr = TenantRecorder(tempfile.mkdtemp())
         self.assertEqual(os.path.basename(tr.path_for("acme-corp")), "acme-corp.jsonl")
@@ -156,11 +160,10 @@ class WitnessScopingTest(unittest.TestCase):
         self.assertEqual(self._post(url, "keyA", "vendor-a-acme"), 201)
         self.assertEqual(self._post(url, "keyB", "vendor-a-acme"), 403)
 
-    def test_first_key_to_anchor_owns_an_unscoped_subject(self):
+    def test_unscoped_keys_are_refused_on_a_shared_witness(self):
         url = self._serve(parse_key_spec(["keyA", "keyB"]))
-        self.assertEqual(self._post(url, "keyA", "acme-corp"), 201)
+        self.assertEqual(self._post(url, "keyA", "acme-corp"), 403)
         self.assertEqual(self._post(url, "keyB", "acme-corp"), 403)
-        self.assertEqual(self._post(url, "keyA", "acme-corp", head="b" * 64), 201)
 
 
 class PurposeRedactionTest(unittest.TestCase):

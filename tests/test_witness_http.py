@@ -83,7 +83,9 @@ class WitnessHTTPTest(unittest.TestCase):
         anchor_remote(self.url, KEY, _chain(tempfile.mkdtemp(), 1, subject="initech"))
         self.assertEqual(len(fetch_checkpoints(self.url, subject="acme-corp")), 1)
         self.assertEqual(len(fetch_checkpoints(self.url, subject="initech")), 1)
-        self.assertEqual(len(fetch_checkpoints(self.url)), 2)
+        # Listing without a filter is refused: it would disclose every subject.
+        with self.assertRaises(urllib.error.HTTPError):
+            fetch_checkpoints(self.url)
 
     def test_bad_key_401(self):
         with self.assertRaises(urllib.error.HTTPError) as cm:
@@ -107,7 +109,7 @@ class WitnessHTTPTest(unittest.TestCase):
         self.assertEqual(cm.exception.code, 413)
 
     def test_checkpoints_cors_open(self):
-        with urllib.request.urlopen(self.url + "/v1/checkpoints", timeout=5) as r:
+        with urllib.request.urlopen(self.url + "/v1/checkpoints?subject=acme-corp", timeout=5) as r:
             self.assertEqual(r.headers.get("Access-Control-Allow-Origin"), "*")
 
     def test_unknown_route_404(self):
