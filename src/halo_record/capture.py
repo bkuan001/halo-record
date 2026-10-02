@@ -222,6 +222,59 @@ def record(recorder=None, *, category="security", action_type="tool_call",
     return decorator
 
 
+def model_call_input(provider, model, zdr=None, purpose=None, messages=None):
+    """The hashed + summarized input of a model-call record. ``messages`` is
+    reduced to a count: an integer is kept, a sized collection becomes its
+    length, a single string or mapping counts as one, anything else (an
+    iterator the caller still needs) is left out. Message content never
+    enters the record."""
+    tool_input = {"provider": provider, "model": model}
+    if zdr is not None:
+        tool_input["zdr"] = bool(zdr)
+    if purpose:
+        tool_input["purpose"] = purpose
+    count = _message_count(messages)
+    if count is not None:
+        tool_input["messages"] = count
+    return tool_input
+
+
+def _message_count(messages):
+    if messages is None:
+        return None
+    if isinstance(messages, bool):
+        return None
+    if isinstance(messages, int):
+        return messages
+    if isinstance(messages, (str, bytes, dict)):
+        return 1
+    try:
+        return len(messages)
+    except TypeError:
+        return None
+
+
+def model_call_fields(agent, model, zdr=None, purpose=None):
+    """Structured fields of a model-call record: the model on ``agent.model``
+    (the export's model column reads it there) and the retention terms on
+    ``data.zdr`` (where policy rules can test them), so both survive
+    ``summaries=False``. ``purpose`` also lands in ``data.purpose``."""
+    if isinstance(agent, str):
+        agent = {"id": agent, "name": agent}
+    elif isinstance(agent, dict):
+        agent = dict(agent)
+    else:
+        agent = {"id": "unknown", "name": "unknown"}
+    if model is not None:
+        agent["model"] = model if isinstance(model, str) else str(model)
+    data = {}
+    if purpose:
+        data["purpose"] = purpose
+    if zdr is not None:
+        data["zdr"] = bool(zdr)
+    return agent, (data or None)
+
+
 def record_model_call(recorder=None, *, provider, model, zdr=None, purpose=None,
                       messages=None, response=None, error=None, agent=None,
                       session_id="local", subject=None, source=None,
@@ -232,7 +285,8 @@ def record_model_call(recorder=None, *, provider, model, zdr=None, purpose=None,
     retention terms?" This appends the record that answers it:
     ``tool=model.generate``, ``scope=model:<provider>``, with ``zdr`` (zero
     data retention), ``purpose``, and ``messages`` (a count, never content)
-    sealed into the input. Mirrors the TypeScript package's
+    sealed into the input; the model is also stored as ``agent.model`` and
+    ``zdr`` as ``data.zdr``. Mirrors the TypeScript package's
     ``recordModelCall``; the two produce chain-compatible records.
 
         record_model_call(rec, provider="anthropic", model="claude-sonnet-4-6",
@@ -244,23 +298,18 @@ def record_model_call(recorder=None, *, provider, model, zdr=None, purpose=None,
         raise RuntimeError(
             "no recorder: pass one to record_model_call(...) or wrap the agent "
             "with halo_record.trace(...) to bind an active recorder")
-    tool_input = {"provider": provider, "model": model}
-    if zdr is not None:
-        tool_input["zdr"] = bool(zdr)
-    if purpose:
-        tool_input["purpose"] = purpose
-    if messages is not None:
-        tool_input["messages"] = messages
+    tool_input = model_call_input(provider, model, zdr, purpose, messages)
+    agent, data = model_call_fields(agent or current_agent(), model, zdr, purpose)
     rec = build(
         "tool_call", "privacy", tool="model.generate", tool_input=tool_input,
-        session_id=session_id, agent=agent or current_agent(),
+        session_id=session_id, agent=agent,
         scope="model:" + provider,
         outcome=derive_outcome(response, error=error),
         subject=subject, summaries=summaries,
         source=source or "recorder",
-        # The declared purpose is data-handling context, so it also lands in
-        # data.purpose where the export and residency checks read it.
-        data={"purpose": purpose} if purpose else None,
+        # The declared purpose and retention terms are data-handling context,
+        # so they also land in data, where the export and policy checks read them.
+        data=data,
     )
     recorder.append(rec)
     return rec
