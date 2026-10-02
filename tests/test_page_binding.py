@@ -28,7 +28,7 @@ from contextlib import redirect_stderr
 from halo_record import _view
 from halo_record.record import Recorder, build
 from halo_record.report import write_report
-from halo_record.verify import verify_log
+from halo_record.verify import read_log_lines, verify_log
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 PACKS = os.path.join(os.path.dirname(HERE), "examples", "policies")
@@ -36,8 +36,7 @@ NODE = shutil.which("node")
 
 
 def _load(path):
-    with open(path, encoding="utf-8") as fh:
-        return [json.loads(l) for l in fh.read().split("\n") if l.strip()]
+    return [json.loads(l) for l in read_log_lines(path)]
 
 
 def _records(build_calls):

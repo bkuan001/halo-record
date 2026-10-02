@@ -7,15 +7,14 @@ import sys
 from . import __version__
 from .canon import GENESIS_PREV, compute_hash, input_hash
 from .record import build
-from .verify import verify_log
+from .verify import read_log_lines, verify_log
 
 
 def _cmd_verify(args):
     ok = verify_log(args.log)
     if ok:
-        with open(args.log, "r", encoding="utf-8") as fh:
-            if not any(ln.strip() for ln in fh):
-                return 3  # empty chain: verified vacuously, nothing attested
+        if not read_log_lines(args.log):
+            return 3  # empty chain: verified vacuously, nothing attested
         return 0
     return 1
 

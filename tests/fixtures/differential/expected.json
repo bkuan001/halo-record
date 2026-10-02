@@ -1,6 +1,10 @@
 {
   "astral.jsonl": true,
   "big_int.jsonl": false,
+  "bom.jsonl": true,
+  "bom_midfile.jsonl": false,
+  "cr_only_separators.jsonl": false,
+  "cr_whitespace.jsonl": true,
   "crlf.jsonl": true,
   "dup_id.jsonl": false,
   "exp_number.jsonl": false,

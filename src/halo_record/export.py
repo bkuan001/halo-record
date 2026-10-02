@@ -30,7 +30,7 @@ import hashlib
 import json
 import os
 
-from .verify import verify_log
+from .verify import read_log_lines, verify_log
 
 # Grouped so a reviewer reading left to right gets: when → what happened →
 # who did it → under what authority → what was flagged → where it came from →
@@ -170,12 +170,7 @@ def parse_bound(value, *, end=False):
 
 
 def load_records(path):
-    records = []
-    with open(os.path.expanduser(path), "r", encoding="utf-8") as fh:
-        for line in fh:
-            if line.strip():
-                records.append(json.loads(line))
-    return records
+    return [json.loads(ln) for ln in read_log_lines(os.path.expanduser(path))]
 
 
 def in_window(record, start=None, end=None):

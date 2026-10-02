@@ -19,12 +19,12 @@ import os
 
 from .canon import GENESIS_PREV
 from .anchor import chain_root as _chain_root
+from .verify import read_log_lines
 from . import _view
 
 
 def _load(path):
-    with open(path, "r", encoding="utf-8") as fh:
-        lines = [ln for ln in fh.read().split("\n") if ln.strip()]
+    lines = read_log_lines(path)
     records = []
     for n, ln in enumerate(lines, start=1):
         try:

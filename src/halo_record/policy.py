@@ -50,6 +50,8 @@ existentially, e.g. "findings[].severity" or "threats[].type".
 import json
 import os
 
+from .verify import read_log_lines
+
 _MISSING = object()
 
 
@@ -341,8 +343,7 @@ def evaluate(records, policy):
 
 
 def load_records(path):
-    with open(path, "r", encoding="utf-8") as fh:
-        return [json.loads(ln) for ln in fh.read().split("\n") if ln.strip()]
+    return [json.loads(ln) for ln in read_log_lines(path)]
 
 
 _PACK_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "policies")
