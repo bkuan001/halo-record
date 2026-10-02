@@ -124,6 +124,11 @@ def verify_log(path, schema=None, out=print):
                     "this chain" % (n, parent_id))
         record_id = record.get("record_id")
         if record_id:
+            if record_id in seen_ids:
+                # Two records sharing an id make every id-keyed view ambiguous
+                # (a report could show one record's details for another's row).
+                out("record %d: duplicate record_id %s" % (n, record_id))
+                ok = False
             seen_ids.add(record_id)
 
         prev_hash = recomputed  # never the record's own declared_hash

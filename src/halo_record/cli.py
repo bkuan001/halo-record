@@ -126,6 +126,8 @@ def _cmd_policy(args):
     # attest (no records, or records but no rule matched any) — vacuously
     # "compliant" but assured nothing, mirroring verify/anchor's vacuous case;
     # 0 = at least one rule was exercised and none were violated.
+    if result.get("chain_verified") is False:
+        return 2
     if not result["compliant"]:
         return 1
     if result["checked"] == 0 or result.get("unexercised", 0) == len(result["rules"]):

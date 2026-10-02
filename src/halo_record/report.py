@@ -376,6 +376,25 @@ async function verify(records){
   }
   return {ok:true, head:prev};
 }
+function cleanCheckpoints(list){
+  // Checkpoints arrive from the page or from a witness URL the report names, so
+  // they are untrusted: keep only well-formed {count: positive integer, head:
+  // SHA-256 hex} entries before any of them reaches a verdict.
+  return (Array.isArray(list) ? list : []).filter(function(c){
+    return c && typeof c === "object" && Number.isInteger(c.count) && c.count >= 1 &&
+           typeof c.head === "string" && /^[0-9a-f]{64}$/.test(c.head);
+  });
+}
+function witnessBase(url){
+  // Only an https witness (or http on this machine, for local testing) is fetched.
+  try {
+    const u = new URL(String(url));
+    const local = u.hostname === "localhost" || u.hostname === "127.0.0.1" || u.hostname === "[::1]";
+    if (u.protocol === "https:" || (u.protocol === "http:" && local))
+      return u.origin + u.pathname.replace(/\/+$/, "");
+  } catch (e){}
+  return null;
+}
 function completeness(records, cps){
   // Assumes the chain already verified. Mirrors anchor.verify_completeness:
   // every head the notary independently witnessed must still be present here.
@@ -410,16 +429,17 @@ async function liveCheckpoints(cfg, embedded){
   // is configured, fetch its checkpoints directly (CORS-open) so the verdict
   // rests on a party the vendor doesn't control. Fall back to the embedded
   // snapshot only if the live witness is unreachable.
-  if (!cfg.witnessUrl) return {cps: embedded, live: false, error: null};
+  if (!cfg.witnessUrl) return {cps: cleanCheckpoints(embedded), live: false, error: null};
+  const base = witnessBase(cfg.witnessUrl);
+  if (!base) return {cps: cleanCheckpoints(embedded), live: false, error: "witness URL must be https"};
   try {
-    const base = cfg.witnessUrl.replace(/\/+$/, "");
     const u = base + "/v1/checkpoints" + (cfg.subject ? "?subject=" + encodeURIComponent(cfg.subject) : "");
     const resp = await fetch(u, {mode: "cors"});
     if (!resp.ok) throw new Error("HTTP " + resp.status);
     const data = await resp.json();
-    return {cps: data.checkpoints || [], live: true, error: null};
+    return {cps: cleanCheckpoints(data.checkpoints), live: true, error: null};
   } catch (e){
-    return {cps: embedded, live: false, error: e.message};
+    return {cps: cleanCheckpoints(embedded), live: false, error: e.message};
   }
 }
 (async function(){
@@ -763,7 +783,8 @@ _PAGINATE_JS = r"""
     if (idx === undefined || !panel || !panelBody) return;
     var r = RECORDS[idx];
     var a = r.action || {}, auth = a.authorization || {}, o = r.outcome || {},
-        integ = r.integrity || {}, inp = a.input || {}, f = r.findings || [];
+        integ = r.integrity || {}, inp = a.input || {},
+        f = Array.isArray(r.findings) ? r.findings : [];
     var prev = idx > 0 ? RECORDS[idx - 1] : null;
     var linkOk = prev ? ((prev.integrity || {}).hash === integ.prev_hash) : null;
 
@@ -790,16 +811,17 @@ _PAGINATE_JS = r"""
     h += field("Status", o.status);
     if (o.summary){ h += '<pre class="d-pre">' + esc(o.summary) + "</pre>"; }
     h += field("Result hash", o.hash, true);
-    h += '<div class="d-sec">Flags (' + f.length + ")</div>";
+    h += '<div class="d-sec">Flags (' + esc(String(f.length)) + ")</div>";
     if (!f.length){
       h += '<div class="d-note">No redaction pattern matched. That is not a ' +
            "guarantee no sensitive data is present — unstructured personal data " +
            "has no pattern to match.</div>";
     } else {
       for (var i = 0; i < f.length; i++){
-        h += '<div class="d-row"><div class="d-k">' + esc(f[i].type || "?") +
-             '</div><div class="d-v">' + esc(f[i].severity || "") +
-             (f[i].sample ? ' &middot; <span class="mono">' + esc(f[i].sample) + "</span>" : "") +
+        var fi = (f[i] && typeof f[i] === "object") ? f[i] : {};
+        h += '<div class="d-row"><div class="d-k">' + esc(fi.type || "?") +
+             '</div><div class="d-v">' + esc(fi.severity || "") +
+             (fi.sample ? ' &middot; <span class="mono">' + esc(fi.sample) + "</span>" : "") +
              "</div></div>";
       }
       h += '<div class="d-note">A flag marks a pattern the redactor matched and ' +
@@ -1023,6 +1045,10 @@ def render(records, checkpoints=None, *, witness_url=None, policy=None, window=N
     anchor (the chain head immediately before the window) instead of genesis,
     and the window's position in the full chain is disclosed on the page."""
     checkpoints = checkpoints or []
+    ids = [r.get("record_id") for r in records if r.get("record_id")]
+    if len(ids) != len(set(ids)):
+        raise ValueError("halo-record: duplicate record_id in chain; refusing to render "
+                         "a report whose rows could not be told apart")
     subject = _subject_label(records)
     agents = _agents(records)
     multi_agent = len(agents) > 1
@@ -1296,12 +1322,20 @@ def write_report(log_path, out_path=None, witness_log=None, witness_url=None,
         # A break *inside* the requested window is still a refusal — that
         # report would assert an integrity it does not have.
         win_breaks = chain_breaks(win_records)
+        # The file's first record must link to genesis. A window that starts at
+        # the first record would otherwise take a truncated head as its anchor.
+        head_cut = bool(records) and (records[0].get("integrity") or {}).get("prev_hash") != GENESIS_PREV
+        if head_cut and first == 0:
+            win_breaks = [0] + win_breaks
         if win_breaks:
             raise ValueError(
                 "%s: the requested window fails verification at record(s) %s; "
                 "refusing to render a report that would claim otherwise"
                 % (log_path, ", ".join(str(first + 1 + n) for n in win_breaks[:5])))
-        outside = [n for n in chain_breaks(records) if not (first <= n <= last)]
+        all_breaks = chain_breaks(records)
+        if head_cut and 0 not in all_breaks:
+            all_breaks = [0] + all_breaks
+        outside = [n for n in all_breaks if not (first <= n <= last)]
 
         window = {"first": first + 1, "last": last + 1, "total": total,
                   "anchor": anchor, "chain_head": chain_head,

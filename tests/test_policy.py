@@ -125,15 +125,29 @@ class TestPolicyEngine(unittest.TestCase):
         self.assertTrue(doc.startswith("<!doctype html>"))
 
 
+def _seal(path, records):
+    """Write records as a real sealed chain: policy verdicts are only attestable
+    over a log that verifies."""
+    import copy
+    from halo_record.record import Recorder, build
+    template = build("tool_call", "security", tool="t")
+    rec = Recorder(path)
+    for r in records:
+        r = copy.deepcopy(r)
+        r.setdefault("session_id", template["session_id"])
+        r.setdefault("ts", template["ts"])
+        r["integrity"] = {k: v for k, v in template["integrity"].items()
+                          if k in ("alg", "canon")}
+        rec.append(r)
+
+
 class TestPolicyCLI(unittest.TestCase):
     """Exercise `halo policy` end to end through the real argparse entrypoint."""
 
     def setUp(self):
         self.dir = tempfile.mkdtemp()
         self.log = os.path.join(self.dir, "chain.jsonl")
-        with open(self.log, "w", encoding="utf-8") as fh:
-            for rec in CHAIN:
-                fh.write(json.dumps(rec) + "\n")
+        _seal(self.log, CHAIN)
         self.policy = os.path.join(self.dir, "policy.json")
         with open(self.policy, "w", encoding="utf-8") as fh:
             json.dump([REFUND_RULE], fh)
@@ -147,8 +161,7 @@ class TestPolicyCLI(unittest.TestCase):
 
     def test_cli_clean_exit_zero(self):
         clean = os.path.join(self.dir, "clean.jsonl")
-        with open(clean, "w", encoding="utf-8") as fh:
-            fh.write(json.dumps(CHAIN[1]) + "\n")       # the approved refund only
+        _seal(clean, [CHAIN[1]])                         # the approved refund only
         with redirect_stdout(io.StringIO()):
             code = main(["policy", clean, self.policy])
         self.assertEqual(code, 0)

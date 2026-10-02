@@ -228,7 +228,15 @@ def load_policy(path):
 
 
 def evaluate_log(log_path, policy_path):
-    return evaluate(load_records(log_path), load_policy(policy_path))
+    """Evaluate a policy over a log, but only after the log verifies: a verdict
+    computed over records that fail verification is not attestable."""
+    from .verify import verify_log
+    chain_verified = verify_log(log_path, out=lambda *_a, **_k: None)
+    result = evaluate(load_records(log_path), load_policy(policy_path))
+    result["chain_verified"] = chain_verified
+    if not chain_verified:
+        result["compliant"] = False
+    return result
 
 
 # --------------------------------------------------------------------------- #
@@ -241,7 +249,10 @@ _MARK = {"pass": "PASS", "violated": "FAIL", "no_evidence": "GAP ", "no_match": 
 def render_text(result):
     lines = []
     unex = result.get("unexercised", 0)
-    if result["checked"] == 0:
+    if result.get("chain_verified") is False:
+        head = ("NON-ATTESTABLE — the log did not verify; a policy verdict over "
+                "records that fail verification attests nothing (run halo verify)")
+    elif result["checked"] == 0:
         head = "NO EVIDENCE — 0 records in scope; nothing attested"
     elif unex == len(result["rules"]):
         head = "NO APPLICABLE EVIDENCE — records exist but none fall in any rule's scope"
@@ -359,7 +370,9 @@ def verdict_panel(result, subject=None):
             % (fg, bg, tag, _html.escape(r["id"]), _html.escape(r["severity"]), src,
                _html.escape(r["description"]), _html.escape(detail)))
 
-    if result["checked"] == 0:
+    if result.get("chain_verified") is False:
+        verdict, vcolor = "NON-ATTESTABLE — LOG DID NOT VERIFY", "#B23A48"
+    elif result["checked"] == 0:
         verdict, vcolor = "NO EVIDENCE — 0 RECORDS IN SCOPE", "#6B6354"
     elif result.get("unexercised", 0) == len(result["rules"]):
         verdict, vcolor = "NO APPLICABLE EVIDENCE — NO RULES EXERCISED", "#6B6354"
