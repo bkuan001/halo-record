@@ -81,6 +81,15 @@ class RedactionTimeTest(unittest.TestCase):
         self.assertLess(time.perf_counter() - t0, 1.0)
 
 
+class LargePrivateKeyTest(unittest.TestCase):
+    def test_oversized_private_key_block_is_masked_through_its_footer(self):
+        from halo_record.redact import redact_text
+        body = ("MIIE" + "A" * 60 + "\n") * 400  # ~26 KB
+        out = redact_text("key: -----BEGIN PRIVATE KEY-----\n" + body + "-----END PRIVATE KEY----- tail")
+        self.assertNotIn("MIIE", out)
+        self.assertIn("tail", out)
+
+
 class PrivateFileSymlinkTest(unittest.TestCase):
     def test_private_open_does_not_follow_symlinks(self):
         from halo_record._private import open_private

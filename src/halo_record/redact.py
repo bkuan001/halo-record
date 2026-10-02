@@ -33,7 +33,7 @@ PATTERNS = [
     # masked, not just the header line). When the block is truncated, consumes
     # the base64-shaped body lines that follow the header, so a partial key
     # still cannot leak through the mask.
-    ("private_key",  "CRITICAL", re.compile(r'-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----(?:(?:(?!-----BEGIN)[\s\S]){0,16384}?-----END (?:RSA |EC |OPENSSH )?PRIVATE KEY-----|(?:\n[A-Za-z0-9+/=]+(?![^\n]))*)')),
+    ("private_key",  "CRITICAL", re.compile(r'-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----(?:(?:(?!-----BEGIN)[\s\S])*?-----END (?:RSA |EC |OPENSSH )?PRIVATE KEY-----|(?:\n[A-Za-z0-9+/=]+(?![^\n]))*)')),
     ("db_conn",      "CRITICAL", re.compile(r'(?:postgres|mysql|mongodb(?:\+srv)?|redis)://[^\s"\'<>]+')),
     ("jwt",          "HIGH",     re.compile(r'eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}')),
     # IBAN runs BEFORE credit_card: an IBAN whose digit body happens to Luhn-
