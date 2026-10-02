@@ -367,17 +367,21 @@ def _js_anchor(anchor):
 _VERIFY_JS = r"""
 const GENESIS = %(genesis)s;
 const WINDOW = %(window_json)s;
+// A lone surrogate is hashed as U+FFFD, as the Python and TypeScript verifiers
+// do; JSON.stringify would otherwise write it as a \\u escape and disagree.
+const LONE_SURROGATE = /[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/g;
+function canonStr(s){ return JSON.stringify(s.replace(LONE_SURROGATE, "\ufffd")); }
 function canon(v){
   if (v === true) return "true";
   if (v === false) return "false";
   if (v === null) return "null";
   const t = typeof v;
-  if (t === "string") return JSON.stringify(v);
+  if (t === "string") return canonStr(v);
   if (t === "number") return String(v);
   if (Array.isArray(v)) return "[" + v.map(canon).join(",") + "]";
   if (t === "object") {
     const keys = Object.keys(v).sort();
-    return "{" + keys.map(k => JSON.stringify(k) + ":" + canon(v[k])).join(",") + "}";
+    return "{" + keys.map(k => canonStr(k) + ":" + canon(v[k])).join(",") + "}";
   }
   throw new Error("cannot canonicalize");
 }
