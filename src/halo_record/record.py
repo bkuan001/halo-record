@@ -20,7 +20,7 @@ except ImportError:  # pragma: no cover
     fcntl = None
 
 from .canon import GENESIS_PREV, canon, compute_hash, input_hash, sha256_hex
-from .redact import CREDENTIAL_MASK, SEVERITY_RANK, credential_value, mask_known_secrets, mask_secrets_only, redact_fields, redact_text, scan, scan_fields, top_severity
+from .redact import CREDENTIAL_MASK, SEVERITY_RANK, credential_value, mask_known_secrets, mask_secrets_only, pseudonymize_secrets, redact_fields, redact_text, scan, scan_fields, top_severity
 
 SCHEMA_VERSION = "0.1"
 
@@ -608,6 +608,8 @@ def build(action_type, category, tool=None, tool_input=None, *,
     if outcome is not None:
         record["outcome"] = outcome
     _scrub_fields(record)
+    if not summaries:
+        _pseudonymize_ids(record)
     # Final guard: a caller-supplied value (a float score in data/outcome, say)
     # must never crash the recorder when the record is hashed. No-op on a record
     # that was already canonicalizable, so the hash of valid records is unchanged.
@@ -667,12 +669,49 @@ def _scrub_fields(record):
             return out
         if isinstance(node, list):
             return [walk(v, path) for v in node]
+        if isinstance(node, (int, float)) and not isinstance(node, bool):
+            return _scrub_number(node)
         if isinstance(node, str):
             if path and path[-1] in _ID_NAMES and _OPAQUE_ID.fullmatch(node):
                 return node  # a UUID or hex id carries no secret; patterns can misfire on it
             if path in _IDENTITY_PATHS or (path and path[0] == "principal"):
                 return mask_secrets_only(node)
             return mask_known_secrets(node) if _identifier_like(path) else redact_text(node)
+        return node
+    scrubbed = walk(record, ())
+    record.clear()
+    record.update(scrubbed)
+
+
+def _scrub_number(n):
+    """A number whose digits form a named identifier (a card number given as a
+    JSON number) is stored as its mask; any other number is kept as is."""
+    if isinstance(n, float):
+        if not n.is_integer():
+            return n
+        text = str(int(n))
+    else:
+        text = str(n)
+    if len(text.lstrip("-")) < 13:
+        return n
+    masked = mask_known_secrets(text)
+    return masked if masked != text else n
+
+
+def _pseudonymize_ids(record):
+    """Hash-only records keep ids for grouping and links but never store a
+    secret-shaped token in one: each is replaced by a stable digest. The
+    subject id is left as is: it routes the record to its tenant's chain."""
+    def walk(node, path):
+        if isinstance(node, dict):
+            return {k: (node[k] if (not path and k in _SCRUB_SKIP) or path + (k,) == ("subject", "id")
+                        else walk(node[k], path + (k,))) for k in node}
+        if isinstance(node, list):
+            return [walk(v, path) for v in node]
+        if isinstance(node, str) and path and _identifier_like(path):
+            if path[-1] in _ID_NAMES and _OPAQUE_ID.fullmatch(node):
+                return node
+            return pseudonymize_secrets(node)
         return node
     scrubbed = walk(record, ())
     record.clear()

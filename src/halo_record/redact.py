@@ -18,6 +18,7 @@ carry no personal data (see LIMITS.md). Over-redaction is the safe failure.
 Pattern-for-pattern port of the TypeScript ``redact.ts``.
 """
 
+import hashlib
 import math
 import re
 from collections import Counter
@@ -495,7 +496,25 @@ def redact_fields(obj, _entropy=True, _depth=0):
         return out
     if isinstance(obj, (list, tuple)):
         return [redact_fields(v, _entropy, _depth + 1) for v in obj]
-    return obj
+    if isinstance(obj, (set, frozenset)):
+        return [redact_fields(v, _entropy, _depth + 1) for v in sorted(obj, key=repr)]
+    if obj is None or isinstance(obj, (bool, int, float)):
+        return obj
+    # Bytes, objects, anything else: redact the text it renders as, so the
+    # summary carries no more than the scan found and reported.
+    return redact_text(str(obj), entropy=_entropy)
+
+
+def pseudonymize_secrets(text):
+    """Replace each secret-shaped token in ``text`` with ``sha256:`` plus 16 hex
+    digits of its digest. Deterministic, so equal ids stay equal (grouping and
+    links survive) while the token itself is not stored."""
+    def sub(m):
+        tok = m.group(0)
+        if not _looks_like_secret(tok):
+            return tok
+        return "sha256:" + hashlib.sha256(tok.encode("utf-8")).hexdigest()[:16]
+    return TOKEN_RE.sub(sub, normalize_invisible(str(text)))
 
 
 def scan_fields(obj, _entropy=True, _depth=0, _seen=None, _key=None):
