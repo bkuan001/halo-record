@@ -55,7 +55,9 @@ PATTERNS = [
     # and the tail exposed. Shape-tolerant (case, space/dot/hyphen groups) and
     # gated on the mod-97 check, so ordinary identifiers are not classified.
     ("iban",         "HIGH",     re.compile(r'(?i)\b[A-Z]{2}[0-9]{2}(?:[ .\-\t\u00a0]{0,2}[A-Z0-9]{4}){2,7}(?:[ .\-\t\u00a0]{0,2}[A-Z0-9]{1,4})?\b')),
-    ("credit_card",  "HIGH",     re.compile(r'\b(?:4[0-9]{3}|5[1-5][0-9]{2}|3[47][0-9]{2}|6(?:011|5[0-9]{2}))(?:[ -]?[0-9]){9,13}\b')),
+    # Digit groups may be separated by a space, hyphen, dot, no-break space,
+    # figure space or narrow no-break space; the Luhn check gates the finding.
+    ("credit_card",  "HIGH",     re.compile(r'\b(?:4[0-9]{3}|5[1-5][0-9]{2}|3[47][0-9]{2}|6(?:011|5[0-9]{2}))(?:[ .\-\u00a0\u2007\u202f]?[0-9]){9,13}\b')),
     ("ssn",          "HIGH",     re.compile(r'\b\d{3}[- ]\d{2}[- ]\d{4}\b')),
     # Telegram-style bot tokens: a numeric bot id, a colon, a ~35-char secret.
     # Often embedded in a URL path, where path-readable fields keep the rest.
