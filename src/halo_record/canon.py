@@ -64,6 +64,9 @@ def canon(value):
     if isinstance(value, list):
         return "[" + ",".join(canon(v) for v in value) + "]"
     if isinstance(value, dict):
+        for k in value:
+            if not isinstance(k, str):
+                raise TypeError("cannot canonicalize a non-string object key %r" % (k,))
         items = sorted(value.items(), key=lambda kv: kv[0].encode("utf-16-be"))
         return "{" + ",".join(_canon_string(k) + ":" + canon(v) for k, v in items) + "}"
     raise TypeError("cannot canonicalize %r" % type(value))
@@ -127,13 +130,78 @@ def compute_hash(record, prev_hash):
 
 def input_hash(value):
     """``sha256:`` + SHA-256 of the canonical arguments. Falls back to a stable
-    sorted-key serialization if ``value`` isn't strictly canonicalizable, so a
-    recorder embedded in a hook never crashes on an odd input."""
+    sorted-key serialization if ``value`` isn't strictly canonicalizable, and
+    finally to the canonical form of a JSON-safe copy (string keys, cycles and
+    excess depth marked), so a recorder embedded in a hook never crashes on an
+    odd input."""
     try:
         c = canon(value)
-    except (TypeError, ValueError):
+    except Exception:
         try:
             c = json.dumps(value, sort_keys=True, separators=(",", ":"))
-        except TypeError:
-            c = json.dumps(value, sort_keys=True, separators=(",", ":"), default=str)
+        except Exception:
+            try:
+                c = json.dumps(value, sort_keys=True, separators=(",", ":"), default=str)
+            except Exception:
+                c = canon(json_safe(value))
     return "sha256:" + sha256_hex(c)
+
+
+MAX_DEPTH = 64
+CIRCULAR = "[circular]"
+TOO_DEEP = "[nested too deeply]"
+
+
+def json_key(k):
+    """The string a JSON encoder would use for a non-string key (``True`` ->
+    ``"true"``, ``None`` -> ``"null"``, ``1`` -> ``"1"``); ``str()`` otherwise."""
+    if isinstance(k, str):
+        return k
+    if k is True:
+        return "true"
+    if k is False:
+        return "false"
+    if k is None:
+        return "null"
+    if isinstance(k, (int, float)):
+        return json.dumps(k)
+    return str(k)
+
+
+def json_safe(value, _depth=0, _active=None):
+    """A canonicalizable copy of ``value``: string keys (a collision keeps both),
+    lists for tuples and sets, strings for bytes, non-integer or out-of-range
+    numbers and other objects, and markers in place of a cycle or nesting
+    beyond ``MAX_DEPTH``."""
+    if value is None or isinstance(value, (bool, str)):
+        return value
+    if isinstance(value, int):
+        return value if abs(value) <= MAX_SAFE_INT else str(value)
+    if isinstance(value, float):
+        if value == value and value not in (float("inf"), float("-inf")) and value.is_integer() \
+                and abs(value) <= MAX_SAFE_INT:
+            return int(value)
+        return str(value)
+    if _depth >= MAX_DEPTH:
+        return TOO_DEEP
+    if isinstance(value, (dict, list, tuple, set, frozenset)):
+        _active = _active if _active is not None else set()
+        if id(value) in _active:
+            return CIRCULAR
+        _active.add(id(value))
+        try:
+            if isinstance(value, dict):
+                out = {}
+                for k, v in value.items():
+                    key = base = json_key(k)
+                    n = 2
+                    while key in out:
+                        key = "%s#%d" % (base, n)
+                        n += 1
+                    out[key] = json_safe(v, _depth + 1, _active)
+                return out
+            items = sorted(value, key=repr) if isinstance(value, (set, frozenset)) else value
+            return [json_safe(v, _depth + 1, _active) for v in items]
+        finally:
+            _active.discard(id(value))
+    return str(value)

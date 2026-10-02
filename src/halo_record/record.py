@@ -19,15 +19,15 @@ try:  # POSIX inter-process append lock; on other platforms appends are
 except ImportError:  # pragma: no cover
     fcntl = None
 
-from .canon import GENESIS_PREV, canon, compute_hash, input_hash, sha256_hex
-from .redact import SEVERITY_RANK, mask_known_secrets, mask_secrets_only, redact_fields, redact_text, scan, scan_fields, top_severity
+from .canon import CIRCULAR, GENESIS_PREV, MAX_DEPTH, TOO_DEEP, canon, compute_hash, input_hash, json_key, sha256_hex
+from .redact import CREDENTIAL_MASK, SEVERITY_RANK, credential_value, mask_known_secrets, mask_secrets_only, pseudonymize_secrets, redact_fields, redact_text, scan, scan_fields, top_severity
 
 SCHEMA_VERSION = "0.1"
 
 ACTION_TYPES = {"tool_call", "agent_message", "read", "write", "network"}
 CATEGORIES = {"security", "safety", "reliability", "privacy"}
 
-# Where a record came from. ``capture`` is the honest evidentiary tier:
+# Where a record came from. ``capture`` is the evidentiary tier:
 #   "captured"  — Halo saw the call at the trust boundary (in-process interceptor
 #                 or the native recorder). Strongest: nothing could be shaped
 #                 before Halo recorded it.
@@ -35,8 +35,8 @@ CATEGORIES = {"security", "safety", "reliability", "privacy"}
 #                 (OTel spans, gateway/proxy logs, a tracing store). Useful and
 #                 low-friction, but weaker: the stream is the vendor's own, so the
 #                 witness attests "this is what you sent me", not "I watched it happen".
-# This distinction is the product's honesty: an independent attestor discloses
-# provenance and strength per record rather than flattening every source to "logged".
+# The distinction is disclosed per record: an independent attestor states
+# provenance and strength for each record rather than flattening every source to "logged".
 SOURCES = {
     "recorder":      {"adapter": "recorder",      "via": "Halo recorder (native)",        "capture": "captured"},
     "mcp":           {"adapter": "mcp",           "via": "MCP interceptor",               "capture": "captured"},
@@ -222,7 +222,7 @@ def _pii_types_from_findings(findings):
 _MAX_EXACT_JSON_INT = 2**53 - 1
 
 
-def _canon_safe(value):
+def _canon_safe(value, _depth=0, _active=None):
     """Recursively make a value safe for RFC 8785 canonicalization, which permits
     only integer-valued numbers. A non-integer float is preserved as a string
     instead of crashing the recorder when the record is hashed, and an integer
@@ -247,18 +247,31 @@ def _canon_safe(value):
         return str(value)
     if isinstance(value, str):
         return _no_lone_surrogates(value)
-    if isinstance(value, dict):
-        out = {}
-        for k, v in value.items():
-            key = _no_lone_surrogates(k) if isinstance(k, str) else k
-            n = 2
-            while key in out:  # never let a normalized key overwrite another
-                key = "%s#%d" % (_no_lone_surrogates(k) if isinstance(k, str) else k, n)
-                n += 1
-            out[key] = _canon_safe(v)
-        return out
-    if isinstance(value, (list, tuple)):
-        return [_canon_safe(v) for v in value]
+    if isinstance(value, (dict, list, tuple)):
+        # A cycle or runaway nesting in caller data is marked, not recursed
+        # into, so it can neither crash the recorder nor the host.
+        if _depth >= MAX_DEPTH:
+            return TOO_DEEP
+        _active = _active if _active is not None else set()
+        if id(value) in _active:
+            return CIRCULAR
+        _active.add(id(value))
+        try:
+            if isinstance(value, dict):
+                out = {}
+                for k, v in value.items():
+                    # Keys become strings the way a JSON encoder writes them.
+                    base = _no_lone_surrogates(json_key(k))
+                    key = base
+                    n = 2
+                    while key in out:  # never let a normalized key overwrite another
+                        key = "%s#%d" % (base, n)
+                        n += 1
+                    out[key] = _canon_safe(v, _depth + 1, _active)
+                return out
+            return [_canon_safe(v, _depth + 1, _active) for v in value]
+        finally:
+            _active.discard(id(value))
     return value
 
 
@@ -271,6 +284,21 @@ def _no_lone_surrogates(s):
 
 
 _PURPOSE_MAX = 500
+
+# A stored summary is at most 200 characters, so the text it is redacted from is
+# cut to a window first: masking work stays bounded however long a tool's
+# response is. The cut lands on whitespace when it can, so a secret is not split
+# into a fragment the patterns no longer recognize. Findings still scan the
+# whole text.
+_SUMMARY_WINDOW = 8192
+
+
+def _summary_window(text):
+    if len(text) <= _SUMMARY_WINDOW:
+        return text
+    cut = text[:_SUMMARY_WINDOW]
+    ws = max(cut.rfind(" "), cut.rfind("\n"), cut.rfind("\t"))
+    return cut[:ws] if ws > _SUMMARY_WINDOW // 2 else cut
 
 
 def _norm_data(data):
@@ -499,7 +527,8 @@ def build(action_type, category, tool=None, tool_input=None, *,
             # Leaves the field redactor does not treat as text (numbers, sets,
             # bytes, object reprs, credential-bearing URL paths) are caught by a
             # final pass over the rendered summary.
-            inp["summary"] = mask_known_secrets(str(redact_fields(tool_input)))[:200]
+            inp["summary"] = mask_known_secrets(
+                _summary_window(str(redact_fields(tool_input))))[:200]
         action["input"] = inp
 
     # Normalize the outcome up front so its summary is redacted before it is
@@ -509,6 +538,7 @@ def build(action_type, category, tool=None, tool_input=None, *,
     if outcome is not None:
         outcome = dict(outcome)
         outcome_scan = outcome.pop("_scan", None)
+        outcome = _canon_safe(outcome)
         if "summary" in outcome and outcome["summary"] is not None:
             outcome_summary_raw = str(outcome["summary"])
         if not summaries:
@@ -524,7 +554,7 @@ def build(action_type, category, tool=None, tool_input=None, *,
             outcome = kept
         else:
             if outcome_summary_raw is not None:
-                outcome["summary"] = redact_text(outcome_summary_raw)[:200]
+                outcome["summary"] = redact_text(_summary_window(outcome_summary_raw))[:200]
             h = outcome.get("hash")
             if h is not None and not (isinstance(h, str) and _OUTCOME_HASH_RE.fullmatch(h)):
                 outcome.pop("hash")  # only a hash-shaped value is kept under that name
@@ -574,7 +604,7 @@ def build(action_type, category, tool=None, tool_input=None, *,
     if source is not None:
         record["source"] = source
     if authority is not None:
-        record["authority"] = _sanitize_authority(authority)
+        record["authority"] = _sanitize_authority(_canon_safe(authority))
     threats = _norm_threats(threats)
     if threats is not None:
         record["threats"] = threats
@@ -592,6 +622,8 @@ def build(action_type, category, tool=None, tool_input=None, *,
     if outcome is not None:
         record["outcome"] = outcome
     _scrub_fields(record)
+    if not summaries:
+        _pseudonymize_ids(record)
     # Final guard: a caller-supplied value (a float score in data/outcome, say)
     # must never crash the recorder when the record is hashed. No-op on a record
     # that was already canonicalizable, so the hash of valid records is unchanged.
@@ -641,16 +673,59 @@ def _scrub_fields(record):
                 while key in out:
                     key = "%s#%d" % (mask_known_secrets(k), n)
                     n += 1
-                out[key] = walk(node[k], p)
+                if credential_value(k, node[k]):
+                    out[key] = CREDENTIAL_MASK  # a credential-named field, masked whole
+                elif isinstance(node[k], list):
+                    out[key] = [CREDENTIAL_MASK if credential_value(k, el) else walk(el, p)
+                                for el in node[k]]
+                else:
+                    out[key] = walk(node[k], p)
             return out
         if isinstance(node, list):
             return [walk(v, path) for v in node]
+        if isinstance(node, (int, float)) and not isinstance(node, bool):
+            return _scrub_number(node)
         if isinstance(node, str):
             if path and path[-1] in _ID_NAMES and _OPAQUE_ID.fullmatch(node):
                 return node  # a UUID or hex id carries no secret; patterns can misfire on it
             if path in _IDENTITY_PATHS or (path and path[0] == "principal"):
                 return mask_secrets_only(node)
             return mask_known_secrets(node) if _identifier_like(path) else redact_text(node)
+        return node
+    scrubbed = walk(record, ())
+    record.clear()
+    record.update(scrubbed)
+
+
+def _scrub_number(n):
+    """A number whose digits form a named identifier (a card number given as a
+    JSON number) is stored as its mask; any other number is kept as is."""
+    if isinstance(n, float):
+        if not n.is_integer():
+            return n
+        text = str(int(n))
+    else:
+        text = str(n)
+    if len(text.lstrip("-")) < 13:
+        return n
+    masked = mask_known_secrets(text)
+    return masked if masked != text else n
+
+
+def _pseudonymize_ids(record):
+    """Hash-only records keep ids for grouping and links but never store a
+    secret-shaped token in one: each is replaced by a stable digest. The
+    subject id is left as is: it routes the record to its tenant's chain."""
+    def walk(node, path):
+        if isinstance(node, dict):
+            return {k: (node[k] if (not path and k in _SCRUB_SKIP) or path + (k,) == ("subject", "id")
+                        else walk(node[k], path + (k,))) for k in node}
+        if isinstance(node, list):
+            return [walk(v, path) for v in node]
+        if isinstance(node, str) and path and _identifier_like(path):
+            if path[-1] in _ID_NAMES and _OPAQUE_ID.fullmatch(node):
+                return node
+            return pseudonymize_secrets(node)
         return node
     scrubbed = walk(record, ())
     record.clear()
@@ -669,36 +744,71 @@ def _identifier_like(path):
         path[:1] in (("agent",), ("threats",))
 
 
-def _read_last_line(path):
-    """Last non-empty line of ``path``, read from the tail without scanning the
-    whole file. Falls back to a full scan only if the final line is longer than
-    the tail window (records are ~1 KB; the window is 256 KB)."""
+def _complete_record(line):
+    """The record on ``line`` if it is a complete sealed record, else None."""
+    try:
+        rec = json.loads(line)
+    except (ValueError, RecursionError):
+        return None
+    if not isinstance(rec, dict):
+        return None
+    integ = rec.get("integrity")
+    if not isinstance(integ, dict) or not isinstance(integ.get("hash"), str) or not integ["hash"]:
+        return None
+    return rec
+
+
+def _tail_state(path):
+    """``(record, incomplete, has_content)`` for the chain file at ``path``:
+    the last complete record (or None), how many non-empty lines after it are
+    not complete records (a torn write or a truncation), and whether the file
+    holds anything but whitespace. Reads the tail window, and the whole file
+    only when the window holds no complete record."""
     try:
         with open(path, "rb") as fh:
             fh.seek(0, os.SEEK_END)
             size = fh.tell()
-            if size == 0:
-                return None
             back = min(size, 262144)
             fh.seek(size - back)
             buf = fh.read(back)
-        stripped = buf.rstrip()
-        if stripped:
-            nl = stripped.rfind(b"\n")
-            if nl != -1:
-                return stripped[nl + 1:]
-            if back == size:
-                return stripped  # single-line file, fully in the window
-        elif back == size:
-            return None  # whitespace-only file
     except OSError:
-        return None
-    last = None
-    with open(path, "rb") as fh:
-        for line in fh:
-            if line.strip():
-                last = line
-    return last
+        return None, 0, False
+    lines = buf.split(b"\n")
+    if back < size:
+        lines = lines[1:]  # the first line in the window may be cut
+    incomplete = 0
+    for line in reversed(lines):
+        if not line.strip():
+            continue
+        rec = _complete_record(line)
+        if rec is not None:
+            return rec, incomplete, True
+        incomplete += 1
+    if back < size:
+        last, incomplete = None, 0
+        with open(path, "rb") as fh:
+            for line in fh:
+                if not line.strip():
+                    continue
+                rec = _complete_record(line)
+                if rec is not None:
+                    last, incomplete = rec, 0
+                else:
+                    incomplete += 1
+        return last, incomplete, True
+    return None, incomplete, incomplete > 0
+
+
+def _ends_with_newline(path):
+    try:
+        with open(path, "rb") as fh:
+            fh.seek(0, os.SEEK_END)
+            if fh.tell() == 0:
+                return True
+            fh.seek(-1, os.SEEK_END)
+            return fh.read(1) == b"\n"
+    except OSError:
+        return True
 
 
 class Recorder:
@@ -756,8 +866,25 @@ class Recorder:
             return 0
 
     def _refresh_tail(self):
-        """Read the chain head (and last authority snapshot) from disk."""
-        line = _read_last_line(self.path) if os.path.exists(self.path) else None
+        """Read the chain head (and last authority snapshot) from disk.
+
+        The head is the last COMPLETE record. Lines after it that are not
+        complete records (a torn write, a truncated file) are left in place,
+        reported on stderr, and skipped: the next record links to the last
+        complete one and starts on a new line, so the chain never restarts at
+        genesis on top of earlier records and no bytes are lost or hidden —
+        ``halo verify`` reports the incomplete line. A file with no complete
+        record at all keeps its bytes too; the chain starts after them."""
+        rec, incomplete, _ = (_tail_state(self.path) if os.path.exists(self.path)
+                              else (None, 0, False))
+        if incomplete:
+            sys.stderr.write(
+                "halo-record: %d line(s) at the end of %s are not a complete record "
+                "(a torn write or a truncation); they are kept in place, the next "
+                "record %s, and `halo verify` will report them\n"
+                % (incomplete, self.path,
+                   "links to the last complete record" if rec is not None
+                   else "starts the chain after them"))
         self._last_hash = GENESIS_PREV
         self._last_record_id = None
         self._last_authority_snapshot_id = None
@@ -767,18 +894,17 @@ class Recorder:
         # restart the snapshot_id is trusted — the reuse guard is strongest where
         # the hazard lives, inside a single producing process.
         self._last_authority_hash = None
-        if line is not None:
-            try:
-                rec = json.loads(line)
-                self._last_hash = rec.get("integrity", {}).get("hash") or GENESIS_PREV
-                self._last_record_id = rec.get("record_id")
-                authority = rec.get("authority")
-                if isinstance(authority, dict):
-                    self._last_authority_snapshot_id = authority.get("snapshot_id")
-                    if not authority.get("same_as_previous"):
+        if rec is not None:
+            self._last_hash = rec["integrity"]["hash"]
+            self._last_record_id = rec.get("record_id")
+            authority = rec.get("authority")
+            if isinstance(authority, dict):
+                self._last_authority_snapshot_id = authority.get("snapshot_id")
+                if not authority.get("same_as_previous"):
+                    try:
                         self._last_authority_hash = _authority_content_hash(authority)
-            except Exception:
-                pass
+                    except Exception:
+                        self._last_authority_hash = None
         self._last_size = self._size()
         self._tail_loaded = True
 
@@ -835,14 +961,10 @@ class Recorder:
         return snapshot_id, content_hash
 
     def _check_tail_subject(self):
-        line = _read_last_line(self.path)
-        if not line:
+        rec = _tail_state(self.path)[0]
+        if rec is None:
             return
-        try:
-            rec = json.loads(line)
-        except ValueError:
-            return
-        subj = rec.get("subject") if isinstance(rec, dict) else None
+        subj = rec.get("subject")
         sid = (subj.get("id") or None) if isinstance(subj, dict) else None
         if sid not in self._expected_subjects:
             raise ValueError("halo-record: %s holds records for another subject; "
@@ -860,8 +982,11 @@ class Recorder:
                 record.setdefault("integrity", {})
                 record["integrity"]["prev_hash"] = prev
                 record["integrity"]["hash"] = compute_hash(record, prev)
+                # A last line without its newline (torn, or written by another
+                # tool) is ended first, so the new record never joins it.
+                lead = "" if _ends_with_newline(self.path) else "\n"
                 with open(self.path, "a", encoding="utf-8") as fh:
-                    fh.write(json.dumps(record, separators=(",", ":")) + "\n")
+                    fh.write(lead + json.dumps(record, separators=(",", ":")) + "\n")
                     fh.flush()
                     self._last_size = fh.tell()
                 self._last_hash = record["integrity"]["hash"]
@@ -872,6 +997,11 @@ class Recorder:
                 self._release_flock(flock)
         return record
 
+
+# File-name budget: 255 bytes less the ".jsonl.lock" sidecar suffix. Cleaned
+# names are ASCII, so characters are bytes.
+_NAME_MAX = 255 - len(".jsonl.lock")
+_NAME_CUT = 128
 
 _ASCII_NAME_CHARS = frozenset(
     "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_.")
@@ -927,9 +1057,22 @@ class TenantRecorder:
         # Uppercase also takes a digest: case-insensitive filesystems (macOS,
         # Windows) would otherwise store "ACME" and "acme" in one file.
         if (safe != raw or raw != raw.lower()) and subject_id != self.default:
-            digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()[:24]
-            safe = "%s~%s" % (safe, digest)
+            safe = self._digested(raw)
+        elif len(safe) > _NAME_MAX:
+            safe = self._digested(raw)
         return os.path.join(self.directory, safe + ".jsonl")
+
+    @classmethod
+    def _digested(cls, raw):
+        """``<cleaned>~<digest>``; a long cleaned name is cut so the file name
+        (with its ``.jsonl.lock`` sidecar) fits a 255-byte file-name limit. The
+        digest of the full id keeps two long ids that share a prefix apart.
+        Names that already fit are unchanged."""
+        safe = cls._safe_ascii(raw)
+        digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()[:24]
+        if len(safe) + 1 + len(digest) > _NAME_MAX:
+            safe = safe[:_NAME_CUT]
+        return "%s~%s" % (safe, digest)
 
     def chain_path_for(self, subject_id):
         """The file this recorder actually appends to for ``subject_id`` — the
@@ -971,19 +1114,26 @@ class TenantRecorder:
             # Continuity for chains written before digested names: if the plain
             # file exists and holds only this subject, keep appending there.
             legacy = os.path.join(self.directory, self._safe(subject_id) + ".jsonl")
-            if (legacy != path and not os.path.exists(path)
-                    and os.path.exists(legacy)
-                    and self._file_subjects(legacy)
-                    and self._file_subjects(legacy) <= expected):
-                path = legacy
+            if legacy != path and not os.path.exists(path) and os.path.exists(legacy):
+                legacy_subjects = self._file_subjects(legacy)
+                if legacy_subjects and legacy_subjects <= expected:
+                    path = legacy
+                elif subject_id in legacy_subjects:
+                    # This subject's earlier records share a file with other
+                    # subjects, so they cannot be continued without mixing
+                    # tenants. Say where they are and where the new chain is.
+                    sys.stderr.write(
+                        "halo-record: earlier records for %r are in %s together with "
+                        "other subjects; new records for %r start their own chain in "
+                        "%s (the earlier records stay where they are)\n"
+                        % (subject_id, legacy, subject_id, path))
             others = self._file_subjects(path) - expected
             if others:
                 # A file written by an earlier version can hold several subjects.
                 # Continue this subject in its own digested chain rather than
                 # raise into the agent, and say so.
                 raw = str(subject_id)
-                alt = os.path.join(self.directory, "%s~%s.jsonl" % (
-                    self._safe_ascii(raw), hashlib.sha256(raw.encode("utf-8")).hexdigest()[:24]))
+                alt = os.path.join(self.directory, self._digested(raw) + ".jsonl")
                 if self._file_subjects(alt) - expected:
                     raise ValueError("halo-record: %s and %s both hold records for other "
                                      "subjects; refusing to mix tenants" % (path, alt))
@@ -993,5 +1143,23 @@ class TenantRecorder:
             self._recorders[subject_id] = Recorder(path, expected_subjects=expected)
         return self._recorders[subject_id]
 
+    def _explicit_default_recorder(self, subject_id):
+        """A record whose subject id equals the default chain's name is a real
+        tenant, not a subjectless record: it gets its own digested chain so it
+        never shares the subjectless chain."""
+        key = ("subject", subject_id)
+        if key not in self._recorders:
+            if not os.path.isdir(self.directory):
+                os.makedirs(self.directory, exist_ok=True)
+            path = os.path.join(self.directory, self._digested(str(subject_id)) + ".jsonl")
+            if self._file_subjects(path) - {subject_id}:
+                raise ValueError("halo-record: %s holds records for other subjects; "
+                                 "refusing to mix tenants" % path)
+            self._recorders[key] = Recorder(path, expected_subjects={subject_id})
+        return self._recorders[key]
+
     def append(self, record):
+        subj = record.get("subject")
+        if isinstance(subj, dict) and subj.get("id") and subj["id"] == self.default:
+            return self._explicit_default_recorder(subj["id"]).append(record)
         return self.recorder_for(self._subject_id(record)).append(record)

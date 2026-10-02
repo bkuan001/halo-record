@@ -18,6 +18,7 @@ carry no personal data (see LIMITS.md). Over-redaction is the safe failure.
 Pattern-for-pattern port of the TypeScript ``redact.ts``.
 """
 
+import hashlib
 import math
 import re
 from collections import Counter
@@ -29,12 +30,22 @@ PATTERNS = [
     ("webhook_url",   "CRITICAL", re.compile(r'https://(?:hooks\.slack\.com/services/|discord(?:app)?\.com/api/webhooks/|[a-z0-9.-]+\.webhook\.office\.com/webhookb2/|outlook\.office\.com/webhook/)[^\s"\'<>]+')),
     ("stripe_key",   "CRITICAL", re.compile(r'(?:sk|rk|pk)_(?:live|test)_[0-9a-zA-Z]{16,}')),
     ("github_token", "CRITICAL", re.compile(r'(?:gh[opsu]_[A-Za-z0-9]{36}|github_pat_[A-Za-z0-9_]{22,})')),
-    # Matches the whole PEM block when the footer is present (so the key body is
-    # masked, not just the header line). When the block is truncated, consumes
+    # Matches the whole PEM / PGP armor block of any private-key label (RSA, EC,
+    # DSA, OPENSSH, ENCRYPTED, PGP ... BLOCK) when the footer is present (so the
+    # key body is masked, not just the header line). When the block is truncated, consumes
     # the base64-shaped body lines that follow the header, so a partial key
     # still cannot leak through the mask.
-    ("private_key",  "CRITICAL", re.compile(r'-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----(?:(?:(?!-----BEGIN)[\s\S])*?-----END (?:RSA |EC |OPENSSH )?PRIVATE KEY-----|(?:\n[A-Za-z0-9+/=]+(?![^\n]))*)')),
-    ("db_conn",      "CRITICAL", re.compile(r'(?:postgres|mysql|mongodb(?:\+srv)?|redis)://[^\s"\'<>]+')),
+    ("private_key",  "CRITICAL", re.compile(
+        r'-----BEGIN (?:[A-Z0-9]+ ){0,3}PRIVATE KEY(?: BLOCK)?-----'
+        r'(?:(?:(?!-----BEGIN)[\s\S])*?-----END (?:[A-Z0-9]+ ){0,3}PRIVATE KEY(?: BLOCK)?-----'
+        # Truncated block: optional armor headers ("Version: ...", "Proc-Type:
+        # ...") and the blank line after them, then the base64 body lines.
+        r'|(?:(?:\n[A-Za-z][A-Za-z0-9-]{0,40}:[^\n]{0,200})*\n(?=\n[A-Za-z0-9+/=]))?'
+        r'(?:\n[A-Za-z0-9+/=]+(?![^\n]))*)')),
+    ("db_conn",      "CRITICAL", re.compile(r'(?:postgres(?:ql)?|mysql|mariadb|mongodb(?:\+srv)?|rediss?|amqps?|mssql|sqlserver)://[^\s"\'<>]+')),
+    # A password assigned in text ("password=...", "DB_PASSWORD: ...", a JSON
+    # "password": "..." pair). Bounded value length keeps it linear.
+    ("password",     "CRITICAL", re.compile(r'(?i)(?<![A-Za-z0-9])(?:password|passwd|passphrase|pwd)["\']?[ \t]{0,3}[=:][ \t]{0,3}["\']?[^\s"\',;<>]{1,256}')),
     ("jwt",          "HIGH",     re.compile(r'eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}')),
     # IBAN runs BEFORE credit_card: an IBAN whose digit body happens to Luhn-
     # check would otherwise be card-masked first, leaving country/check digits
@@ -93,6 +104,10 @@ def _looks_like_secret(tok):
     return _shannon_bits(tok) >= HIGH_ENTROPY_BITS
 
 
+_PASSWORD_PREFIX_RE = re.compile(r'[^=:]*[=:][ \t]{0,3}["\']?')
+_DB_USERINFO_RE = re.compile(r'^([A-Za-z][A-Za-z0-9+.\-]*://)([^:/@\s]*):.*@')
+
+
 def redact_sample(ftype, value):
     v = str(value)
     if ftype == "aws_secret_key":
@@ -105,9 +120,16 @@ def redact_sample(ftype, value):
         m = re.match(r'^([A-Za-z0-9._%+-])[A-Za-z0-9._%+-]*(@.+)$', v)
         return (m.group(1) + "****" + m.group(2)) if m else "****"
     if ftype == "db_conn":
-        return re.sub(r'://([^:/@]+):[^@]+@', r'://\1:****@', v)
+        # Anchored at the scheme: one attempt per match, linear in its length.
+        # Everything from the user's ":" to the last "@" is masked, so an empty
+        # user (redis://:pw@) or an unescaped "@" or "/" in the password is
+        # still covered; over-masking the host is the safe failure.
+        return _DB_USERINFO_RE.sub(r'\1\2:****@', v, count=1)
     if ftype == "bearer_token":
         return "Bearer ****"
+    if ftype == "password":
+        m = _PASSWORD_PREFIX_RE.match(v)
+        return (m.group(0) + "****") if m else "****"
     if ftype == "private_key":
         # Deliberately header-free: a mask that echoed the PEM header would trip
         # secret scanners on every artifact that contains it, and re-redaction
@@ -207,8 +229,24 @@ def _validated_span(name, match_text):
 _VALIDATORS = {"credit_card": _luhn_ok, "iban": _iban_ok}
 
 
+# Invisible format characters (zero-width space/joiners, word joiner, BOM, soft
+# hyphen) spliced between the characters of a token would otherwise split a
+# known key format so no pattern sees it. They are dropped when they sit between
+# token characters; elsewhere (an emoji ZWJ sequence) they are kept.
+_ZW_IN_TOKEN_RE = re.compile(
+    r'(?<=[A-Za-z0-9_\-+/=.:])[\u200b\u200c\u200d\u2060\ufeff\u00ad\u180e]+(?=[A-Za-z0-9_\-+/=.:@])')
+
+
+def normalize_invisible(text):
+    """``text`` with zero-width characters inside tokens removed."""
+    return _ZW_IN_TOKEN_RE.sub("", text) if _ZW_HINT_RE.search(text) else text
+
+
+_ZW_HINT_RE = re.compile(r'[\u200b\u200c\u200d\u2060\ufeff\u00ad\u180e]')
+
+
 def _apply_patterns(text):
-    out = text
+    out = normalize_invisible(text)
     for name, _sev, pattern in PATTERNS:
         if name in _VALIDATORS:
             def _sub(m, n=name):
@@ -239,7 +277,7 @@ _IDENTITY_OK = {"email", "phone", "ip_internal"}
 def mask_secrets_only(text):
     """Mask credentials and financial identifiers but keep the personal-data
     patterns an identity field exists to carry (email, phone, internal IP)."""
-    out = str(text)
+    out = normalize_invisible(str(text))
     for name, _sev, pattern in PATTERNS:
         if name in _IDENTITY_OK:
             continue
@@ -279,7 +317,7 @@ def scan(text, entropy=True):
     capped per type) so counts reflect reality instead of collapsing to
     one-per-kind.
     """
-    s = str(text)
+    s = normalize_invisible(str(text))
     findings = []
     seen = set()
 
@@ -297,7 +335,10 @@ def scan(text, entropy=True):
                 elif name == "credit_card" and any(a <= m.start() < b for a, b in iban_spans):
                     continue
                 raw = span
-            sample = redact_sample(name, str(raw)[:120])
+            # A connection string's password can sit past the excerpt cut, so
+            # its sample is masked whole first, then cut.
+            sample = (redact_sample(name, str(raw))[:120] if name == "db_conn"
+                      else redact_sample(name, str(raw)[:120]))
             key = name + ":" + sample
             if key in seen:
                 continue
@@ -389,6 +430,44 @@ def _split_patch_headers(text):
     yield text[pos:], False
 
 
+# Field names that carry a credential by contract. A value under one of these
+# keys is masked whole, whatever its shape: "hunter2" matches no pattern and is
+# not entropy-shaped, but under "password" it is still a password.
+CREDENTIAL_TYPE = "credential_field"
+CREDENTIAL_MASK = "****"
+_CREDENTIAL_KEY_RE = re.compile(
+    r'(?:^|_)(?:pass|pwd|auth|authorization|credentials?)$'
+    r'|(?:password|passwd|passphrase|secret|api_?key|token|private_?key|secret_?key)$')
+_PASSWORD_KEY_RE = re.compile(r'(?:^|_)(?:pass|pwd)$|(?:password|passwd|passphrase)$')
+_KEY_SEP_RE = re.compile(r'[\s.\-]+')
+
+
+def _norm_key(key):
+    return _KEY_SEP_RE.sub("_", key.strip().lower())
+
+
+def credential_key(key):
+    """True when ``key`` names a credential (password, secret, token, API key)."""
+    return isinstance(key, str) and bool(_CREDENTIAL_KEY_RE.search(_norm_key(key)))
+
+
+def credential_value(key, value):
+    """True when ``value`` under ``key`` is masked whole: a non-empty string or
+    bytes under a credential-named key, or a number under a password-named key."""
+    if not credential_key(key):
+        return False
+    if isinstance(value, (str, bytes)):
+        return len(value) > 0 and value != CREDENTIAL_MASK
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return bool(_PASSWORD_KEY_RE.search(_norm_key(key)))
+    return False
+
+
+def _credential_finding(key):
+    return {"type": CREDENTIAL_TYPE, "severity": "CRITICAL",
+            "sample": redact_text(key)[:60] + "=" + CREDENTIAL_MASK}
+
+
 def redact_fields(obj, _entropy=True, _depth=0):
     """Redact a tool-argument structure leaf by leaf, keeping its shape.
 
@@ -407,14 +486,35 @@ def redact_fields(obj, _entropy=True, _depth=0):
         out = {}
         for k, v in obj.items():
             rk = redact_text(k) if isinstance(k, str) else k
-            if isinstance(v, (list, tuple)):
-                out[rk] = [redact_fields(el, not path_value(k, el), _depth + 1) for el in v]
+            if credential_value(k, v):
+                out[rk] = CREDENTIAL_MASK
+            elif isinstance(v, (list, tuple)):
+                out[rk] = [CREDENTIAL_MASK if credential_value(k, el)
+                           else redact_fields(el, not path_value(k, el), _depth + 1) for el in v]
             else:
                 out[rk] = redact_fields(v, not path_value(k, v), _depth + 1)
         return out
     if isinstance(obj, (list, tuple)):
         return [redact_fields(v, _entropy, _depth + 1) for v in obj]
-    return obj
+    if isinstance(obj, (set, frozenset)):
+        return [redact_fields(v, _entropy, _depth + 1) for v in sorted(obj, key=repr)]
+    if obj is None or isinstance(obj, (bool, int, float)):
+        return obj
+    # Bytes, objects, anything else: redact the text it renders as, so the
+    # summary carries no more than the scan found and reported.
+    return redact_text(str(obj), entropy=_entropy)
+
+
+def pseudonymize_secrets(text):
+    """Replace each secret-shaped token in ``text`` with ``sha256:`` plus 16 hex
+    digits of its digest. Deterministic, so equal ids stay equal (grouping and
+    links survive) while the token itself is not stored."""
+    def sub(m):
+        tok = m.group(0)
+        if not _looks_like_secret(tok):
+            return tok
+        return "sha256:" + hashlib.sha256(tok.encode("utf-8")).hexdigest()[:16]
+    return TOKEN_RE.sub(sub, normalize_invisible(str(text)))
 
 
 def scan_fields(obj, _entropy=True, _depth=0, _seen=None, _key=None):
@@ -451,6 +551,13 @@ def scan_fields(obj, _entropy=True, _depth=0, _seen=None, _key=None):
         for k, v in obj.items():
             if isinstance(k, str):
                 out += scan_fields(k, True, _depth + 1, _seen, None)
+            if credential_value(k, v) or (
+                    isinstance(v, (list, tuple)) and any(credential_value(k, el) for el in v)):
+                f = _credential_finding(k)
+                fkey = f["type"] + ":" + f["sample"]
+                if fkey not in _seen:
+                    _seen.add(fkey)
+                    out.append(f)
             if isinstance(v, (list, tuple)):
                 for el in v:
                     out += scan_fields(el, _entropy, _depth + 1, _seen, k)

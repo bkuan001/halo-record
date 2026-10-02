@@ -17,7 +17,7 @@ Report that re-verifies integrity *and* completeness in the browser. Acme can
 never see Initech's chain.
 
 The per-tenant chain therefore implies the customer is *already running the
-agent* in a pilot — not a cold prospect. That's the honest moment for this
+agent* in a pilot — not a cold prospect. That's the right moment for this
 artifact: a buyer with real exposure deciding whether to expand.
 """
 
@@ -38,7 +38,7 @@ AGENT = {"id": "globex-agent", "name": "Globex Support Agent", "version": "2.4.1
 #  believable few days of activity rather than a single instant. ``source`` is
 #  the on-ramp that observed the call; the demo deliberately mixes captured
 #  (recorder, mcp) and ingested (otel, litellm, langfuse, gateway) sources so
-#  the Runtime Report shows honest, varied provenance. The action mix answers
+#  the Runtime Report shows accurate, varied provenance. The action mix answers
 #  the buyer's universal questions: tenant isolation, model-provider disclosure
 #  (with zero-data-retention), human review before sensitive actions, and residency.
 _RUNTIME = {

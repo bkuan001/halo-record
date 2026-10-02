@@ -6,6 +6,8 @@ confirms the RFC 8785 + SHA-256 hash chain is intact.
 
 import json
 import os
+import re
+from datetime import datetime, timedelta
 
 from .canon import GENESIS_PREV, canon_issues, compute_hash
 
@@ -71,16 +73,65 @@ def verify_records(records, schema=None, out=None):
     return _verify_lines(lines, schema, out or (lambda *_a, **_k: None))
 
 
+def read_log_lines(path):
+    """The non-blank lines of a JSONL chain file, split the way every verifier
+    splits them. JSON Lines are separated by "\n" only: U+2028/U+2029/U+0085
+    are legal inside JSON strings and must not split a record, and a CR is JSON
+    whitespace (newline="" keeps it in place rather than splitting on it). A
+    leading byte-order mark is skipped, as a UTF-8 decoder does. Raises
+    ``UnicodeDecodeError`` / ``OSError`` like ``open``."""
+    with open(path, "r", encoding="utf-8-sig", newline="") as fh:
+        return [ln for ln in fh.read().split("\n") if ln.strip()]
+
+
 def verify_log(path, schema=None, out=print):
-    # JSON Lines are separated by "\n" only; U+2028/U+2029/U+0085 are legal
-    # inside JSON strings and must not split a record.
     try:
-        with open(path, "r", encoding="utf-8") as fh:
-            lines = [ln for ln in fh.read().split("\n") if ln.strip()]
+        lines = read_log_lines(path)
     except UnicodeDecodeError as e:
         out("FAIL: log is not valid UTF-8 (%s)" % e)
         return False
+    except OSError as e:
+        out("FAIL: cannot read %s: %s" % (path, e.strerror or e))
+        return False
     return _verify_lines(lines, schema, out)
+
+
+# Integer literals longer than this are not parsed (Python limits int/str
+# conversion to 4300 digits); any integer beyond 2^53-1 already fails the
+# canonical-form check, so such a record cannot verify either way.
+_MAX_INT_DIGITS = 4000
+
+
+def _parse_int(text):
+    if len(text) > _MAX_INT_DIGITS:
+        raise ValueError("integer literal with %d digits is beyond what the record "
+                         "format allows" % len(text))
+    return int(text)
+
+
+_TS_PARTS = re.compile(
+    r"(\d{4})-(\d{2})-(\d{2})[Tt](\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,9}))?"
+    r"(?:([Zz])|([+-])(\d{2}):(\d{2}))$")
+
+
+def _instant(ts):
+    """A sortable instant for an RFC 3339 ``ts`` (nanosecond precision, offsets
+    applied), or None when it does not parse."""
+    if not isinstance(ts, str):
+        return None
+    m = _TS_PARTS.match(ts)
+    if not m:
+        return None
+    try:
+        dt = datetime(int(m.group(1)), int(m.group(2)), int(m.group(3)),
+                      int(m.group(4)), int(m.group(5)), int(m.group(6)))
+    except ValueError:
+        return None
+    if m.group(9):
+        off = timedelta(hours=int(m.group(10)), minutes=int(m.group(11)))
+        dt = dt - off if m.group(9) == "+" else dt + off
+    nanos = int((m.group(7) or "").ljust(9, "0") or 0)
+    return (dt, nanos)
 
 
 def _verify_lines(lines, schema, out):
@@ -93,16 +144,22 @@ def _verify_lines(lines, schema, out):
     seen_ids = set()          # record_ids seen so far, to resolve parent links
     parent_links = 0          # records that declare a parent_id
     orphan_links = 0          # parent_ids not found earlier in this chain
+    unreadable = 0            # lines that are not complete JSON records
+    prev_instant = None       # last parseable ts, for the ordering warning
+    prev_ts = None
+    backdated = 0             # records whose ts is earlier than the one before
     for n, line in enumerate(lines, start=1):
         try:
-            record = json.loads(line)
+            record = json.loads(line, parse_int=_parse_int)
         except RecursionError:
             out("record %d: not valid JSON: nested too deeply" % n)
             ok = False
+            unreadable += 1
             continue
-        except json.JSONDecodeError as e:
+        except ValueError as e:  # JSONDecodeError, or an over-long integer
             out("record %d: not valid JSON: %s" % (n, e))
             ok = False
+            unreadable += 1
             continue
         if not isinstance(record, dict):
             out("record %d: not a JSON object" % n)
@@ -125,6 +182,17 @@ def _verify_lines(lines, schema, out):
             if chain_broken_at is None:
                 chain_broken_at = n
             continue
+
+        # Timestamps are declared by the producer; the sealed order is the
+        # chain order. A ts earlier than the one before it is surfaced (it can
+        # mean a backdated record), not failed: clocks and retries can do it.
+        instant = _instant(record.get("ts"))
+        if instant is not None:
+            if prev_instant is not None and instant < prev_instant:
+                backdated += 1
+                out("record %d: warning: ts %s is earlier than the previous "
+                    "record's ts %s" % (n, record.get("ts"), prev_ts))
+            prev_instant, prev_ts = instant, record.get("ts")
 
         for err in validate_record(record, schema):
             out("record %d: schema: %s" % (n, err))
@@ -203,6 +271,11 @@ def _verify_lines(lines, schema, out):
                 "(referential integrity only — not a claim the delegation graph "
                 "is complete)." % parent_links)
 
+    if backdated:
+        out("warning: %d record(s) carry a ts earlier than the record before them; "
+            "ts is declared by the producer, and the sealed order is the chain "
+            "order (see LIMITS.md)." % backdated)
+
     if ok and not lines:
         out("OK: 0 records — an empty chain; nothing to attest.")
     elif ok:
@@ -210,6 +283,10 @@ def _verify_lines(lines, schema, out):
         out("note: this is integrity, not completeness — a self-held chain cannot show records that were removed and the chain re-sealed, anywhere in it; an external witness (halo anchor --check) is what attests nothing was dropped.")
     elif not chain_ok:
         out("FAIL: log did not verify — sequence integrity gap detected (see above).")
+    elif unreadable:
+        out("FAIL: log did not verify — %d line(s) are not complete records (a torn "
+            "write or a truncation; see above); the hash chain of the remaining "
+            "records is intact." % unreadable)
     else:
         out("FAIL: log did not verify — records do not match the record format "
             "(schema); the hash chain itself is intact (see above).")

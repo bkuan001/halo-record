@@ -5,7 +5,7 @@ runs it, every agent run is already captured as a trace of nested observations
 (spans/generations). This adapter reads those traces and turns each tool/LLM
 observation into a Halo Runtime Record — no second instrumentation pass.
 
-These records are the honest ``ingested`` tier: they are built from a trace the
+These records are the ``ingested`` tier: they are built from a trace the
 vendor's own tooling produced and stored (and could in principle reshape before
 Halo ever saw it), so the witness attests "this is the trace you exported", not
 "I watched it happen" (see ``record.SOURCES``). Low-friction and real, just

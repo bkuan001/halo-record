@@ -7,7 +7,7 @@ redaction, hashing, and per-tenant routing behave identically regardless of
 which ecosystem the event came from. Pure-stdlib — no framework imports here.
 """
 
-from ..capture import derive_outcome
+from ..capture import derive_outcome, model_call_fields, model_call_input
 from ..hook import ACTION_TYPE_BY_CLASS, CATEGORY_BY_CLASS, derive_scope
 from ..record import build
 
@@ -37,7 +37,7 @@ def record_tool_call(recorder, tool_name, tool_input=None, *, response=None,
                      error=None, agent=None, cls=None, action_type=None,
                      category=None, scope=None, session_id="local",
                      decision=None, approver=None, subject=None,
-                     source=None, summaries=True):
+                     source=None, summaries=True, data=None):
     """Build and append one record for a completed tool call. ``response`` and
     ``error`` are mutually exclusive (error wins); the outcome is derived the
     same way the SDK and the hook derive it — never inferred beyond an explicit
@@ -59,6 +59,7 @@ def record_tool_call(recorder, tool_name, tool_input=None, *, response=None,
         subject=subject,
         source=source,
         summaries=summaries,
+        data=data,
     )
     recorder.append(record)
     return record
@@ -76,16 +77,11 @@ def record_model_call(recorder, *, provider, model, zdr=None, purpose=None,
     ``privacy``, with provider / model / zero-data-retention / purpose in the
     (hashed + summarized) input. Raw prompts and completions never enter the
     record — same rule as every other action."""
-    tool_input = {"provider": provider, "model": model}
-    if zdr is not None:
-        tool_input["zdr"] = bool(zdr)
-    if purpose:
-        tool_input["purpose"] = purpose
-    if messages is not None:
-        tool_input["messages"] = messages
+    tool_input = model_call_input(provider, model, zdr, purpose, messages)
+    agent, data = model_call_fields(agent, model, zdr, purpose)
     return record_tool_call(
         recorder, "model.generate", tool_input,
-        response=response, error=error, agent=agent,
+        response=response, error=error, agent=agent, data=data,
         action_type="tool_call", category="privacy",
         scope="model:%s" % provider, session_id=session_id,
         subject=subject, source=source, summaries=summaries)

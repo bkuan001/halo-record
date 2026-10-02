@@ -7,7 +7,7 @@ own success/failure callback stream and turns each call into a Halo Runtime
 Record.
 
 Because the evidence is built from telemetry LiteLLM already emits — not from a
-boundary Halo controls — these records are the honest ``ingested`` tier: the
+boundary Halo controls — these records are the ``ingested`` tier: the
 witness can attest "this is the stream you handed me", not "I watched it happen"
 (see ``record.SOURCES``). Still useful and near-zero-friction; just weaker than a
 native interceptor, and the report says so.

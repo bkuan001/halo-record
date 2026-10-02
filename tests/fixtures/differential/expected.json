@@ -1,6 +1,7 @@
 {
   "astral.jsonl": true,
   "big_int.jsonl": false,
+  "crlf.jsonl": true,
   "dup_id.jsonl": false,
   "exp_number.jsonl": false,
   "fffd_char.jsonl": true,
@@ -9,5 +10,6 @@
   "head_truncated.jsonl": false,
   "line_separators.jsonl": true,
   "lone_surrogate.jsonl": true,
+  "long_int_digits.jsonl": false,
   "valid.jsonl": true
 }
