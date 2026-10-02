@@ -78,6 +78,10 @@ def verify_log(path, schema=None, out=print):
     for n, line in enumerate(lines, start=1):
         try:
             record = json.loads(line)
+        except RecursionError:
+            out("record %d: not valid JSON: nested too deeply" % n)
+            ok = False
+            continue
         except json.JSONDecodeError as e:
             out("record %d: not valid JSON: %s" % (n, e))
             ok = False

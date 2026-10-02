@@ -280,9 +280,13 @@ class _Handler(BaseHTTPRequestHandler):
         morsel = cookie.get("halo_" + token[:16])
         if not morsel:
             return None
-        return _access.verify_session(self.config["secret"], morsel.value, stem)
+        return _access.session_email_if_allowed(self.config["dir"], self.config["secret"],
+                                                morsel.value, stem)
 
     def do_GET(self):
+        return self._guarded(self._do_get)
+
+    def _do_get(self):
         cfg = self.config
         parsed = urlparse(self.path)
         route = parsed.path
@@ -333,6 +337,9 @@ class _Handler(BaseHTTPRequestHandler):
             self.wfile.write(data)
 
     def do_POST(self):
+        return self._guarded(self._do_post)
+
+    def _do_post(self):
         cfg = self.config
         route = urlparse(self.path).path
         if not route.startswith("/r/"):
@@ -373,12 +380,28 @@ class _Handler(BaseHTTPRequestHandler):
                 error="That code is wrong or expired. Try again or start over."))
 
         issued = otp.issue(stem, email)
+        if issued is None:
+            return self._send(429, _otp_html(
+                subject, token, email,
+                error="Too many codes requested for this address. Try again later."))
         delivered = _access.send_otp(cfg["dir"], email, issued, stem, subject=subject)
         if delivered != "smtp":
             print("[halo otp] %s code for %s: %s" % (stem, email, issued))
         return self._send(200, _otp_html(subject, token, email))
 
     do_HEAD = do_GET
+
+    def _guarded(self, handler):
+        # A malformed request (odd bytes in the path, a bad form body) gets a
+        # plain 400, never a traceback or a dropped connection.
+        try:
+            return handler()
+        except Exception:
+            try:
+                self._send(400, "Bad request.", "text/plain; charset=utf-8")
+            except Exception:
+                pass
+            return None
 
     def log_message(self, fmt, *args):
         pass  # quiet by default
@@ -404,6 +427,9 @@ def serve(directory, *, host="127.0.0.1", port=DEFAULT_PORT, witness=None,
     mode = "" if gated else "  (OPEN — gating off)"
     if gated and verify:
         mode = "  (email-ownership verification on)"
+    if gated and not verify:
+        print("  note: recipients are admitted by link plus an allow-listed address, without "
+              "proof they own the mailbox; use --verify for one-time-code ownership proof.")
     print("Halo Runtime Reports serving %s chain(s) from %s%s"
           % (len(_chains(directory)), directory, mode))
     print("  operator console: http://%s:%s/?key=%s" % (host, port, key))

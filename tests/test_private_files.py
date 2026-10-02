@@ -43,3 +43,36 @@ class PrivateFileTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ServingHygieneTest(unittest.TestCase):
+    def test_leads_log_is_owner_only(self):
+        from halo_record.access import LEADS_FILE, capture_lead
+        d = tempfile.mkdtemp()
+        old = os.umask(0o022)
+        self.addCleanup(os.umask, old)
+        capture_lead(d, "a@b.co", "chain", subject="x")
+        self.assertEqual(_mode(os.path.join(d, LEADS_FILE)), 0o600)
+
+    def test_code_reissue_is_capped(self):
+        from halo_record.access import OtpStore
+        store = OtpStore()
+        issued = [store.issue("chain", "a@b.co") for _ in range(20)]
+        self.assertIn(None, issued)
+
+    def test_revoked_recipient_session_no_longer_opens(self):
+        from halo_record.access import make_session, session_email_if_allowed, save_access
+        d = tempfile.mkdtemp()
+        save_access(d, {"chain": {"allow": ["a@b.co"]}})
+        cookie = make_session(b"secret", "chain", "a@b.co")
+        self.assertEqual(session_email_if_allowed(d, b"secret", cookie, "chain"), "a@b.co")
+        save_access(d, {"chain": {"allow": []}})
+        self.assertIsNone(session_email_if_allowed(d, b"secret", cookie, "chain"))
+
+    def test_deeply_nested_json_fails_verification_cleanly(self):
+        from halo_record.verify import verify_log
+        d = tempfile.mkdtemp()
+        p = os.path.join(d, "c.jsonl")
+        with open(p, "w") as fh:
+            fh.write("[" * 100000 + "]" * 100000 + "\n")
+        self.assertFalse(verify_log(p, out=lambda *_: None))

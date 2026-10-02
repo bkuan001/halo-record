@@ -179,6 +179,11 @@ def in_window(record, start=None, end=None):
     return True
 
 
+# Summaries the recorder writes are capped at 200 characters; anything far longer
+# came from elsewhere and is shown as-is rather than parsed.
+_LITERAL_MAX = 4096
+
+
 def _readable(value):
     """Render a summary field as something a person reads in a spreadsheet.
 
@@ -196,7 +201,8 @@ def _readable(value):
         # sheet — so re-render it. literal_eval only evaluates literals (no
         # code execution), and anything that isn't one is returned untouched.
         stripped = value.strip()
-        if stripped[:1] in ("{", "[") and stripped[-1:] in ("}", "]"):
+        if (stripped[:1] in ("{", "[") and stripped[-1:] in ("}", "]")
+                and len(stripped) <= _LITERAL_MAX):
             try:
                 return _readable(ast.literal_eval(stripped))
             except (ValueError, SyntaxError, MemoryError, RecursionError):

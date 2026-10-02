@@ -229,7 +229,7 @@ def _plain(r):
         return " ".join(outcome_summary.split())
     summary = (action.get("input") or {}).get("summary") or ""
     detail = ""
-    if summary.startswith("{"):
+    if summary.startswith("{") and len(summary) <= 4096:
         try:
             parsed = ast.literal_eval(summary)
         except Exception:

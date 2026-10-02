@@ -23,6 +23,11 @@ witness store is the complete guarantee on its own.
 import base64
 import json
 import os
+
+try:
+    import fcntl as _fcntl
+except ImportError:  # Windows
+    _fcntl = None
 from datetime import datetime, timezone
 
 from .canon import GENESIS_PREV, canon, compute_hash, sha256_hex
@@ -166,8 +171,19 @@ class Notary:
         parent = os.path.dirname(self.path)
         if parent and not os.path.isdir(parent):
             os.makedirs(parent, exist_ok=True)
+        line = json.dumps(cp, separators=(",", ":")) + "\n"
         with open(self.path, "a", encoding="utf-8") as fh:
-            fh.write(json.dumps(cp, separators=(",", ":")) + "\n")
+            # Several witness processes may share one log: append under an
+            # exclusive lock and flush to disk before acknowledging.
+            if _fcntl is not None:
+                _fcntl.flock(fh, _fcntl.LOCK_EX)
+            try:
+                fh.write(line)
+                fh.flush()
+                os.fsync(fh.fileno())
+            finally:
+                if _fcntl is not None:
+                    _fcntl.flock(fh, _fcntl.LOCK_UN)
         return cp
 
     def checkpoints(self, subject=None, chain_root=None):

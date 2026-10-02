@@ -36,6 +36,8 @@ SESSION_TTL = 86400  # 24h
 
 OTP_TTL = 600           # codes expire after 10 minutes
 OTP_MAX_ATTEMPTS = 5    # wrong guesses before a code is burned
+OTP_MAX_ISSUES = 5      # codes per (chain, email) per OTP_ISSUE_WINDOW
+OTP_ISSUE_WINDOW = 3600 # seconds
 OTP_LEN = 6
 
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
@@ -106,7 +108,7 @@ def capture_lead(directory, email, chain, subject=None, extra=None):
     if extra:
         rec.update(extra)
     try:
-        with open(os.path.join(directory, LEADS_FILE), "a", encoding="utf-8") as fh:
+        with open_private(os.path.join(directory, LEADS_FILE), "a") as fh:
             fh.write(json.dumps(rec, separators=(",", ":")) + "\n")
     except OSError:
         pass
@@ -151,6 +153,15 @@ def verify_session(secret, cookie, chain):
         return None
 
 
+def session_email_if_allowed(directory, secret, cookie, chain):
+    """A session is honored only while its email is still on the chain's
+    recipient list, so removing a recipient revokes their open sessions."""
+    email = verify_session(secret, cookie, chain)
+    if email is None:
+        return None
+    return email if is_allowed(email, allowed_for(directory, chain)) else None
+
+
 class OtpStore:
     """In-process, expiring, attempt-limited one-time codes, keyed by
     ``(chain, email)``. Codes live only in memory: they are short-lived, never
@@ -161,13 +172,24 @@ class OtpStore:
 
     def __init__(self):
         self._d = {}
+        self._issued = {}
         self._lock = threading.Lock()
 
     def issue(self, chain, email):
-        code = "".join(secrets.choice("0123456789") for _ in range(OTP_LEN))
+        """A fresh code, or None once this (chain, email) has requested
+        OTP_MAX_ISSUES codes inside OTP_ISSUE_WINDOW — re-requesting a code must
+        not become a way to reset the guess budget indefinitely."""
+        key = (chain, email.strip().lower())
+        now = time.time()
         with self._lock:
-            self._d[(chain, email.strip().lower())] = {
-                "code": code, "exp": time.time() + OTP_TTL, "tries": 0}
+            recent = [t for t in self._issued.get(key, []) if now - t < OTP_ISSUE_WINDOW]
+            if len(recent) >= OTP_MAX_ISSUES:
+                self._issued[key] = recent
+                return None
+            recent.append(now)
+            self._issued[key] = recent
+            code = "".join(secrets.choice("0123456789") for _ in range(OTP_LEN))
+            self._d[key] = {"code": code, "exp": now + OTP_TTL, "tries": 0}
         return code
 
     def check(self, chain, email, code):
