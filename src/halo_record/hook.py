@@ -231,7 +231,14 @@ def main(argv=None):
         if parent and not os.path.isdir(parent):
             os.makedirs(parent, exist_ok=True)
         recorder = Recorder(path)
-    record_event(event, recorder, subject=subject, authority=authority, summaries=summaries)
+    try:
+        record_event(event, recorder, subject=subject, authority=authority, summaries=summaries)
+    except Exception as exc:
+        # PostToolUse: the tool already ran. Report the missing record; a
+        # non-zero exit would read as the tool failing (HALO_STRICT_RECORDING=1
+        # raises instead).
+        from .session import recording_failed
+        recording_failed(event.get("tool_name") if isinstance(event, dict) else None, exc)
     return 0
 
 

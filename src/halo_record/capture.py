@@ -24,7 +24,7 @@ import inspect
 from .canon import input_hash
 from .record import build
 from .redact import CREDENTIAL_MASK, credential_value, path_value
-from .session import current_recorder, current_agent
+from .session import current_recorder, current_agent, recording_failed
 
 
 def _extract_text(obj, depth=0):
@@ -118,7 +118,12 @@ class record_call:
     block raises, an error outcome is recorded and the exception propagates
     (the call is never silently swallowed). ``recorder`` may be ``None``, in
     which case the recorder bound by an enclosing ``trace`` is used; if none is
-    bound, a ``RuntimeError`` is raised at exit rather than dropping the record.
+    bound, a ``RuntimeError`` is raised on entry, before the block runs.
+
+    The record is written after the block runs. If writing it fails, the
+    block's own result or exception is passed through unchanged and the
+    missing record is reported on stderr; ``strict_recording=True`` (or
+    ``HALO_STRICT_RECORDING=1``) raises the recording error instead.
     ``threats``, ``data``, ``verification``, and ``authority`` pass through to
     ``build`` unchanged — ``verification`` carries what a gate said about this call,
     sealed as supplied (see ``build``).
@@ -128,8 +133,10 @@ class record_call:
                  action_type="tool_call", scope=None, session_id="local",
                  agent=None, decision=None, approver=None,
                  subject=None, summaries=True, principal=None, parent_id=None,
-                 threats=None, data=None, verification=None, authority=None):
+                 threats=None, data=None, verification=None, authority=None,
+                 strict_recording=None):
         self.recorder = recorder
+        self.strict_recording = strict_recording
         self.tool = tool
         self.tool_input = tool_input
         self.category = category
@@ -151,14 +158,24 @@ class record_call:
         self.record = None
 
     def __enter__(self):
-        return self
-
-    def __exit__(self, exc_type, exc, tb):
-        recorder = self.recorder or current_recorder()
-        if recorder is None:
+        # Resolved before the block runs: a missing recorder is refused while
+        # nothing has happened yet, so the caller can fix it and run once.
+        self._active = self.recorder or current_recorder()
+        if self._active is None:
             raise RuntimeError(
                 "no recorder: pass one to record_call(...) or wrap the agent "
                 "with halo_record.trace(...) to bind an active recorder")
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        try:
+            self._write(exc)
+        except Exception as rec_exc:
+            recording_failed(self.tool, rec_exc, self.strict_recording)
+        return False  # never suppress the action's own exception
+
+    def _write(self, exc):
+        recorder = self._active
         outcome = derive_outcome(self.result, error=exc)
         self.record = build(
             self.action_type, self.category, tool=self.tool,
@@ -172,13 +189,13 @@ class record_call:
             source="recorder",
         )
         recorder.append(self.record)
-        return False  # never suppress the exception
 
 
 def record(recorder=None, *, category="security", action_type="tool_call",
            scope=None, tool=None, session_id="local", agent=None,
            decision=None, approver=None, subject=None, summaries=True,
-           principal=None, parent_id=None, threats=None, data=None):
+           principal=None, parent_id=None, threats=None, data=None,
+           strict_recording=None):
     """Decorator that records every call to a tool function.
 
     The function's bound arguments become the input; its return value (or a
@@ -187,6 +204,7 @@ def record(recorder=None, *, category="security", action_type="tool_call",
     ``summaries=False`` records hashes only, no payload text. ``recorder`` may
     be omitted to record onto whatever recorder an enclosing ``trace`` has
     bound — letting a tool be decorated once and reused across agents/tenants.
+    A failure to write the record is handled as in ``record_call``.
     """
 
     def decorator(fn):
@@ -213,6 +231,7 @@ def record(recorder=None, *, category="security", action_type="tool_call",
                 agent=agent, decision=decision, approver=approver,
                 subject=subject, summaries=summaries, principal=principal,
                 parent_id=parent_id, threats=threats, data=data,
+                strict_recording=strict_recording,
             ) as call:
                 call.result = fn(*args, **kwargs)
                 return call.result

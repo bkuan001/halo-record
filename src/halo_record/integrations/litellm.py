@@ -26,6 +26,7 @@ native interceptor, and the report says so.
 ``HaloLiteLLMLogger`` callback class needs the package, imported lazily.
 """
 
+from ..session import recording_failed
 from ._common import record_tool_call
 
 _AGENT = {"id": "litellm", "name": "litellm-gateway"}
@@ -74,23 +75,31 @@ def _build_logger_class():
         """Records each LiteLLM call from its success/failure callbacks."""
 
         def __init__(self, recorder, *, session_id="local", agent=None,
-                     subject=None, summaries=True):
+                     subject=None, summaries=True, strict_recording=None):
             self.recorder = recorder
+            self.strict_recording = strict_recording
             self.session_id = session_id
             self.agent = agent
             self.subject = subject
             self.summaries = summaries
 
+        def _record(self, kwargs, response_obj, error=None):
+            # The model call has already completed; a recording failure is
+            # reported, not raised into the caller (unless strict_recording).
+            try:
+                record_call(self.recorder, kwargs, response_obj, error=error,
+                            agent=self.agent, session_id=self.session_id,
+                            subject=self.subject, summaries=self.summaries)
+            except Exception as exc:
+                recording_failed("gen_ai:%s" % _model(kwargs), exc,
+                                 self.strict_recording)
+
         def log_success_event(self, kwargs, response_obj, start_time, end_time):
-            record_call(self.recorder, kwargs, response_obj, agent=self.agent,
-                        session_id=self.session_id, subject=self.subject,
-                        summaries=self.summaries)
+            self._record(kwargs, response_obj)
 
         def log_failure_event(self, kwargs, response_obj, start_time, end_time):
             err = (kwargs or {}).get("exception") or Exception("litellm call failed")
-            record_call(self.recorder, kwargs, response_obj, error=err,
-                        agent=self.agent, session_id=self.session_id,
-                        subject=self.subject, summaries=self.summaries)
+            self._record(kwargs, response_obj, error=err)
 
         # Async proxies emit the *_async variants; mirror them.
         async def async_log_success_event(self, kwargs, response_obj, start_time, end_time):
