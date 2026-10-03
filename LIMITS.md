@@ -678,6 +678,11 @@ equal another tenant's digested file name; a name that is one chain's subject
 id and another chain's file name is refused (exit 2) and both files are
 listed. Name the chain by a file name that is unique.
 
+Either name works, and the grant is always stored under the chain's subject
+id. When the subject id is also another chain's file name, `halo grant`
+refuses the subject id as ambiguous; name the chain by its file name
+(`<subject id>~<digest>`; the startup line prints the full command).
+
 A grant follows the subject id, not the file. A file whose name names one
 tenant while its records carry another tenant's subject id (`globex.jsonl`
 holding subject id `initech`) cannot take a grant: `halo grant` refuses it
@@ -709,8 +714,10 @@ name that is neither a served subject id nor a chain's file name, so a
 recipient can be designated before a customer's first record. It exits 0 and
 prints a warning on stderr: `no chain in <dir> has subject id or file name
 '<name>'`, that the grant admits its recipients to the chain for that subject
-id if one appears later, and any served subject ids that the file-name
-cleaning maps to the same name, ignoring case (`initech.` for `initech`). Check the name against the operator console before sending a link.
+id if one appears later, and the served subject ids whose cleaned file name
+matches the name apart from case (for a grant on `initech`: `Served chains
+with a similar subject id: 'initech.'`). Check the name against the operator
+console before sending a link.
 
 **Serving a directory first served by 0.2.45.** 0.2.45 keyed share links and
 grants by file name (`Acme_Corp` for subject id `Acme Corp`); 0.2.46 keys
@@ -730,9 +737,12 @@ them by subject id and marks each grant it writes as keyed by subject id
   and every startup until it is re-issued prints `quarantined grant '<name>'
   (recipients: ...)`,
   naming the file and the chain now served under that subject id, with
-  `halo grant <dir> <subject id> <recipient>` to re-issue it. It is not
-  carried to either chain. For a file that holds no subject id and is still
-  the chain served under `<name>`, the line says so and gives
+  `halo grant <dir> <subject id> <recipient>` to re-issue it. When the served
+  subject id is also another chain's file name, the line names the chain by
+  its file name instead (`halo grant <dir> <name>~<digest> <recipient>`), the
+  form `halo grant` accepts; the grant is still stored under the subject id.
+  It is not carried to either chain. For a file that holds no subject id and
+  is still the chain served under `<name>`, the line says so and gives
   `halo grant <dir> <name> <recipient>`; a grant re-issued that way is
   recorded for that file (see "Granting a chain with no subject id" above).
 - If `<name>` is not a served subject id, and `<name>.jsonl` is served under a
@@ -740,11 +750,12 @@ them by subject id and marks each grant it writes as keyed by subject id
   grant is carried to that subject id and printed as `carried grant`, and the
   earlier share link keeps opening the same report.
 - Otherwise the grant is left in place and printed as `grant '<name>' ...
-  matches no served chain, so it admits no one now`, with how to re-issue it.
-  The line also says it can become active later: if a file `<name>.jsonl`
-  appears holding only subject id `<name>`, the grant is marked and admits its
-  recipients to that chain; if it appears holding one subject id whose cleaned
-  file name is `<name>`, the grant is carried to that subject id as above.
+  matches no served chain` and admits no one now, with how to re-issue it.
+  When `<name>.jsonl` exists, the line says what it holds. The line also says
+  the grant can become active later: if `<name>.jsonl` comes to hold only
+  subject id `<name>`, the grant is marked and admits its recipients to that
+  chain; if it comes to hold one subject id whose cleaned file name is
+  `<name>`, the grant is carried to that subject id as above.
 
 The same rule is applied on every request, so an unmarked grant is never read
 with the subject-id meaning before startup has run. A recipient added with
