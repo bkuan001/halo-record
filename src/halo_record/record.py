@@ -487,8 +487,8 @@ def build(action_type, category, tool=None, tool_input=None, *,
             not isinstance(outcome["status"], str) or outcome["status"] not in OUTCOME_STATUSES):
         # The verifier rejects any other value, and an append-only chain has
         # no undo: refuse it here, before anything is sealed.
-        raise ValueError("outcome.status must be one of %s, not %r"
-                         % (sorted(OUTCOME_STATUSES), outcome["status"]))
+        # The rejected value is not echoed: it is caller text and may carry payload.
+        raise ValueError("outcome.status must be one of %s" % sorted(OUTCOME_STATUSES))
 
     # Schema-typed string fields: a scalar is coerced to str; anything else is
     # dropped with a note rather than sealed into a record that can never

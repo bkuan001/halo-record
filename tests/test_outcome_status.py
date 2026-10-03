@@ -23,6 +23,12 @@ class OutcomeStatusTest(unittest.TestCase):
                           outcome={"status": bad}, summaries=summaries)
                 self.assertIn("outcome.status", str(cm.exception))
                 self.assertIn("ok", str(cm.exception))
+        # The rejected value is not echoed: it is caller text and may carry payload.
+        with self.assertRaises(ValueError) as cm:
+            build("tool_call", "security", tool="t", outcome={"status": "sk_live_SECRETVALUE"})
+        self.assertNotIn("SECRETVALUE", str(cm.exception))
+        self.assertEqual(str(cm.exception),
+                         "outcome.status must be one of ['denied', 'error', 'ok']")
 
     def test_valid_and_absent_status_still_build(self):
         d = tempfile.mkdtemp()
@@ -32,6 +38,14 @@ class OutcomeStatusTest(unittest.TestCase):
                         {"summary": "no status"}, None):
             rec.append(build("tool_call", "security", tool="t", outcome=outcome))
         self.assertTrue(verify_log(log, out=lambda *a: None))
+
+
+class SchemaInputDescriptionTest(unittest.TestCase):
+    def test_input_description_states_what_the_summary_holds(self):
+        from halo_record.verify import load_schema
+        desc = load_schema()["properties"]["action"]["properties"]["input"]["description"]
+        self.assertNotIn("MUST NOT appear", desc)
+        self.assertIn("appears in the summary in full", desc)
 
 
 if __name__ == "__main__":
