@@ -284,6 +284,51 @@ function haloSet(id, html){
   const node = document.getElementById(id);
   if (node) node.innerHTML = html;
 }
+function haloRefuseLayout(problem){
+  window.__haloLayoutRefused = true;
+  const copies = (document.querySelectorAll && document.querySelectorAll('[id="verdict"]')) || [];
+  const one = document.getElementById("verdict");
+  const targets = copies.length ? Array.prototype.slice.call(copies) : (one ? [one] : []);
+  targets.forEach(function(v){
+    v.className = "verdict fail";
+    v.innerHTML = "&#10007; Not verified &mdash; " + haloEsc(problem.why) +
+      " Run halo verify on the JSONL instead.";
+  });
+  haloWithhold(problem.why);
+  const cel = document.getElementById("completeness");
+  if (cel){ cel.className = "verdict fail"; cel.innerHTML = "Completeness not checked: " + haloEsc(problem.why); }
+}
+function haloLayoutProblem(){
+  // An edited page can repeat an element id these scripts write to (a hidden
+  // copy placed first takes the verified content while a visible copy keeps
+  // static text), or hide the regions they write to with page CSS. Either way
+  // what shows is not what was verified, so the page withholds.
+  const all = (document.querySelectorAll && document.querySelectorAll("[id]")) || [];
+  const seen = {}, dups = [];
+  for (let i = 0; i < all.length; i++){
+    const id = all[i].id;
+    if (!id) continue;
+    if (seen[id] && dups.indexOf(id) < 0) dups.push(id);
+    seen[id] = true;
+  }
+  if (dups.length)
+    return {ids: dups, why: "this page repeats the element id" + (dups.length > 1 ? "s " : " ") +
+            dups.map(function(d){ return JSON.stringify(d); }).join(", ") +
+            ", so what it shows cannot be tied to the verified records."};
+  if (typeof window.getComputedStyle !== "function") return null;
+  const watched = ["verdict", "completeness", "r-h1", "r-cards", "tablewrap", "rowcount"];
+  for (let i = 0; i < watched.length; i++){
+    const n = document.getElementById(watched[i]);
+    if (!n || typeof n.getClientRects !== "function") continue;
+    let hidden = n.getClientRects().length === 0 || getComputedStyle(n).visibility !== "visible";
+    for (let p = n; !hidden && p && p.nodeType === 1; p = p.parentElement)
+      if (parseFloat(getComputedStyle(p).opacity) === 0) hidden = true;
+    if (hidden)
+      return {ids: [watched[i]], why: "this page hides the region (#" + watched[i] + ") the verifier " +
+              "writes to, so what it shows cannot be tied to the verified records."};
+  }
+  return null;
+}
 async function haloBind(records, cfg){
   // Re-render everything the page derives from its records, from the records
   // this script just verified, so edited static HTML cannot show under the badge.
@@ -352,7 +397,7 @@ function haloEsc(s){
 }
 async function haloCompleteness(records, embedded, cfg, pinned){
   const cel = document.getElementById("completeness");
-  if (!cel) return;
+  if (!cel || window.__haloLayoutRefused) return;
   const lookup = pinned || cfg.subject;
   const pinNote = pinned
     ? ""
@@ -431,12 +476,18 @@ async function haloCompleteness(records, embedded, cfg, pinned){
   }
 }
 (async function(){
+  // Check the page as parsed in full: static markup after this script (a
+  // style rule, a repeated id) is in place before anything is judged.
+  if (document.readyState === "loading")
+    await new Promise(function(r){ document.addEventListener("DOMContentLoaded", r, {once: true}); });
   const el = document.getElementById("verdict");
   const recordsText = document.getElementById("records").textContent;
   const records = JSON.parse(recordsText);
   const embedded = JSON.parse(document.getElementById("checkpoints").textContent);
   const cfg = JSON.parse(document.getElementById("halo-config").textContent);
   const cel = document.getElementById("completeness");
+  const problem = haloLayoutProblem();
+  if (problem){ haloRefuseLayout(problem); return; }
   if (!(window.crypto && crypto.subtle)){
     el.className = "verdict neutral";
     el.innerHTML = "Not verified &mdash; self-verification needs a secure context (https or localhost). " +
@@ -464,7 +515,10 @@ async function haloCompleteness(records, embedded, cfg, pinned){
     const bound = await haloBind(records, cfg);
     let shown = "";
     if (bound){
-      shown = " The heading, period, counts and table below were re-rendered from these verified records.";
+      shown = " The heading, period, counts and table below were " +
+              "re-rendered from these verified records by this page's scripts; " +
+              "other text on the page is not checked, so verify the JSONL yourself " +
+              "(<span class='mono'>halo verify</span>) for evidence.";
       if (bound.policy === "ok")
         shown += " The policy verdict was re-computed from them under the policy embedded in this page " +
                  "by whoever generated it (sha256 <span class='mono'>" + bound.digest.slice(0, 16) +
@@ -490,6 +544,12 @@ async function haloCompleteness(records, embedded, cfg, pinned){
     haloWithhold("the records could not be verified.");
     return;
   }
+  // Stylesheets that finish loading later can still hide what was written.
+  const recheck = function(){ const p = haloLayoutProblem(); if (p) haloRefuseLayout(p); };
+  recheck();
+  if (window.__haloLayoutRefused) return;
+  if (document.readyState !== "complete" && typeof window.addEventListener === "function")
+    window.addEventListener("load", recheck);
   let pinned = cfg.expectedSubject || null;
   try {
     const m = /(?:^#|&)expect=([^&]*)/.exec(String((window.location && window.location.hash) || ""));

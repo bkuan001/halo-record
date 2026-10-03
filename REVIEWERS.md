@@ -40,7 +40,7 @@ A policy verdict names its rules by `Policy sha256 …`: the SHA-256 of the poli
 
 - A verify run performed by the producer, on the producer's machine, with results relayed to you. Run it yourself; that's the point.
 - Checkpoints presented by the operator rather than fetched from the witness.
-- A report page the vendor rendered, as your verification. It runs code supplied with the report; edit that code and it can say anything. Verify the JSONL yourself with `halo verify` (and `halo anchor … --check`), and render your own report from it if you want the page.
+- A report page the vendor rendered, as your verification. It runs code supplied with the report; edit that code, or restyle the page's markup in ways the page does not detect, and it can say anything. The page withholds its verdict when an element id repeats or a region it writes to is hidden, but that is a tripwire, not a guarantee. Verify the JSONL yourself with `halo verify` (and `halo anchor … --check`), and render your own report from it if you want the page.
 - Any claim beyond the claims table at the top of the README. If the words say more than the table, the table wins — and [LIMITS.md](LIMITS.md) wins over both.
 
 ## Citing halo-record evidence

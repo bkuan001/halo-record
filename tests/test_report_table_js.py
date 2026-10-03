@@ -68,14 +68,17 @@ class El {
   remove(i){ if (typeof i === "number") this.options.splice(i, 1); }
 }
 const ELS = {};
+const IDS = [];   // every element carrying an id, in page order (repeats kept)
 const BLOCKS = {};
 HTML.replace(/<script id="([^"]+)" type="application\/json">([\s\S]*?)<\/script>/g, (m, id, body) => { BLOCKS[id] = body; });
 HTML.replace(/<(\w+)\b([^>]*)\bid="([^"]+)"([^>]*)>/g, (m, tag, a1, id, a2) => {
   if (tag === "script") return;
   const e = new El(tag, attrsOf(a1 + " " + a2));
-  ELS[id] = e;
+  e.id = id;
+  IDS.push(e);
+  if (!(id in ELS)) ELS[id] = e;   // getElementById returns the first, as browsers do
 });
-for (const id in BLOCKS){ const e = new El("script"); e._html = BLOCKS[id]; ELS[id] = e; }
+for (const id in BLOCKS){ const e = new El("script"); e.id = id; e._html = BLOCKS[id]; ELS[id] = e; IDS.push(e); }
 function between(open, close){
   const i = HTML.indexOf(open); if (i < 0) return "";
   const j = HTML.indexOf(close, i + open.length); return HTML.slice(i + open.length, j);
@@ -92,7 +95,11 @@ globalThis.document = {
   getElementById: id => ELS[id] || null,
   createElement: tag => new El(tag),
   createDocumentFragment: () => new El("#frag"),
-  querySelectorAll: () => [],
+  querySelectorAll: sel => {
+    if (sel === "[id]") return IDS.slice();
+    const m = /^\[id="(.+)"\]$/.exec(sel);
+    return m ? IDS.filter(e => e.id === m[1]) : [];
+  },
   addEventListener(){},
 };
 %(prelude)s
@@ -123,7 +130,8 @@ function settle(){ return new Promise(r => setTimeout(r, 300)); }
     await settle();
     log.push(snap());
   }
-  process.stdout.write(JSON.stringify({verdict: ELS["verdict"].className, log}));
+  process.stdout.write(JSON.stringify({verdict: ELS["verdict"].className, log,
+    verdicts: IDS.filter(e => e.id === "verdict").map(e => ({cls: e.className, html: e.innerHTML}))}));
 })();
 """
 
