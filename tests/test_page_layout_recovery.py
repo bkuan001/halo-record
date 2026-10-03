@@ -1,10 +1,11 @@
-"""The page's layout check withholds the verdict while a region its scripts
-write to is hidden. A viewport that is briefly tiny or collapsed (an iframe or
-preview pane shrunk to a few pixels, a frame loaded at zero height or hidden,
-a nearly-closed window) says nothing about what the reader is shown, so the
-check waits while the viewport is that small or the document is hidden, and a
-layout-only refusal is lifted when the condition clears. A repeated element id
-stays refused for the life of the page.
+"""The page's layout check withholds the verdict once a region its scripts
+write to is hidden, and keeps withholding for the life of the page. A viewport
+that is briefly tiny or collapsed (an iframe or preview pane shrunk to a few
+pixels, a frame loaded at zero height or hidden, a nearly-closed window) says
+nothing about what the reader is shown, so the check waits while the viewport
+is under 100 px or the document is hidden, and runs once it can show the
+regions. A region hidden in a normal-size viewport, even for part of an
+animation cycle, keeps the page at "Not verified".
 
 Runs in headless Chrome, where installed."""
 
@@ -136,22 +137,19 @@ class TinyWindowTest(unittest.TestCase):
 
 @unittest.skipUnless(CHROME, "Google Chrome not installed")
 class LayoutRefusalRecoveryTest(unittest.TestCase):
-    def test_layout_refusal_is_lifted_when_the_region_shows_again(self):
+    def test_layout_refusal_is_kept_when_the_region_shows_again(self):
         html = _in_page(_report(), [
             (3000, "var s=document.createElement('style');s.id='hx';"
                    "s.textContent='#tablewrap{display:none}';document.head.appendChild(s);"),
             (5000, "document.getElementById('hx').remove();"),
         ], at=[("hidden", 4500), ("final", 7500)])
         snaps = _snaps(_chrome({"r.html": html}, "r.html", budget=10000))
-        cls, text, count = snaps["hidden"]
-        self.assertIn("fail", cls.split(), text)
-        self.assertIn("#tablewrap", text)
-        self.assertIn("Withheld", count)
-        cls, text, count = snaps["final"]
-        self.assertIn("ok", cls.split(), text)
-        self.assertIn("Verified in your browser", text)
-        self.assertNotIn("Withheld", count)
-        self.assertIn("Showing 3 of 3 actions", count)
+        for tag in ("hidden", "final"):
+            cls, text, count = snaps[tag]
+            self.assertIn("fail", cls.split(), "%s: %s" % (tag, text))
+            self.assertIn("Not verified", text, tag)
+            self.assertIn("#tablewrap", text, tag)
+            self.assertIn("Withheld", count, tag)
 
     def test_hidden_region_stays_refused(self):
         html = _in_page(_report(), [
@@ -174,10 +172,10 @@ class LayoutRefusalRecoveryTest(unittest.TestCase):
             self.assertIn("fail", cls.split(), "%s: %s" % (tag, text))
             self.assertIn("repeats the element id", text, tag)
 
-    def test_completeness_written_during_a_refusal_shows_after_it_lifts(self):
-        # The completeness check finishes while the region is hidden; once it
-        # shows again, the completeness line is the checked one, not the
-        # refusal text.
+    def test_region_hidden_at_load_in_a_normal_viewport_stays_refused(self):
+        # The region is hidden before verification finishes, in a viewport
+        # large enough to show it; showing it later does not lift the refusal,
+        # and the completeness line keeps the refusal text.
         html = _in_page(_report(), [
             (0, "var s=document.createElement('style');s.id='hx';"
                 "s.textContent='#tablewrap{display:none}';document.head.appendChild(s);"),
@@ -188,12 +186,61 @@ class LayoutRefusalRecoveryTest(unittest.TestCase):
                             "setAttribute('data-c', c ? c.textContent.slice(0,120) : '')},7600)"
                             "</script></body>", 1)
         dom = _chrome({"r.html": html}, "r.html", budget=10000)
-        cls, text, _count = _snaps(dom)["final"]
-        self.assertIn("ok", cls.split(), text)
+        cls, text, count = _snaps(dom)["final"]
+        self.assertIn("fail", cls.split(), text)
+        self.assertIn("Not verified", text)
+        self.assertIn("Withheld", count)
         comp = re.search(r'data-c="([^"]*)"', dom).group(1)
-        self.assertNotIn("Completeness not checked", comp)
-        self.assertTrue(comp.strip(), dom[:300])
+        self.assertIn("Completeness not checked", comp)
 
+
+def _blink(period, lo, hi):
+    """CSS that hides #tablewrap from ``lo``% to ``hi``% of each ``period`` ms
+    cycle, with no script."""
+    return ("<style>@keyframes hxb{0%%,%s%%{visibility:visible}%s%%,%s%%{visibility:hidden}"
+            "%s%%,100%%{visibility:visible}}#tablewrap{animation:hxb %dms step-end infinite}"
+            "</style>" % (lo - 0.01, lo, hi, hi + 0.01, period))
+
+
+_SAMPLER = ("<script>(function(){var n=0,both=0,hid=0;setTimeout(function(){"
+            "var iv=setInterval(function(){var w=document.getElementById('tablewrap');"
+            "var v=document.getElementById('verdict');"
+            "var h=getComputedStyle(w).visibility==='hidden';var ok=/\\bok\\b/.test(v.className);"
+            "n++;if(h)hid++;if(h&&ok)both++;document.documentElement.setAttribute('data-s',"
+            "JSON.stringify({n:n,hidden:hid,hidden_and_green:both,latched:window.__haloLayoutRefused?1:0,"
+            "cls:v.className,text:v.textContent.slice(0,120)}));},20);"
+            "setTimeout(function(){clearInterval(iv)},%d);},%d);})();</script>")
+
+
+@unittest.skipUnless(CHROME, "Google Chrome not installed")
+class AnimatedHidingTest(unittest.TestCase):
+    """A CSS animation that hides the table for most of each cycle, shown at
+    the cycle boundary where animation events fire, ends at "Not verified"
+    and stays there. (A period that divides the once-a-second check can
+    delay the latch; LIMITS §19 states the phase-locked case.)"""
+
+    def _run(self, period):
+        html = _report().replace("</head>", _blink(period, 5, 95) + "</head>", 1)
+        html = html.replace("</body>", _SAMPLER % (12000, 3000) + "</body>", 1)
+        dom = _chrome({"r.html": html}, "r.html", budget=16000)
+        m = re.search(r'data-s="([^"]*)"', dom)
+        self.assertIsNotNone(m, dom[:300])
+        return json.loads(m.group(1).replace("&quot;", '"').replace("&amp;", "&"))
+
+    def assertLatched(self, s):
+        self.assertGreater(s["hidden"], 0, s)
+        self.assertEqual(s["latched"], 1, s)
+        self.assertIn("fail", s["cls"].split(), s)
+        self.assertIn("Not verified", s["text"], s)
+
+    def test_250ms_blink_latches(self):
+        self.assertLatched(self._run(250))
+
+    def test_4s_blink_latches(self):
+        s = self._run(4000)
+        self.assertLatched(s)
+        # Latched before the sampling began: never green while hidden.
+        self.assertEqual(s["hidden_and_green"], 0, s)
 
 if __name__ == "__main__":
     unittest.main()

@@ -812,21 +812,25 @@ page, clipped to nothing (`overflow`, `clip-path`), masked, filtered,
 collapsed by a transform such as `scale(0)`, or skipped by
 `content-visibility`. They check at load, after verification, when late
 stylesheets load, on animation and transition events, on resize, when the
-page becomes visible, before printing, and once a second. A repeated id
-withholds for the life of the page. A hidden region withholds while it is
-hidden, and the verified view comes back when it shows again; a page that
-hides a region only some of the time therefore shows the badge the rest of
-the time. While the document is hidden, or the viewport is under 100 px
-wide or tall (a collapsed frame or preview pane), the layout check waits:
-the page keeps the verdict it last showed, and a page first opened that small
-shows the verified badge until the viewport grows and the check runs.
+page becomes visible, before printing, and once a second. Once the check
+finds a repeated id, or a hidden region in a viewport large enough to show
+it, the page withholds for the rest of its life: showing the region again
+does not bring the verified view back. While the document is hidden, or the
+viewport is under 100 px wide or tall (a collapsed frame or preview pane),
+the layout check waits instead of refusing: the page keeps the verdict it
+last showed, a page first opened that small shows the verified badge until
+the viewport grows and the check runs, and a region that is hidden only
+while the viewport is that small is not refused.
 
 What it does not catch, among others: text made unreadable while its box
 stays (`font-size:0`, transparent color), a region placed under the page
 background (`z-index`), an element laid over a region, text added with
 `::before`/`::after`, fabricated content placed beside the verified table,
 content inside, or slotted through, a shadow root, print-only CSS
-(`@media print`), and any edit to the scripts. A green badge on a page you
+(`@media print`), a region hidden by an animation whose cycle keeps it
+visible at each moment the check runs (for example a one-second cycle phased
+against the once-a-second check, with the region showing only at the cycle
+boundary where animation events fire), and any edit to the scripts. A green badge on a page you
 did not generate yourself therefore says only that its scripts verified the
 records they carry.
 
