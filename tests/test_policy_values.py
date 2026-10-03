@@ -43,13 +43,22 @@ REJECTED = [
     ({"outcome.status": {"in": []}}, "empty"),
     ({"data.cross_region": {"gt": 5, "lt": 3}}, "contradict"),
     ({"data.cross_region": {"exists": False, "eq": 1}}, "contradict"),
-    ({"threats[].type": {"in": ["a"], "nin": ["a", "b"]}}, "contradict"),
+    ({"threats[].type": {"in": ["tool_misuse"], "nin": ["tool_misuse", "policy_violation"]}},
+     "contradict"),
     # null and non-finite values
     ({"action.authorization.approver": {"ne": None}}, "exists"),
     ({"action.authorization.approver": None}, "exists"),
     ({"data.cross_region": {"gte": float("nan")}}, "finite"),
     ({"data.cross_region": {"lt": float("inf")}}, "finite"),
     ({"data.cross_region": {"lt": 2 ** 60}}, "2^53"),
+    ({"data.cross_region": {"gte": 1e308}}, "2^53"),
+    ({"data.cross_region": {"lt": -1e16}}, "2^53"),
+    # free-vocabulary fields: only the scanner's and the documented threat types
+    ({"findings[].type": "SSN"}, "not one of"),
+    ({"findings[].type": {"in": ["social_security", "ssn"]}}, "not one of"),
+    ({"findings[].type": {"ne": "credit-card"}}, "not one of"),
+    ({"threats[].type": "PII_EXFILTRATION"}, "not one of"),
+    ({"threats[].type": {"nin": ["prompt_injection"]}}, "not one of"),
 ]
 
 

@@ -34,7 +34,7 @@ For a checkpoint's RFC 3161 timestamp, validate the TSA signature with a standar
 
 ## Policy verdicts
 
-A policy verdict names its rules by `Policy sha256 …`: the SHA-256 of the policy file it was computed from. Reproduce it from the file you hold with `shasum -a 256 policy.json` (or `sha256sum policy.json`; on Windows, `Get-FileHash policy.json`). For a bundled pack run by name, hash `halo_record/policies/<name>.json` in the installed package. On a report page, the rules are the policy text embedded in the page by whoever generated it; the page hashes that text, so a digest that differs from your file's means the verdict was computed under different rules. To see the verdict under your own copy, run `halo policy audit.jsonl policy.json` yourself.
+A policy verdict names its rules by `Policy sha256 …`: the SHA-256 of the policy file it was computed from. Reproduce it from the file you hold with `shasum -a 256 policy.json` (or `sha256sum policy.json`; on Windows, `Get-FileHash policy.json`). For a bundled pack run by name, hash `halo_record/policies/<name>.json` in the installed package. On a report page, the rules are the policy text embedded in the page by whoever generated it; the page hashes that text, so a digest that differs from your file's means the verdict was computed under different rules. A matching digest is not enough on its own: it says the page used the file you hold, not that the file is a sound policy or that the verdict is the CLI's. Run `halo policy audit.jsonl policy.json` on the file you hold; it refuses a policy that cannot mean what it says (exit 2), and that verdict, computed by you, is the one to rely on.
 
 ## What not to accept
 

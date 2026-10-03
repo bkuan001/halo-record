@@ -255,15 +255,27 @@ A policy is validated against the record schema before it runs, so a rule
 cannot pass by matching nothing: values outside a field's allowed set, values
 of the wrong type, `null`, non-finite numbers or numbers beyond 2⁵³−1,
 matchers that do not apply to the field, contradictory matchers, and duplicate
-JSON keys are refused (exit 2). A rule whose `when` selects no record reports
-"matched no records", never PASS. Validation catches a rule that cannot mean
-what it says; it cannot catch a valid rule aimed at the wrong field.
+JSON keys are refused (exit 2). The two free-text type fields take only a known
+vocabulary in a policy: `findings[].type` the scanner's finding types (section
+6), `threats[].type` the documented threat types (`policy_violation`,
+`prompt_injection_direct`, `prompt_injection_indirect`, `tool_misuse`). A
+threat type outside that list, as a detector of your own may emit, cannot be
+named in a policy. A rule whose `when` already decides its outcome on a
+single-valued field is refused too: a `forbid` that no selected record can meet
+(`when action.type=network`, `forbid action.type=read`) or a `require` that
+every selected record meets, since either can never be violated. A rule whose
+`when` selects no record reports "matched no records", never PASS. Validation
+catches a rule that cannot mean what it says; it cannot catch a valid rule
+aimed at the wrong field.
 
 A verdict names its policy by `Policy sha256`: the SHA-256 of the policy file's
 bytes, the value `shasum -a 256 <file>` prints. A report page carries the
-policy file's text, re-reads the rules from it in the browser, and names the
-digest of the text it carries; those rules were embedded by whoever generated
-the page, so compare the digest with the policy file you hold.
+policy file's text and re-reads it in the browser exactly as `halo policy`
+reads the file, refusing the same texts (a repeated key, a non-finite number,
+an invalid rule) with the same reason. Those rules were embedded by whoever
+generated the page: a matching digest says the page used the file you hold,
+not that the file is a sound policy, so run `halo policy` on that file
+yourself.
 
 ---
 

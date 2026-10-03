@@ -249,9 +249,13 @@ async function haloBind(records, cfg){
     if (text !== null){
       if (typeof text !== "string") throw new Error("the embedded policy is not policy text");
       digest = hex(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text)));
-      const parsed = JSON.parse(text);
-      rules = (parsed && typeof parsed === "object" && !Array.isArray(parsed)) ? parsed.rules : parsed;
-      if (rules === null || rules === undefined) rules = [];
+      // Read exactly as `halo policy` reads the file: a repeated key, a
+      // non-finite number, an unknown top-level key or an invalid rule is
+      // refused here, so the page never shows a verdict the CLI would refuse.
+      if (typeof HaloView.parsePolicyText !== "function") throw new Error("this page cannot read a policy");
+      const read = HaloView.parsePolicyText(text);
+      if (read.error !== null) throw new Error(read.error);
+      rules = read.rules;
     }
   } catch (e){ polErr = e.message; rules = null; }
   const chainOk = WINDOW ? cfg.chainVerified !== false : true;
