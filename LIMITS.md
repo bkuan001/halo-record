@@ -678,7 +678,8 @@ listed. Name the chain by a file name that is unique.
 
 Records are written after the action runs; halo-record never blocks an action
 on its record, and writing before the action is not offered. When an append
-fails (disk full, permissions, a lock held past its timeout), `trace()`,
+fails (disk full, permissions, a lock held past its timeout, or, for `halo
+hook`, a chain directory it cannot create), `trace()`,
 `record_call`, `@record`, the OpenAI Agents, LangChain, LiteLLM and OTel
 adapters, the MCP wrapper and `halo hook` pass the action's own result or
 exception through unchanged and print one line to stderr:
@@ -712,7 +713,7 @@ the error goes depends on the wrapper:
 | LangChain `HaloCallbackHandler` | the handler sets LangChain's `raise_error`, so LangChain raises it to the caller of the tool |
 | OTel `HaloSpanExporter` | cannot reach the application: the SDK's span processor catches what an exporter raises and logs "Exception while exporting Span". The exporter tries every span in the batch, writes a line per lost span, then raises the first error to the SDK |
 | LiteLLM `HaloLiteLLMLogger` | cannot reach the caller: LiteLLM runs callbacks after returning the response and logs what they raise ("LiteLLM.LoggingError: [Non-Blocking] ...") |
-| `halo hook` | the hook exits 1 with the error; the agent harness decides what that means |
+| `halo hook` | the hook exits 1 after the stderr line; the agent harness decides what that means |
 
 For the OTel and LiteLLM adapters the stderr line (and the framework's own
 log) is the only signal in either mode.

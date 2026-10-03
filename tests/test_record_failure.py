@@ -262,3 +262,42 @@ class AdapterTest(_Env):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class HookChainDirectoryTest(unittest.TestCase):
+    """`halo hook` reports a chain directory it cannot create the way it
+    reports any failed append: the FAILED line, then exit 0 (strict: the line,
+    then a non-zero exit), never a bare traceback."""
+
+    def _run(self, strict):
+        import subprocess
+        import sys
+        d = tempfile.mkdtemp()
+        blocker = os.path.join(d, "not-a-dir")
+        with open(blocker, "w") as fh:
+            fh.write("x")
+        env = dict(os.environ)
+        env.pop("HALO_DIR", None)
+        env.pop("HALO_STRICT_RECORDING", None)
+        env["HALO_LOG"] = os.path.join(blocker, "sub", "audit.jsonl")
+        env["PYTHONPATH"] = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src")
+        if strict:
+            env["HALO_STRICT_RECORDING"] = "1"
+        event = json.dumps({"hook_event_name": "PostToolUse", "tool_name": "Bash",
+                            "tool_input": {"command": "ls"}, "tool_response": {"stdout": "x"}})
+        p = subprocess.run([sys.executable, "-c", "import sys; from halo_record.cli import main; sys.exit(main(['hook']))"],
+                           input=event, capture_output=True, text=True, env=env, timeout=60)
+        return p.returncode, p.stderr
+
+    def test_default_reports_and_exits_zero(self):
+        rc, err = self._run(strict=False)
+        self.assertEqual(rc, 0, err)
+        self.assertIn("halo-record: FAILED to record 'Bash'", err)
+        self.assertIn(MSG, err)
+        self.assertNotIn("Traceback", err)
+
+    def test_strict_reports_then_exits_nonzero(self):
+        rc, err = self._run(strict=True)
+        self.assertNotEqual(rc, 0, err)
+        self.assertIn("halo-record: FAILED to record 'Bash'", err)
+        self.assertNotIn("Traceback", err)

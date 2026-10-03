@@ -241,16 +241,18 @@ def main(argv=None):
     subject = os.environ.get("HALO_SUBJECT")
     directory = os.environ.get("HALO_DIR")
     authority = load_authority(os.environ.get("HALO_AUTHORITY_FILE"))
-    if directory:
-        # Per-tenant routing: each customer to their own chain.
-        recorder = TenantRecorder(directory)
-    else:
-        path = log_path()
-        parent = os.path.dirname(path)
-        if parent and not os.path.isdir(parent):
-            os.makedirs(parent, exist_ok=True)
-        recorder = Recorder(path)
     try:
+        # Setting up the chain (creating its directory) is part of writing the
+        # record: a failure there is reported the same way as a failed append.
+        if directory:
+            # Per-tenant routing: each customer to their own chain.
+            recorder = TenantRecorder(directory)
+        else:
+            path = log_path()
+            parent = os.path.dirname(path)
+            if parent and not os.path.isdir(parent):
+                os.makedirs(parent, exist_ok=True)
+            recorder = Recorder(path)
         record_event(event, recorder, subject=subject, authority=authority, summaries=summaries)
     except Exception as exc:
         # PostToolUse: the tool already ran. Report the missing record; a

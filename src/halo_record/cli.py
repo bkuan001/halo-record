@@ -87,7 +87,15 @@ def _cmd_export(args):
 
 def _cmd_hook(args):
     from .hook import main as hook_main
-    return hook_main()
+    from .session import strict_recording
+    try:
+        return hook_main()
+    except Exception:
+        if strict_recording(None):
+            # Strict mode: the FAILED line is already on stderr; exit non-zero
+            # after it rather than print a traceback.
+            return 1
+        raise
 
 
 def _warn_invisible_ids(log):
