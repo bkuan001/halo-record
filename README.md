@@ -144,10 +144,17 @@ result = my_chain.invoke(inputs, config={"callbacks": [HaloCallbackHandler(recor
 For MCP, one call wraps the client session — and then *any* MCP-using agent emits records for every tool call, regardless of which framework drives it:
 
 ```python
+from mcp import Client   # mcp 2.x
+from halo_record import Recorder
 from halo_record.integrations.mcp import instrument_client_session
 
-instrument_client_session(session, Recorder("audit.jsonl"), server="stripe")   # every session.call_tool() is now recorded
+async def run(server):   # an MCPServer, a server URL, or stdio parameters
+    async with Client(server) as client:
+        instrument_client_session(client, Recorder("audit.jsonl"), server="stripe")
+        await client.call_tool("charge", {"customer": "cus_123", "amount": 500})   # recorded
 ```
+
+Every `call_tool()` on the wrapped client is recorded, and a tool that returns an error result is sealed as `error` (the adapter reads both `isError` and the mcp 2.x `is_error`). On mcp 1.x, pass the initialized `ClientSession` instead of `Client`; the wrapper is the same.
 
 For gateway or proxy logs (Cloudflare AI Gateway, Portkey, nginx in front of the model), map a log row into the chain — explicitly tagged as ingested, not boundary-captured:
 

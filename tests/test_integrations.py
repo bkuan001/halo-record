@@ -152,6 +152,49 @@ class McpTest(unittest.TestCase):
         self.assertEqual(recs[0]["outcome"]["status"], "error")
 
 
+class McpErrorFieldTest(unittest.TestCase):
+    """An MCP tool error is sealed as an error whichever field name the SDK
+    uses: ``isError`` (mcp < 2), ``is_error`` (mcp >= 2), or either key on a
+    plain dict result."""
+
+    def _status(self, result):
+        from halo_record.integrations.mcp import instrument_client_session
+        log = os.path.join(tempfile.mkdtemp(), "mcp-err.jsonl")
+
+        class FakeSession:
+            async def call_tool(self, name, arguments=None):
+                return result
+
+        session = FakeSession()
+        instrument_client_session(session, Recorder(log), server="s")
+        asyncio.run(session.call_tool("boom", {}))
+        recs = _records(log)
+        self.assertEqual(len(recs), 1)
+        return recs[0]["outcome"]["status"]
+
+    def _text(self, t):
+        return [types.SimpleNamespace(type="text", text=t)]
+
+    def test_camel_case_error_field(self):
+        self.assertEqual(self._status(types.SimpleNamespace(
+            isError=True, content=self._text("Error executing tool boom"))), "error")
+
+    def test_snake_case_error_field(self):
+        self.assertEqual(self._status(types.SimpleNamespace(
+            is_error=True, content=self._text("Error executing tool boom"))), "error")
+
+    def test_snake_case_success(self):
+        self.assertEqual(self._status(types.SimpleNamespace(
+            is_error=False, content=self._text("fine"))), "ok")
+
+    def test_dict_results_with_either_key(self):
+        for key in ("isError", "is_error"):
+            self.assertEqual(self._status(
+                {key: True, "content": [{"type": "text", "text": "Error"}]}), "error", key)
+            self.assertEqual(self._status(
+                {key: False, "content": [{"type": "text", "text": "fine"}]}), "ok", key)
+
+
 class OtelTest(unittest.TestCase):
     def test_record_genai_span(self):
         from halo_record.integrations.otel import record_span

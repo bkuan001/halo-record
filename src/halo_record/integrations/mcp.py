@@ -11,9 +11,11 @@ tools.
     from halo_record import Recorder
     from halo_record.integrations.mcp import instrument_client_session
 
-    session = await ClientSession(read, write).initialize()
-    instrument_client_session(session, Recorder("audit.jsonl"), server="stripe")
-    # every `await session.call_tool(name, args)` is now recorded
+    async with Client(server) as client:          # mcp 2.x (``from mcp import Client``)
+        instrument_client_session(client, Recorder("audit.jsonl"), server="stripe")
+        # every `await client.call_tool(name, args)` is now recorded
+
+On mcp 1.x, wrap the initialized ``ClientSession`` the same way.
 
 The MCP SDK is imported nowhere here — we wrap whatever ``call_tool`` coroutine
 the session already has, so this adapter has no dependency of its own and works
@@ -26,19 +28,36 @@ from ._common import record_tool_call
 _AGENT = {"id": "mcp", "name": "mcp-client"}
 
 
+def _field(obj, *names):
+    """First non-None value among ``names``, read as a key on a dict or as an
+    attribute on anything else."""
+    for name in names:
+        value = obj.get(name) if isinstance(obj, dict) else getattr(obj, name, None)
+        if value is not None:
+            return value
+    return None
+
+
 def _result_payload(result):
     """Coerce an MCP ``CallToolResult`` (or anything) into a plain dict for the
-    outcome — surfacing the SDK's ``isError`` so an error tool call is recorded
-    as an error, not a success (ledger, not classifier)."""
+    outcome — surfacing the SDK's error flag so an error tool call is recorded
+    as an error, not a success (ledger, not classifier). The flag is
+    ``isError`` before mcp 2 and ``is_error`` from mcp 2 on; both are read,
+    on result objects and on plain dict results alike."""
     if result is None:
         return None
-    is_error = getattr(result, "isError", None)
-    content = getattr(result, "content", None)
-    if is_error is None and content is None:
+    is_error = _field(result, "isError", "is_error")
+    content = _field(result, "content")
+    if is_error is None and (content is None or isinstance(result, dict)):
         return result  # already a plain value/dict; let derive_outcome handle it
+    if isinstance(result, dict) and not isinstance(content, list):
+        payload = dict(result)
+        payload.pop("isError", None)
+        payload["is_error"] = bool(is_error)
+        return payload
     text_parts = []
     for item in (content or []):
-        t = getattr(item, "text", None)
+        t = _field(item, "text")
         if t is not None:
             text_parts.append(t)
     payload = {"is_error": bool(is_error)}
