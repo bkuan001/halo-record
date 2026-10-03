@@ -166,6 +166,7 @@ def _norm_threats(threats):
 
 
 VERIFICATION_STATUSES = {"allowed", "blocked", "modified", "unverified"}
+OUTCOME_STATUSES = {"ok", "error", "denied"}
 # Values the verifier accepts for authorization.decision and source.capture.
 # build() drops anything else loudly rather than seal a record that can never
 # verify (an append-only chain has no undo).
@@ -474,12 +475,20 @@ def build(action_type, category, tool=None, tool_input=None, *,
     moment it ran (``status`` of allowed | blocked | modified | unverified,
     plus optional ``verifier`` / ``policy_ref`` / ``checked_at``) — sealed
     as supplied, the reporting layer's claim, never adjudicated by Halo; an
-    absent block means no verification claim was made.
+    absent block means no verification claim was made. ``outcome["status"]``,
+    when present, must be ``ok``, ``error`` or ``denied``; any other value
+    raises ValueError before anything is sealed.
     """
     if action_type not in ACTION_TYPES:
         raise ValueError("action.type must be one of %s" % sorted(ACTION_TYPES))
     if category not in CATEGORIES:
         raise ValueError("action.category must be one of %s" % sorted(CATEGORIES))
+    if isinstance(outcome, dict) and "status" in outcome and (
+            not isinstance(outcome["status"], str) or outcome["status"] not in OUTCOME_STATUSES):
+        # The verifier rejects any other value, and an append-only chain has
+        # no undo: refuse it here, before anything is sealed.
+        # The rejected value is not echoed: it is caller text and may carry payload.
+        raise ValueError("outcome.status must be one of %s" % sorted(OUTCOME_STATUSES))
 
     # Schema-typed string fields: a scalar is coerced to str; anything else is
     # dropped with a note rather than sealed into a record that can never

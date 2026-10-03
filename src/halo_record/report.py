@@ -249,9 +249,13 @@ async function haloBind(records, cfg){
     if (text !== null){
       if (typeof text !== "string") throw new Error("the embedded policy is not policy text");
       digest = hex(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text)));
-      const parsed = JSON.parse(text);
-      rules = (parsed && typeof parsed === "object" && !Array.isArray(parsed)) ? parsed.rules : parsed;
-      if (rules === null || rules === undefined) rules = [];
+      // Read exactly as `halo policy` reads the file: a repeated key, a
+      // non-finite number, an unknown top-level key or an invalid rule is
+      // refused here, so the page never shows a verdict the CLI would refuse.
+      if (typeof HaloView.parsePolicyText !== "function") throw new Error("this page cannot read a policy");
+      const read = HaloView.parsePolicyText(text);
+      if (read.error !== null) throw new Error(read.error);
+      rules = read.rules;
     }
   } catch (e){ polErr = e.message; rules = null; }
   const chainOk = WINDOW ? cfg.chainVerified !== false : true;
@@ -493,7 +497,9 @@ _PAGINATE_JS = r"""
      Records are sealed in UTC. A reader investigating "what happened at 3pm"
      means their own 3pm, so the displayed time follows the viewer's clock by
      default, with UTC one click away. The underlying record is untouched. */
-  var localMode = true;
+  // UTC first: the frame of the period line and the static rows. Local time
+  // is a toggle, labeled with the viewer's zone while shown.
+  var localMode = false;
   var TZ = "";
   try {
     TZ = Intl.DateTimeFormat().resolvedOptions().timeZone || "";
@@ -1177,7 +1183,7 @@ def render(records, checkpoints=None, *, witness_url=None, policy=None, window=N
   <label class="f-lab">From <input type="datetime-local" id="f-from" step="1" aria-label="From time"></label>
   <label class="f-lab">To <input type="datetime-local" id="f-to" step="1" aria-label="To time"></label>
   <label class="f-check"><input type="checkbox" id="f-flags"> Flagged only</label>
-  <button type="button" id="tz-toggle" class="f-btn">Show UTC</button>
+  <button type="button" id="tz-toggle" class="f-btn">Show local time</button>
   <button type="button" id="f-reset" class="f-btn">Reset</button>
 </div>
 %(rowcount)s
@@ -1262,8 +1268,9 @@ def write_report(log_path, out_path=None, witness_log=None, witness_url=None,
     ``anchor.verify_completeness`` result, or None when no witness was named)
     and ``chain_records``."""
     if witness_log and not os.path.isfile(os.path.expanduser(str(witness_log))):
-        raise ValueError("witness file %s does not exist; refusing to render a report "
-                         "that would read as not anchored" % witness_log)
+        from .anchor import WitnessFileError
+        raise WitnessFileError("witness file %s does not exist; refusing to render a report "
+                               "that would read as not anchored" % witness_log)
     records = _load(log_path)
     checkpoints = None
     if witness_log:

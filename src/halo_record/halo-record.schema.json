@@ -115,7 +115,7 @@
         },
         "input": {
           "type": "object",
-          "description": "Redacted summary plus a hash of the full canonical arguments. Raw arguments MUST NOT appear.",
+          "description": "A hash of the full canonical arguments, plus an optional summary of at most 200 characters in which known secret and PII patterns are masked. A short input that matches no pattern appears in the summary in full; hash-only records carry no summary.",
           "properties": {
             "summary": { "type": "string" },
             "hash": { "type": "string" }

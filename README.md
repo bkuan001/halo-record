@@ -239,9 +239,10 @@ One chain, one writer at a time. A chain is a linked list: two writers that read
 
 Records are written after the action runs. Halo does not block an action when its record cannot be written; writing the record before the action is not offered.
 
-- **Default: the action's result passes through.** If a record cannot be written (disk full, permissions, a lock timeout), `trace()`, `record_call`, `@record`, the framework adapters (OpenAI Agents, LangChain, LiteLLM, OpenTelemetry), the MCP wrapper and `halo hook` return the action's own result unchanged, or re-raise the action's own exception if it failed. A warning on stderr names the missing record: `halo-record: FAILED to record '<tool>' (<error>); the action ran, but its record is NOT in the evidence log. ...`. The LangChain handler and the OTel exporter also count losses (`lost_records`). Nothing in the chain can show a record that was never written, so a stalled chain still verifies; witness checkpoints on a cadence make it visible, because an expected checkpoint that never arrives is the alarm.
-- **Strict mode raises instead.** Pass `strict_recording=True` (to `trace`, `record_call`, `@record`, `instrument_client_session`, or an adapter's constructor), or set `HALO_STRICT_RECORDING=1`, and the recording error is raised to the caller. The action has already run when it is raised, so a caller that treats the error as "the action failed" and retries will repeat the action's side effects (a refund issued twice). Use strict mode only where a missing record is worse than that risk.
+- **Default: the action's result passes through.** If a record cannot be written (disk full, permissions, a lock timeout), `trace()`, `record_call`, `@record`, the framework adapters (OpenAI Agents, LangChain, LiteLLM, OpenTelemetry), the MCP wrapper and `halo hook` return the action's own result unchanged, or re-raise the action's own exception if it failed. A warning on stderr names the missing record: `halo-record: FAILED to record '<tool>' (<error>); the action ran, but its record is NOT in the evidence log. ...` (with no usable stderr, it goes to the `halo_record` logger). The LangChain handler and the OTel exporter also count losses (`lost_records`). Nothing in the chain can show a record that was never written, so the remaining records still verify. A witness checkpoint cadence shows a chain that has stalled; a single missing record between later ones shows only in the stderr line.
+- **Strict mode raises as well.** Pass `strict_recording=True` (to `trace`, `record_call`, `@record`, `instrument_client_session`, or an adapter's constructor), or set `HALO_STRICT_RECORDING=1`, and the same stderr line is written, then the recording error is raised. It reaches the caller from `trace`, `record_call`, `@record`, the MCP wrapper, the OpenAI Agents hooks and the LangChain handler (which sets LangChain's `raise_error`). It cannot reach the caller from the OTel exporter or the LiteLLM logger: those frameworks catch and log what an exporter or callback raises, so there the stderr line is the signal in both modes (LIMITS.md section 18). The action has already run when the error is raised, so a caller that treats it as "the action failed" and retries will repeat the action's side effects (a refund issued twice). Use strict mode only where a missing record is worse than that risk.
 - `record_call` and `@record` with no recorder (none passed, none bound by `trace`) raise `RuntimeError` before the wrapped code runs.
+- `@record` and `trace()` accept `async def` functions. The wrapper is itself `async def`: it awaits the function, then records what it returned or raised (a cancellation is recorded as an error). `trace()` keeps its recorder bound while the body is awaited, so a `record_call` or `@record` tool inside an async agent lands on the traced chain, and concurrent agents each keep their own. A plain function that returns an awaitable is recorded when it returns; async generators are not wrapped.
 
 ## Integrity vs. completeness (read this part)
 
@@ -367,7 +368,8 @@ halo report   render a chain as an HTML Runtime Report that re-verifies its hash
               (--from/--to: a date-windowed report covering only the review period;
                -w/--witness or --witness-url: completeness checked at generation;
                exit 1 INCOMPLETE or refused — chain (or window) does not verify, unexpected
-               subject, or unreachable witness — 3 unwitnessed or empty; --expect-subject pins the customer id)
+               subject, or unreachable witness — 2 local witness file missing or damaged,
+               3 unwitnessed or empty; --expect-subject pins the customer id)
 halo policy   corroborate a chain against a declarative policy pack
               (per-rule pass / violation / evidence-gap; exit 1 violated, 2 refused —
                invalid policy, unverifiable chain, or unexpected subject — 3 nothing in scope;
@@ -375,14 +377,15 @@ halo policy   corroborate a chain against a declarative policy pack
 halo serve    serve per-tenant reports over HTTP, access-scoped per customer
 halo grant    designate a report recipient (email or domain)
 halo viewers  list who has unlocked a gated report
-halo anchor   witness a chain head, or --check completeness (exit 1 incomplete, 3 unwitnessed;
-              --remote --check needs no vendor key)
+halo anchor   witness a chain head, or --check completeness (exit 1 incomplete, 2 local witness
+              file missing or damaged, 3 unwitnessed; --remote --check needs no vendor key)
 halo witness-serve  run a witness over HTTP: vendors anchor chain heads, viewers fetch checkpoints
 halo demo     scaffold the full vendor demo (record -> witness -> gated report)
 halo export   date-bounded evidence export: CSV + manifest tied to the chain head
               (--witness/--witness-url/--expect-subject: completeness in the manifest;
                exit 1 refused — chain fails verification, INCOMPLETE, unexpected subject,
-               or unreachable witness — 2 unreadable file, 3 empty chain or unwitnessed)
+               or unreachable witness — 2 unreadable chain, local witness file missing or
+               damaged, or output directory missing — 3 empty chain or unwitnessed)
 halo sample   emit a valid example log
 halo hash     canonical sha256 of a JSON value
 halo hook     Claude Code PostToolUse hook

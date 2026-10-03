@@ -205,6 +205,10 @@ def record(recorder=None, *, category="security", action_type="tool_call",
     be omitted to record onto whatever recorder an enclosing ``trace`` has
     bound — letting a tool be decorated once and reused across agents/tenants.
     A failure to write the record is handled as in ``record_call``.
+
+    An ``async def`` tool gets an ``async def`` wrapper that awaits it and then
+    records what it returned or raised. A plain function that returns an
+    awaitable is recorded when it returns, with the awaitable as its result.
     """
 
     def decorator(fn):
@@ -214,8 +218,7 @@ def record(recorder=None, *, category="security", action_type="tool_call",
         except (ValueError, TypeError):
             sig = None
 
-        @functools.wraps(fn)
-        def wrapper(*args, **kwargs):
+        def _call(args, kwargs):
             if sig is not None:
                 try:
                     bound = sig.bind(*args, **kwargs)
@@ -225,14 +228,29 @@ def record(recorder=None, *, category="security", action_type="tool_call",
                     tool_input = {"args": list(args), "kwargs": kwargs}
             else:
                 tool_input = {"args": list(args), "kwargs": kwargs}
-            with record_call(
+            return record_call(
                 recorder, name, tool_input, category=category,
                 action_type=action_type, scope=scope, session_id=session_id,
                 agent=agent, decision=decision, approver=approver,
                 subject=subject, summaries=summaries, principal=principal,
                 parent_id=parent_id, threats=threats, data=data,
                 strict_recording=strict_recording,
-            ) as call:
+            )
+
+        if inspect.iscoroutinefunction(fn):
+            # An async tool: await it inside the record, so the record holds
+            # what the coroutine returned or raised, written after it ran.
+            @functools.wraps(fn)
+            async def async_wrapper(*args, **kwargs):
+                with _call(args, kwargs) as call:
+                    call.result = await fn(*args, **kwargs)
+                    return call.result
+
+            return async_wrapper
+
+        @functools.wraps(fn)
+        def wrapper(*args, **kwargs):
+            with _call(args, kwargs) as call:
                 call.result = fn(*args, **kwargs)
                 return call.result
 

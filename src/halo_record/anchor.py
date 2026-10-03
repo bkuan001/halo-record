@@ -157,6 +157,38 @@ def _chain_intact(records):
     return 0
 
 
+class WitnessFileError(ValueError):
+    """A local witness file that is missing or damaged. A completeness verdict
+    is refused rather than computed around it: a torn or garbled checkpoint may
+    be the very one that would expose a truncation. The CLI exits 2 for it."""
+
+
+def is_checkpoint(cp):
+    """Whether ``cp`` has a checkpoint's shape: an object with a non-negative
+    integer ``count`` and a string ``head``."""
+    if not isinstance(cp, dict):
+        return False
+    n = cp.get("count")
+    return (isinstance(n, int) and not isinstance(n, bool) and n >= 0
+            and isinstance(cp.get("head"), str))
+
+
+def parse_checkpoint_line(line):
+    """The checkpoint on one witness line, or None if the line is damaged."""
+    try:
+        cp = json.loads(line, parse_int=_parse_int)
+    except (ValueError, RecursionError):
+        return None
+    return cp if is_checkpoint(cp) else None
+
+
+def damaged_witness(path, line_no):
+    return WitnessFileError(
+        "witness file %s is damaged at line %d (not a complete checkpoint); a damaged "
+        "witness cannot establish completeness, so this is refused — restore the file "
+        "from a copy the witness operator holds" % (path, line_no))
+
+
 class Notary:
     """A neutral witness log. In production this is hosted by Halo; locally it is
     just an append-only JSONL the vendor does not get to rewrite."""
@@ -176,13 +208,20 @@ class Notary:
         if parent and not os.path.isdir(parent):
             os.makedirs(parent, exist_ok=True)
         line = json.dumps(cp, separators=(",", ":")) + "\n"
-        with open(self.path, "a", encoding="utf-8") as fh:
+        with open(self.path, "a+b") as fh:
             # Several witness processes may share one log: append under an
             # exclusive lock and flush to disk before acknowledging.
             if _fcntl is not None:
                 _fcntl.flock(fh, _fcntl.LOCK_EX)
             try:
-                fh.write(line)
+                # After a torn last line, start a new line: the new checkpoint
+                # stays readable and the torn one is still reported as damage.
+                end = fh.seek(0, os.SEEK_END)
+                if end:
+                    fh.seek(end - 1)
+                    if fh.read(1) != b"\n":
+                        line = "\n" + line
+                fh.write(line.encode("utf-8"))
                 fh.flush()
                 os.fsync(fh.fileno())
             finally:
@@ -192,17 +231,30 @@ class Notary:
 
     def checkpoints(self, subject=None, chain_root=None):
         """All checkpoints, or those for one subject, or (subject None and
-        ``chain_root`` given) those for one subjectless chain."""
+        ``chain_root`` given) those for one subjectless chain. Raises
+        ``WitnessFileError`` if any line of the file is not a complete
+        checkpoint (a torn write, garbage)."""
         if not os.path.exists(self.path):
             return []
         cps = []
-        for ln in read_log_lines(self.path):
+        with open(self.path, "rb") as lock:
+            # A shared lock waits out an append in progress, so an unfinished
+            # line seen here is a torn write, not a writer mid-line.
+            if _fcntl is not None:
+                _fcntl.flock(lock, _fcntl.LOCK_SH)
             try:
-                cp = json.loads(ln, parse_int=_parse_int)
-            except (ValueError, RecursionError):
-                continue  # a damaged line (torn write) never hides the rest
-            if isinstance(cp, dict):
-                cps.append(cp)
+                lines = read_log_lines(self.path)
+            except UnicodeDecodeError:
+                raise WitnessFileError("witness file %s is damaged (not UTF-8 text); a damaged "
+                                       "witness cannot establish completeness" % self.path)
+            finally:
+                if _fcntl is not None:
+                    _fcntl.flock(lock, _fcntl.LOCK_UN)
+        for n, ln in enumerate(lines, start=1):
+            cp = parse_checkpoint_line(ln)
+            if cp is None:
+                raise damaged_witness(self.path, n)
+            cps.append(cp)
         if subject is not None:
             cps = [c for c in cps if c.get("subject") == subject]
         elif chain_root is not None:

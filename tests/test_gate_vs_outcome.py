@@ -33,11 +33,49 @@ class GateDisplayTest(unittest.TestCase):
         self.assertTrue(text.startswith("Gate reported blocked; outcome recorded: ok"), text)
         self.assertNotIn("Blocked by gate", text)
 
-    def test_blocked_without_a_conflicting_outcome_reads_blocked(self):
-        for outcome in (None, {"status": "denied"}, {"status": "error"}):
+    def test_only_a_denied_outcome_reads_blocked(self):
+        r = build("tool_call", "security", tool="payments.refund",
+                  verification={"status": "blocked"}, outcome={"status": "denied"})
+        self.assertTrue(_view.plain(r).startswith("Blocked by gate: payments.refund"))
+
+    def test_blocked_with_an_error_or_no_outcome_says_what_was_recorded(self):
+        # The egress rules keep these records in scope (the action may have
+        # run), so the display does not call them blocked either.
+        cases = {"error": "Gate reported blocked; outcome recorded: error",
+                 None: "Gate reported blocked; outcome not recorded"}
+        for status, expected in cases.items():
             r = build("tool_call", "security", tool="payments.refund",
-                      verification={"status": "blocked"}, outcome=outcome)
-            self.assertTrue(_view.plain(r).startswith("Blocked by gate"), outcome)
+                      verification={"status": "blocked"},
+                      outcome={"status": status, "summary": "timeout after send"} if status else None)
+            text = _view.plain(r)
+            self.assertTrue(text.startswith(expected + " \u2014 payments.refund"), text)
+            self.assertNotIn("Blocked by gate", text)
+
+    def test_denied_decision_follows_the_same_rule(self):
+        cases = {"denied": "Denied: payments.refund",
+                 "error": "Decision recorded denied; outcome recorded: error \u2014 payments.refund",
+                 None: "Decision recorded denied; outcome not recorded \u2014 payments.refund"}
+        for status, expected in cases.items():
+            r = build("tool_call", "security", tool="payments.refund", decision="denied",
+                      outcome={"status": status} if status else None)
+            self.assertTrue(_view.plain(r).startswith(expected), (status, _view.plain(r)))
+        r = build("tool_call", "security", tool="payments.refund", outcome={"status": "denied"})
+        self.assertTrue(_view.plain(r).startswith("Denied: payments.refund"))
+
+    def test_display_matches_the_egress_rule(self):
+        for ver, dec, status in [("blocked", None, "error"), ("blocked", None, None),
+                                 (None, "denied", "error"), (None, "denied", None),
+                                 ("blocked", None, "denied"), ("blocked", "denied", "ok")]:
+            kw = {}
+            if ver:
+                kw["verification"] = {"status": ver}
+            if dec:
+                kw["decision"] = dec
+            rec = build("network", "privacy", tool="post", tool_input={"body": "ssn 123-45-6789"},
+                        outcome={"status": status} if status else None, **kw)
+            in_scope = "violated" in _egress(rec).values()
+            reads_stopped = _view.plain(rec).startswith(("Blocked by gate", "Denied"))
+            self.assertEqual(in_scope, not reads_stopped, (ver, dec, status))
 
 
 class EgressScopeTest(unittest.TestCase):
@@ -67,3 +105,36 @@ class EgressScopeTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class GatePageParityTest(unittest.TestCase):
+    def test_page_rows_state_the_gate_as_python_does(self):
+        import re
+        import tempfile
+        from halo_record.record import Recorder
+        from halo_record.report import write_report
+        from tests.test_page_binding import NODE, _run_page
+        if not NODE:
+            self.skipTest("node not installed")
+        d = tempfile.mkdtemp()
+        log = os.path.join(d, "c.jsonl")
+        rec = Recorder(log)
+        combos = [("blocked", None, "error"), ("blocked", None, None), ("blocked", None, "denied"),
+                  ("blocked", None, "ok"), (None, "denied", "error"), (None, "denied", None),
+                  (None, "denied", "ok"), (None, None, "denied")]
+        for ver, dec, status in combos:
+            kw = {}
+            if ver:
+                kw["verification"] = {"status": ver}
+            if dec:
+                kw["decision"] = dec
+            rec.append(build("tool_call", "security", tool="payments.refund", subject="acme",
+                             outcome={"status": status} if status else None, **kw))
+        html, _ = write_report(log, os.path.join(d, "r.html"))
+        out = _run_page(html)
+        cell = re.compile(r'<td class="trunc dim">(.*?)</td>')
+        page = [cell.search(r).group(1) for r in out["rows"]]
+        static_body = html[html.index('<tbody id="activity-body">'):html.index("</tbody>")]
+        static = cell.findall(static_body)
+        self.assertEqual(page, static)
+        self.assertEqual(len(page), len(combos))

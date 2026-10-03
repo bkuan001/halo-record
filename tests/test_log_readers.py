@@ -47,7 +47,8 @@ class ReadersAgreeWithVerifyTest(unittest.TestCase):
                 self.assertEqual(policy.load_records(path), _expected(path))
 
     def test_witness_log_reads_checkpoints_with_cr_and_bom(self):
-        cps = [{"subject": "acme", "chain_root": "r%d" % i, "n": i} for i in range(3)]
+        cps = [{"subject": "acme", "chain_root": "r%d" % i, "count": i, "head": "h%d" % i}
+               for i in range(3)]
         body = "\n".join(json.dumps(c).replace('{"subject"', '{\r"subject"') for c in cps) + "\n"
         d = tempfile.mkdtemp()
         path = os.path.join(d, "witness.jsonl")

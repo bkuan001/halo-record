@@ -278,21 +278,31 @@ def _squash(s):
     return " ".join(p for p in _PY_WS.split(s) if p)
 
 
+def _recorded(out):
+    status = out.get("status")
+    if isinstance(status, str) and status:
+        return "outcome recorded: " + status
+    return "outcome not recorded"
+
+
 def _gate(r):
-    """'Blocked by gate' / 'Denied' when the record says the action was stopped.
-    A gate's "blocked" is its own report: when the outcome records the action
-    as ok, both are shown and neither is preferred (LIMITS section 11)."""
+    """How the page states a gate's "blocked" or a "denied" decision.
+
+    Only an outcome recorded as denied reads as stopped ("Blocked by gate",
+    "Denied"), the same line the starter packs' egress rules draw. A gate's
+    "blocked" or a decision of "denied" is the reporting layer's claim: with an
+    outcome of ok or error, or none, both are shown and neither is preferred
+    (LIMITS section 11)."""
     action = _dict(r.get("action"))
     auth = _dict(action.get("authorization"))
     ver = _dict(r.get("verification"))
     out = _dict(r.get("outcome"))
+    stopped = out.get("status") == "denied"
     if ver.get("status") == "blocked":
-        if out.get("status") == "ok":
-            return "Gate reported blocked; outcome recorded: ok"
-        return "Blocked by gate"
-    if auth.get("decision") == "denied" or out.get("status") == "denied":
-        if out.get("status") == "ok":
-            return "Decision recorded denied; outcome recorded: ok"
+        return "Blocked by gate" if stopped else "Gate reported blocked; " + _recorded(out)
+    if auth.get("decision") == "denied":
+        return "Denied" if stopped else "Decision recorded denied; " + _recorded(out)
+    if stopped:
         return "Denied"
     return None
 
@@ -326,7 +336,7 @@ def plain(r):
     detail = _squash(detail)
     gate = _gate(r)
     if gate:
-        sep = " \u2014 " if gate.endswith(": ok") else ": "
+        sep = " \u2014 " if "; outcome" in gate else ": "
         return ("%s%s%s \u2014 %s" % (gate, sep, tool, detail)) if detail else ("%s%s%s" % (gate, sep, tool))
     if not detail:
         o = _dict(r.get("outcome")).get("summary")
@@ -694,6 +704,7 @@ var HaloView = (function(){
   var DIGEST_NOTE = %(digest_note)s;
   var SCHEMA = %(schema)s;
   var RULE_KEYS = %(rule_keys)s;
+  var POLICY_KEYS = %(policy_keys)s;
   var SEVERITIES = %(severities)s;
   var PY_WS = /[\t\n\x0b\x0c\r\x1c-\x1f \x85\xa0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]+/;
   var TS_RE = /^([0-9]{4})-([0-9]{2})-([0-9]{2})[Tt ]([0-9]{2}):([0-9]{2}):([0-9]{2})(?:\.([0-9]{1,9}))?(Z|z|[+-][0-9]{2}:[0-9]{2})?$/;
@@ -881,14 +892,16 @@ var HaloView = (function(){
   }
 
   /* --- plain-language summary (mirror _view.plain) --- */
+  function recorded(out){
+    return (typeof out.status === "string" && out.status) ? "outcome recorded: " + out.status
+                                                          : "outcome not recorded";
+  }
   function gate(r){
     var action = dict(r.action), auth = dict(action.authorization),
-        ver = dict(r.verification), out = dict(r.outcome);
-    if (ver.status === "blocked")
-      return out.status === "ok" ? "Gate reported blocked; outcome recorded: ok" : "Blocked by gate";
-    if (auth.decision === "denied" || out.status === "denied")
-      return out.status === "ok" ? "Decision recorded denied; outcome recorded: ok" : "Denied";
-    return null;
+        ver = dict(r.verification), out = dict(r.outcome), stopped = out.status === "denied";
+    if (ver.status === "blocked") return stopped ? "Blocked by gate" : "Gate reported blocked; " + recorded(out);
+    if (auth.decision === "denied") return stopped ? "Denied" : "Decision recorded denied; " + recorded(out);
+    return stopped ? "Denied" : null;
   }
   function plain(r){
     var action = dict(r.action);
@@ -909,7 +922,7 @@ var HaloView = (function(){
     detail = squash(detail);
     var g = gate(r);
     if (g){
-      var sep = g.slice(-4) === ": ok" ? " \u2014 " : ": ";
+      var sep = g.indexOf("; outcome") >= 0 ? " \u2014 " : ": ";
       return detail ? (g + sep + tool + " \u2014 " + detail) : (g + sep + tool);
     }
     if (!detail){
@@ -1236,6 +1249,122 @@ var HaloView = (function(){
       polMatcher(path, spec, fn[0], fn[1], where);
     });
   }
+  var SCALAR_TYPES = ["string", "number", "integer", "boolean"];
+  function opsOf(spec){ return isDict(spec) ? spec : {eq: spec}; }
+  function present(ops){
+    return ops.exists === true || Object.keys(ops).some(function(k){ return ["exists", "ne", "nin"].indexOf(k) < 0; });
+  }
+  function valueOptions(spec){
+    var ops = opsOf(spec), cands = null;
+    if (ops.exists === false) return [[]];
+    if (has(ops, "eq")) cands = [ops.eq];
+    else if (has(ops, "in")) cands = ops["in"].slice();
+    if (cands === null) return null;
+    return cands.filter(function(v){ return match([v], spec); }).map(function(v){ return [v]; });
+  }
+  function forbidCanHold(wspec, fspec){
+    var opts = valueOptions(wspec);
+    if (opts !== null) return opts.some(function(vals){ return match(vals, fspec); });
+    var wops = opsOf(wspec), fops = opsOf(fspec);
+    if (fops.exists === false && present(wops)) return false;
+    var fopts = valueOptions(fspec);
+    if (fopts !== null && !(fopts.length === 1 && fopts[0].length === 0))
+      return fopts.some(function(vals){ return match(vals, wspec); });
+    var merged = {};
+    RANGE_OPS.forEach(function(k){
+      var b = [wops, fops].filter(function(o){ return has(o, k); }).map(function(o){ return o[k]; });
+      if (b.length) merged[k] = (k === "gt" || k === "gte") ? Math.max.apply(null, b) : Math.min.apply(null, b);
+    });
+    var lo = [], hi = [];
+    ["gt", "gte"].forEach(function(k){ if (has(merged, k)) lo.push([merged[k], k === "gte"]); });
+    ["lt", "lte"].forEach(function(k){ if (has(merged, k)) hi.push([merged[k], k === "lte"]); });
+    for (var i = 0; i < lo.length; i++) for (var j = 0; j < hi.length; j++){
+      var a = lo[i], b = hi[j];
+      if (a[0] > b[0] || (a[0] === b[0] && !(a[1] && b[1]))) return false;
+    }
+    return true;
+  }
+  function polRuleScope(rule, where){
+    /* mirror policy._check_rule_scope */
+    var when = isDict(rule.when) ? rule.when : {}, scalar = {}, any = false;
+    Object.keys(when).forEach(function(path){
+      var fn = polField(path, where), node = fn[0];
+      if (!fn[1] && node !== null && SCALAR_TYPES.indexOf(node.type) >= 0){ scalar[path] = when[path]; any = true; }
+    });
+    if (!any) return;
+    if (isDict(rule.forbid)) Object.keys(rule.forbid).forEach(function(path){
+      if (has(scalar, path) && !forbidCanHold(scalar[path], rule.forbid[path]))
+        perr(where + ": forbid on " + pyRepr(path) + ' can never hold for a record that "when" selects, so the rule can never be violated');
+    });
+    if (isDict(rule.require) && Object.keys(rule.require).length){
+      var paths = Object.keys(rule.require);
+      for (var i = 0; i < paths.length; i++){
+        var opts = has(scalar, paths[i]) ? valueOptions(scalar[paths[i]]) : null;
+        var spec = rule.require[paths[i]];
+        if (opts === null || !opts.every(function(vals){ return match(vals, spec); })) return;
+      }
+      perr(where + ": require on " + paths.map(pyRepr).join(", ") +
+           ' always holds for a record that "when" selects, so the rule can never be violated');
+    }
+  }
+  function jsonProblem(text){
+    /* The first problem Python's policy JSON reader reports in text that
+       JSON.parse accepted: a non-finite float literal (as it is read), or a
+       key repeated in one object (as that object closes). Null if none. */
+    var stack = [], i = 0, n = text.length;
+    while (i < n){
+      var c = text[i];
+      if (c === '"'){
+        var j = i + 1;
+        while (text[j] !== '"'){ if (text[j] === "\\") j++; j++; }
+        var top = stack.length ? stack[stack.length - 1] : null;
+        if (top && top.obj && top.expectKey){
+          var key = JSON.parse(text.slice(i, j + 1));
+          if (top.keys.has(key)){ if (top.dup === null) top.dup = key; }
+          else top.keys.add(key);
+          top.expectKey = false;
+        }
+        i = j + 1;
+        continue;
+      }
+      if (c === "{") stack.push({obj: true, keys: new Set(), expectKey: true, dup: null});
+      else if (c === "[") stack.push({obj: false});
+      else if (c === "}" || c === "]"){
+        var done = stack.pop();
+        if (done.obj && done.dup !== null) return "duplicate key " + pyRepr(done.dup) + " in one object";
+      } else if (c === ","){
+        if (stack.length && stack[stack.length - 1].obj) stack[stack.length - 1].expectKey = true;
+      } else if (c === "-" || (c >= "0" && c <= "9")){
+        var k = i;
+        while (k < n && "+-0123456789.eE".indexOf(text[k]) >= 0) k++;
+        var tok = text.slice(i, k);
+        if (/[.eE]/.test(tok) && !isFinite(Number(tok))) return tok + " is not a finite number";
+        i = k;
+        continue;
+      }
+      i++;
+    }
+    return null;
+  }
+  function parsePolicyText(text){
+    /* mirror policy._rules_from_text(text, "(embedded)") + validate_policy:
+       the rules, or a PolicyError with the CLI's message. */
+    var where = "policy (embedded)", data;
+    try { data = JSON.parse(text); }
+    catch (e){ perr(where + " is not valid JSON (" + e.message + ")"); }
+    var problem = jsonProblem(text);
+    if (problem !== null) perr(where + " is not valid JSON (" + problem + ")");
+    if (isDict(data)){
+      var unknown = Object.keys(data).filter(function(k){ return POLICY_KEYS.indexOf(k) < 0; }).sort();
+      if (unknown.length)
+        perr(where + ": unknown top-level key(s) " + unknown.map(pyRepr).join(", ") + " (known: " + POLICY_KEYS.join(", ") + ")");
+      if (!has(data, "rules")) perr(where + ': an object policy needs a "rules" list');
+      data = data.rules;
+    }
+    var invalid = validatePolicy(data);
+    if (invalid !== null) perr(invalid);
+    return data;
+  }
   function validatePolicy(rules){
     /* null when ``rules`` is a valid policy, else the reason (validate_policy's message). */
     try {
@@ -1263,6 +1392,7 @@ var HaloView = (function(){
         ["when", "forbid", "require"].forEach(function(k){
           if (has(rule, k)) polCondition(rule[k], where + " " + k);
         });
+        polRuleScope(rule, where);
       });
       return null;
     } catch (e){
@@ -1434,7 +1564,11 @@ var HaloView = (function(){
     };
   }
   return {regions: regions, tsUtc: tsUtc, fmtTs: fmtTs, plain: plain, esc: esc, subjectId: subjectId,
-          validatePolicy: typeof validatePolicy === "function" ? validatePolicy : null};
+          validatePolicy: typeof validatePolicy === "function" ? validatePolicy : null,
+          parsePolicyText: typeof parsePolicyText === "function" ? function(text){
+            try { return {rules: parsePolicyText(text), error: null}; }
+            catch (e){ if (e instanceof PolicyError) return {rules: null, error: e.message}; throw e; }
+          } : null};
 })();
 """
 
@@ -1442,6 +1576,7 @@ var HaloView = (function(){
 def _policy_schema():
     """The parts of the record schema the policy validator reads (type, enum,
     items, properties), for the page's copy of it."""
+    from .policy import with_vocabularies
     from .verify import load_schema
 
     def trim(node):
@@ -1454,13 +1589,13 @@ def _policy_schema():
         if isinstance(node.get("properties"), dict):
             out["properties"] = {k: trim(v) for k, v in node["properties"].items()}
         return out
-    return trim(load_schema())
+    return trim(with_vocabularies(load_schema()))
 
 
 def render_js(with_policy=True):
     """RENDER_JS with its shared constants filled in from this module. Without
     a policy, the policy evaluator and panel are left out of the page."""
-    from .policy import _FOOT_PAGE, POLICY_DIGEST_NOTE, RULE_KEYS, SEVERITIES
+    from .policy import _FOOT_PAGE, POLICY_DIGEST_NOTE, POLICY_KEYS, RULE_KEYS, SEVERITIES
     st_note = {}
     # The provenance notes come from provenance() itself so the two cannot drift.
     def _note(recs):
@@ -1480,6 +1615,7 @@ def render_js(with_policy=True):
         "digest_note": json.dumps(POLICY_DIGEST_NOTE),
         "schema": json.dumps(_policy_schema()),
         "rule_keys": json.dumps(list(RULE_KEYS)),
+        "policy_keys": json.dumps(list(POLICY_KEYS)),
         "severities": json.dumps(list(SEVERITIES)),
         "note_mixed": json.dumps(st_note["mixed"]),
         "note_ing": json.dumps(st_note["ing"]),

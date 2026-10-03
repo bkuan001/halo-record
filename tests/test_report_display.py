@@ -38,8 +38,10 @@ class ReportDisplayTest(unittest.TestCase):
         self.assertEqual(len(cells), 2)
         for c in cells:
             self.assertFalse(c.startswith("Ran "), c)
-        self.assertTrue(any(c.startswith("Blocked by gate") for c in cells))
-        self.assertTrue(any(c.startswith("Denied") for c in cells))
+        # No outcome was recorded, so neither reads as stopped outright.
+        self.assertTrue(any(c.startswith("Gate reported blocked; outcome not recorded") for c in cells))
+        self.assertTrue(any(c.startswith("Decision recorded denied; outcome not recorded")
+                            for c in cells))
 
     def test_a_threat_flagged_record_does_not_read_no_flags(self):
         _, recs = _records((("tool_call", "security"),

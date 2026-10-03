@@ -202,14 +202,33 @@ def record_event(event, recorder, *, subject=None, authority=None, summaries=Tru
     return record
 
 
+def _unreadable(why):
+    # Never break the agent on an event it cannot read, and never drop one
+    # silently either: say on stderr that no record was written for it.
+    sys.stderr.write("halo-record: hook received an event that is %s; no record was "
+                     "written for it\n" % why)
+    return 0
+
+
 def main(argv=None):
-    raw = sys.stdin.read().strip()
+    buf = getattr(sys.stdin, "buffer", None)
+    if buf is not None:
+        data = buf.read()
+        try:
+            raw = data.decode("utf-8")
+        except UnicodeDecodeError as e:
+            return _unreadable("not UTF-8 (%s)" % e)
+    else:
+        raw = sys.stdin.read()
+    raw = raw.strip()
     if not raw:
         return 0
     try:
         event = json.loads(raw)
-    except json.JSONDecodeError:
-        return 0  # never break the agent on a malformed event
+    except (ValueError, RecursionError) as e:
+        return _unreadable("not valid JSON (%s)" % e)
+    if not isinstance(event, dict):
+        return _unreadable("not a JSON object (got %s)" % type(event).__name__)
     name = event.get("hook_event_name")
     if isinstance(name, str) and name.strip() and name.strip().lower() != "posttooluse":
         # Only a post-action event describes something that ran. Say so on

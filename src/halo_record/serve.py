@@ -143,6 +143,18 @@ def admin_key(secret):
     return hmac.new(secret, b"__admin__", sha256).hexdigest()[:ADMIN_LEN]
 
 
+def _witness_checkpoints(notary, records):
+    """(checkpoints, damaged): a damaged witness file yields no checkpoints and
+    damaged=True, which every caller shows as such, never as unwitnessed."""
+    if notary is None:
+        return [], False
+    from .anchor import WitnessFileError
+    try:
+        return notary.checkpoints_for(records), False
+    except WitnessFileError:
+        return [], True
+
+
 def _verdict(path, checkpoints):
     """Server-side (chain intact?, completeness) for the operator console."""
     intact = verify_log(path, out=lambda *a, **k: None)
@@ -170,8 +182,10 @@ def _console_payload(directory, secret, witness_log):
         records = _load(path)
         subject = _subject_label(records)
         stats = _summary_stats(records)
-        cps = notary.checkpoints_for(records) if notary else []
+        cps, damaged = _witness_checkpoints(notary, records)
         intact, comp, _ = _verdict(path, cps)
+        if damaged:
+            comp = {"ok": False, "why": "witness file damaged"}
         totals["chains"] += 1
         totals["records"] += stats["total"]
         totals["intact"] += 1 if intact else 0
@@ -183,6 +197,7 @@ def _console_payload(directory, secret, witness_log):
             "stats": stats,
             "integrity": "intact" if intact else "broken",
             "completeness": ("complete" if comp.get("ok") is True
+                             else "witness damaged" if damaged
                              else "incomplete" if comp.get("ok") is False
                              else "unwitnessed"),
             "file": os.path.basename(path),
@@ -217,12 +232,16 @@ report. Ask the operator for yours.</p></div>""" % _STYLE)
         records = _load(path)
         subject = _subject_label(records)
         stats = _summary_stats(records)
-        cps = notary.checkpoints_for(records) if notary else []
+        cps, damaged = _witness_checkpoints(notary, records)
         intact, comp, _ = _verdict(path, cps)
+        if damaged:
+            comp = {"ok": False}
         ipill = ('<span class="pill ok">intact</span>' if intact
                  else '<span class="pill warn">broken</span>')
         if comp["ok"] is True:
             cpill = '<span class="pill ok">complete</span>'
+        elif damaged:
+            cpill = '<span class="pill warn">witness damaged</span>'
         elif comp["ok"] is False:
             cpill = '<span class="pill warn">incomplete</span>'
         else:
@@ -343,7 +362,11 @@ class _Handler(BaseHTTPRequestHandler):
                     'report is withheld. Each customer\'s records belong in their own chain.</p>')
         cps = None
         if cfg["witness"]:
-            cps = Notary(cfg["witness"]).checkpoints_for(records)
+            cps, damaged = _witness_checkpoints(Notary(cfg["witness"]), records)
+            if damaged:
+                return ('<!doctype html><meta charset="utf-8"><title>Report withheld</title>'
+                        '<p>The witness file is damaged, so completeness cannot be judged '
+                        'and the report is withheld. The operator must restore it.</p>')
         return render(records, cps, witness_url=cfg.get("witness_url"))
 
     def _session_email(self, stem, token):

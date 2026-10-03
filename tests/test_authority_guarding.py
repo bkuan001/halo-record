@@ -101,11 +101,18 @@ class HashOnlyOutcomeTest(unittest.TestCase):
         self.assertEqual(set(rec["outcome"].keys()), {"status"})
 
     def test_hash_only_rejects_payload_shaped_status_and_hash(self):
+        # A status outside the enum is refused before anything is sealed, and
+        # the refusal does not repeat it.
+        with self.assertRaises(ValueError) as cm:
+            build("tool_call", "security", tool="t",
+                  outcome={"status": "the customer's SSN is 123-45-6789",
+                           "hash": "free text hiding here"},
+                  summaries=False)
+        self.assertNotIn("123-45-6789", str(cm.exception))
         rec = build("tool_call", "security", tool="t",
-                    outcome={"status": "the customer's SSN is 123-45-6789",
-                             "hash": "free text hiding here"},
+                    outcome={"status": "ok", "hash": "free text hiding here"},
                     summaries=False)
-        self.assertEqual(rec.get("outcome", {}), {})
+        self.assertEqual(rec.get("outcome", {}), {"status": "ok"})
 
     def test_hash_only_keeps_valid_hash(self):
         rec = build("tool_call", "security", tool="t",

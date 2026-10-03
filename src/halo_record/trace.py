@@ -20,6 +20,10 @@ agent's own result or error is passed through unchanged and the missing record
 is reported on stderr (``strict_recording=True`` or ``HALO_STRICT_RECORDING=1``
 raises the recording error instead).
 
+An ``async def`` agent gets an ``async def`` wrapper: the recorder stays bound
+while its body is awaited, and the boundary records what the coroutine
+returned or raised. Async generators are not wrapped this way.
+
 Storage:
   - default            ``~/.halo/<profile>.jsonl`` (one chain for the agent)
   - ``log=PATH``       an explicit single-chain path
@@ -28,6 +32,7 @@ Storage:
 """
 
 import functools
+import inspect
 import os
 
 from .capture import derive_outcome
@@ -99,7 +104,40 @@ def trace(fn=None, *, profile, log=None, dir=None, subject=None,
         )
         recorder.append(rec)
 
+    def _finish(args, kwargs, result, error, token, agent_token):
+        try:
+            if record_boundary:
+                try:
+                    _record_boundary(args, kwargs, result, error)
+                except Exception as rec_exc:
+                    recording_failed(profile, rec_exc, strict_recording)
+        finally:
+            reset_agent(agent_token)
+            reset_recorder(token)
+
     def wrap(func):
+        if inspect.iscoroutinefunction(func):
+            # An async agent: the recorder stays bound for the whole awaited
+            # body (contextvars follow the task across awaits), and the
+            # boundary records what the coroutine returned or raised.
+            @functools.wraps(func)
+            async def async_wrapper(*args, **kwargs):
+                token = bind_recorder(recorder)
+                agent_token = bind_agent(agent_meta)
+                result = None
+                error = None
+                try:
+                    result = await func(*args, **kwargs)
+                    return result
+                except BaseException as exc:  # record the boundary, never swallow
+                    error = exc
+                    raise
+                finally:
+                    _finish(args, kwargs, result, error, token, agent_token)
+
+            async_wrapper.halo_recorder = recorder
+            return async_wrapper
+
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
             token = bind_recorder(recorder)
@@ -109,19 +147,11 @@ def trace(fn=None, *, profile, log=None, dir=None, subject=None,
             try:
                 result = func(*args, **kwargs)
                 return result
-            except Exception as exc:  # record the boundary, never swallow
+            except BaseException as exc:  # record the boundary, never swallow
                 error = exc
                 raise
             finally:
-                try:
-                    if record_boundary:
-                        try:
-                            _record_boundary(args, kwargs, result, error)
-                        except Exception as rec_exc:
-                            recording_failed(profile, rec_exc, strict_recording)
-                finally:
-                    reset_agent(agent_token)
-                    reset_recorder(token)
+                _finish(args, kwargs, result, error, token, agent_token)
 
         wrapper.halo_recorder = recorder
         return wrapper

@@ -22,6 +22,13 @@ Two ways in:
 
 ``record_span`` is pure-stdlib and testable without OpenTelemetry installed; only
 ``HaloSpanExporter`` needs the SDK, imported lazily.
+
+A span that cannot be recorded is counted (``lost_records``) and reported on
+stderr. Strict mode cannot raise into the application here: the SDK's span
+processors catch what an exporter raises (SimpleSpanProcessor logs it;
+BatchSpanProcessor exports on a background thread). A strict exporter still
+writes the line for every lost span, then raises the first error to the SDK,
+which logs "Exception while exporting Span".
 """
 
 from ..session import recording_failed
@@ -123,17 +130,27 @@ def _build_exporter_class():
 
         def export(self, spans):
             from opentelemetry.sdk.trace.export import SpanExportResult
+            first = None
             for span in spans:
                 try:
                     record_span(self.recorder, span, agent=self.agent,
                                 session_id=self.session_id, subject=self.subject,
                                 summaries=self.summaries)
                 except Exception as exc:
-                    # Never break the trace pipeline — but never lose evidence
-                    # silently either (mirrors the LangChain handler).
+                    # Never lose evidence silently: count it and write the
+                    # Halo line for every lost span. In strict mode the first
+                    # error is raised once the whole batch has been tried.
                     self.lost_records += 1
-                    recording_failed("span %s" % _span_name(span), exc, self.strict_recording,
-                                     " (lost so far: %d)" % self.lost_records)
+                    try:
+                        recording_failed("span %s" % _span_name(span), exc,
+                                         self.strict_recording,
+                                         " (lost so far: %d)" % self.lost_records)
+                    except Exception as raised:
+                        first = first or raised
+            if first is not None:
+                # The SDK's span processor catches this and logs it; it never
+                # reaches the application (OTel exporters cannot raise into it).
+                raise first
             return SpanExportResult.SUCCESS
 
         def shutdown(self):

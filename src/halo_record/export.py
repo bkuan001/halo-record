@@ -442,9 +442,17 @@ def export(log_path, out_path, *, start=None, end=None, tools=None,
     named witness cannot be reached; 3 if it holds no records — nothing is
     written in any of those cases — or if a named witness holds no checkpoints
     for it (UNWITNESSED: the export is written and its manifest says so);
-    2 if the chain file or the named local witness file cannot be read."""
+    2 if the chain file cannot be read, the named local witness file is missing
+    or damaged, or the CSV or manifest cannot be written (a missing directory)."""
     silent = lambda *a, **k: None  # noqa: E731
     real_path = os.path.expanduser(str(log_path))
+    m_path = manifest_path or (str(out_path) + ".manifest.json")
+    for target in (out_path, m_path):
+        parent = os.path.dirname(os.path.abspath(os.path.expanduser(str(target))))
+        if not os.path.isdir(parent):
+            out(f"REFUSED: cannot write {target}: directory {parent} does not exist; "
+                "no export written.")
+            return 2
     if witness_log and not os.path.isfile(os.path.expanduser(str(witness_log))):
         # A mistyped witness path must not read as "not anchored yet".
         out(f"REFUSED: witness file {witness_log} does not exist; no export written.")
@@ -486,10 +494,14 @@ def export(log_path, out_path, *, start=None, end=None, tools=None,
         out(f"REFUSED: {log_path} carries subject id(s) {json.dumps(ids)}, not exactly the "
             f"expected {json.dumps(expected_subject)}; no export written.")
         return 1
+    from .anchor import WitnessFileError
     try:
         witness_info, comp = _completeness(records, witness_log=witness_log,
                                            witness_url=witness_url,
                                            expected_subject=expected_subject)
+    except WitnessFileError as e:
+        out(f"REFUSED: {e}; no export written.")
+        return 2  # as for a missing witness file
     except (ValueError, OSError) as e:
         out(f"REFUSED: {e}; no export written.")
         return 1
@@ -510,11 +522,15 @@ def export(log_path, out_path, *, start=None, end=None, tools=None,
         # passes an inverted window or a misspelled tool off as a quiet quarter.
         out(f"NOTE: 0 of {len(records)} records match the window/tool filter; "
             "the export is header-only and the manifest records window_records: 0.")
-    with open(out_path, "w", encoding="utf-8", newline="") as fh:
-        writer = csv.DictWriter(fh, fieldnames=CSV_COLUMNS)
-        writer.writeheader()
-        for record in window:
-            writer.writerow(_row(record))
+    try:
+        with open(out_path, "w", encoding="utf-8", newline="") as fh:
+            writer = csv.DictWriter(fh, fieldnames=CSV_COLUMNS)
+            writer.writeheader()
+            for record in window:
+                writer.writerow(_row(record))
+    except OSError as exc:
+        out(f"REFUSED: cannot write {out_path} ({exc.strerror or exc}); no export written.")
+        return 2
     with open(out_path, "rb") as fh:
         csv_sha256 = hashlib.sha256(fh.read()).hexdigest()
     manifest = build_manifest(
@@ -523,10 +539,17 @@ def export(log_path, out_path, *, start=None, end=None, tools=None,
         subject={"ids": ids, "expected": expected_subject},
         witness=witness_info, completeness=completeness,
     )
-    m_path = manifest_path or (str(out_path) + ".manifest.json")
-    with open(m_path, "w", encoding="utf-8") as fh:
-        json.dump(manifest, fh, indent=2)
-        fh.write("\n")
+    try:
+        with open(m_path, "w", encoding="utf-8") as fh:
+            json.dump(manifest, fh, indent=2)
+            fh.write("\n")
+    except OSError as exc:
+        try:
+            os.unlink(out_path)  # a CSV without its manifest is not evidence
+        except OSError:
+            pass
+        out(f"REFUSED: cannot write {m_path} ({exc.strerror or exc}); no export written.")
+        return 2
     out(
         f"exported {len(window)} of {len(records)} records -> {out_path} "
         f"(manifest: {m_path}; chain head {manifest['chain']['head_hash'][:16]}...)"

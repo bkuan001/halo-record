@@ -291,20 +291,22 @@ _VALIDATORS = {"credit_card": _luhn_ok, "iban": _iban_ok}
 
 # Invisible characters spliced between the characters of a token would
 # otherwise split a known key format so no pattern sees it. The set is every
-# Unicode format character (category Cf, as of Unicode 15.1) plus the invisible
-# combining grapheme joiner, variation selectors, and Hangul fillers. They are
-# dropped when they sit between token characters; elsewhere (an emoji ZWJ
-# sequence, a bidi mark in prose) they are kept. The ranges are fixed here,
-# not read from ``unicodedata``, so every Python version and the TypeScript
-# port strip the same set.
+# Unicode format character (category Cf) and every Default_Ignorable_Code_Point
+# (both as of Unicode 15.1: soft hyphen, combining grapheme joiner, Hangul
+# fillers, Khmer inherent vowels, variation selectors, tags, ...), plus two
+# characters that render blank: U+2800 BRAILLE PATTERN BLANK and U+1D159
+# MUSICAL SYMBOL NULL NOTEHEAD. They are dropped when they sit between token
+# characters; elsewhere (an emoji ZWJ sequence, a bidi mark in prose) they are
+# kept. The ranges are listed here, not read from ``unicodedata``, so every
+# Python version and the TypeScript port strip the same set.
 _INVISIBLE_RANGES = (
     (0x00AD, 0x00AD), (0x034F, 0x034F), (0x0600, 0x0605), (0x061C, 0x061C),
     (0x06DD, 0x06DD), (0x070F, 0x070F), (0x0890, 0x0891), (0x08E2, 0x08E2),
-    (0x115F, 0x1160), (0x180B, 0x180F), (0x200B, 0x200F), (0x202A, 0x202E),
-    (0x2060, 0x2064), (0x2066, 0x206F), (0x3164, 0x3164), (0xFE00, 0xFE0F),
-    (0xFEFF, 0xFEFF), (0xFFA0, 0xFFA0), (0xFFF9, 0xFFFB), (0x110BD, 0x110BD),
-    (0x110CD, 0x110CD), (0x13430, 0x1343F), (0x1BCA0, 0x1BCA3), (0x1D173, 0x1D17A),
-    (0xE0001, 0xE0001), (0xE0020, 0xE007F), (0xE0100, 0xE01EF),
+    (0x115F, 0x1160), (0x17B4, 0x17B5), (0x180B, 0x180F), (0x200B, 0x200F),
+    (0x202A, 0x202E), (0x2060, 0x206F), (0x2800, 0x2800), (0x3164, 0x3164),
+    (0xFE00, 0xFE0F), (0xFEFF, 0xFEFF), (0xFFA0, 0xFFA0), (0xFFF0, 0xFFFB),
+    (0x110BD, 0x110BD), (0x110CD, 0x110CD), (0x13430, 0x1343F), (0x1BCA0, 0x1BCA3),
+    (0x1D159, 0x1D159), (0x1D173, 0x1D17A), (0xE0000, 0xE0FFF),
 )
 INVISIBLE_CHARS = frozenset(chr(c) for a, b in _INVISIBLE_RANGES for c in range(a, b + 1))
 _INVISIBLE_CLASS = "".join(
@@ -334,20 +336,83 @@ _WITHHELD = "[\u2026 %d more characters withheld]"
 _TOKEN_CHARS = frozenset("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=_-")
 
 
+def _normalized_with_map(text):
+    """(normalized text, raw index of each normalized character) — the map is
+    None when normalizing removes nothing."""
+    if text.isascii() or not _ZW_HINT_RE.search(text):
+        return text, None
+    keep = []
+    pos = 0
+    for m in _ZW_IN_TOKEN_RE.finditer(text):
+        keep.extend(range(pos, m.start()))
+        pos = m.end()
+    keep.extend(range(pos, len(text)))
+    return "".join(text[i] for i in keep), keep
+
+
+def _match_spans(window):
+    """Sorted, merged (start, end) raw spans of every pattern match and every
+    token-character run in ``window``, found on its normalized text exactly as
+    the masking pass sees it. Checksum gates are ignored: any match counts."""
+    norm, idx = _normalized_with_map(window)
+    folded = None
+    spans = []
+    for name, _sev, pattern in PATTERNS:
+        req = _REQUIRED.get(name)
+        if req is not None and req[1] and folded is None:
+            folded = _fold(norm)
+        if not _may_match(name, norm, folded):
+            continue
+        for m in pattern.finditer(norm):
+            if m.end() > m.start():
+                spans.append((m.start(), m.end()))
+    for m in TOKEN_RE.finditer(norm):
+        spans.append((m.start(), m.end()))
+    if idx is not None:
+        spans = [(idx[a], idx[b - 1] + 1) for a, b in spans]
+    spans.sort()
+    merged = []
+    for a, b in spans:
+        if merged and a < merged[-1][1]:
+            if b > merged[-1][1]:
+                merged[-1] = (merged[-1][0], b)
+        else:
+            merged.append((a, b))
+    return merged
+
+
 def _capped(text):
     """``text`` cut to at most REDACT_MAX characters, plus the marker naming
-    what was withheld. The cut lands on whitespace when it can, else after the
-    last character that cannot be part of a token, so no fragment of a secret
-    is kept for the patterns to miss; with neither, nothing is kept."""
+    what was withheld.
+
+    The cut never falls inside a pattern match or a token: matches are found
+    first over the text up to SCAN_OVERLAP characters past the cap (on the
+    normalized text, as masking sees it), and the cut moves back to the start
+    of any match it would split. Within that, it lands after whitespace when
+    there is some in the second half of the kept text, else after the last
+    character that cannot be part of a token; with neither, nothing is kept.
+    So a grouped number (card, SSN, IBAN, phone) is either kept whole, and
+    masked, or withheld whole. A match longer than SCAN_OVERLAP that runs past
+    the window edge is seen only as far as the window reaches."""
     if len(text) <= REDACT_MAX:
         return text, ""
-    cut = text[:REDACT_MAX]
-    i = max(cut.rfind(" "), cut.rfind("\n"), cut.rfind("\t"))
-    if i < REDACT_MAX // 2:
-        i = len(cut) - 1
-        while i >= 0 and cut[i] in _TOKEN_CHARS:
-            i -= 1
-    keep = cut[:i + 1] if i >= 0 else ""
+    import bisect
+    spans = _match_spans(text[:REDACT_MAX + SCAN_OVERLAP])
+    starts = [a for a, _b in spans]
+    c = REDACT_MAX
+    while True:
+        i = max(text.rfind(" ", 0, c), text.rfind("\n", 0, c), text.rfind("\t", 0, c))
+        if i < REDACT_MAX // 2:
+            i = c - 1
+            while i >= 0 and text[i] in _TOKEN_CHARS:
+                i -= 1
+        cut = i + 1 if i >= 0 else 0
+        k = bisect.bisect_right(starts, cut - 1) - 1
+        if k >= 0 and spans[k][0] < cut < spans[k][1]:
+            c = spans[k][0]  # inside a match: retry from its start
+            continue
+        break
+    keep = text[:cut]
     return keep, " " + _WITHHELD % (len(text) - len(keep))
 
 
@@ -393,13 +458,22 @@ def _apply_patterns(text, cache=None):
     return out
 
 
+def _unless_unmasked(raw, masked):
+    """``raw`` itself when masking changed nothing but invisible characters:
+    they are dropped only to find secrets, so text with nothing to mask (an
+    agent id, a tool name, a session id, prose) is stored exactly as given."""
+    if masked != raw and masked == normalize_invisible(raw):
+        return raw
+    return masked
+
+
 def mask_known_secrets(text):
     """Mask only the named secret/PII patterns in ``text`` — no high-entropy
     catch-all. For fields whose legitimate values ARE high-entropy (authority
     hashes and refs), where the catch-all would mangle the very thing the field
     exists to carry."""
     keep, rest = _capped(str(text))
-    return _apply_patterns(keep) + rest
+    return _unless_unmasked(keep, _apply_patterns(keep)) + rest
 
 
 # Personal-data patterns that legitimately identify a person in identity
@@ -411,8 +485,8 @@ _IDENTITY_OK = {"email", "phone", "ip_internal"}
 def mask_secrets_only(text):
     """Mask credentials and financial identifiers but keep the personal-data
     patterns an identity field exists to carry (email, phone, internal IP)."""
-    out, rest = _capped(str(text))
-    out = normalize_invisible(out)
+    keep, rest = _capped(str(text))
+    out = normalize_invisible(keep)
     for name, _sev, pattern in PATTERNS:
         if name in _IDENTITY_OK:
             continue
@@ -427,9 +501,9 @@ def mask_secrets_only(text):
             out = pattern.sub(_sub, out)
         else:
             out = pattern.sub(lambda m, n=name: redact_sample(n, m.group(0)), out)
-    return TOKEN_RE.sub(
+    return _unless_unmasked(keep, TOKEN_RE.sub(
         lambda m: redact_sample(HIGH_ENTROPY_TYPE, m.group(0))
-        if _looks_like_secret(m.group(0)) else m.group(0), out) + rest
+        if _looks_like_secret(m.group(0)) else m.group(0), out)) + rest
 
 
 def redact_text(text, entropy=True):
@@ -441,12 +515,12 @@ def redact_text(text, entropy=True):
     keep, rest = _capped(str(text))
     after = _apply_patterns(keep, {})
     if not entropy:
-        return after + rest
-    return TOKEN_RE.sub(
+        return _unless_unmasked(keep, after) + rest
+    return _unless_unmasked(keep, TOKEN_RE.sub(
         lambda m: redact_sample(HIGH_ENTROPY_TYPE, m.group(0))
         if _looks_like_secret(m.group(0)) else m.group(0),
         after,
-    ) + rest
+    )) + rest
 
 
 def scan(text, entropy=True):
@@ -719,7 +793,8 @@ def pseudonymize_secrets(text):
         if not _looks_like_secret(tok):
             return tok
         return "sha256:" + hashlib.sha256(tok.encode("utf-8")).hexdigest()[:16]
-    return TOKEN_RE.sub(sub, normalize_invisible(str(text)))
+    text = str(text)
+    return _unless_unmasked(text, TOKEN_RE.sub(sub, normalize_invisible(text)))
 
 
 def scan_fields(obj, _entropy=True, _depth=0, _seen=None, _key=None):

@@ -24,6 +24,12 @@ native interceptor, and the report says so.
 
 ``record_call`` is pure-stdlib and testable without litellm installed; only the
 ``HaloLiteLLMLogger`` callback class needs the package, imported lazily.
+
+A call that cannot be recorded is reported on stderr. Strict mode cannot raise
+into the caller here: LiteLLM runs success/failure callbacks after the
+response is returned and catches what they raise (it logs
+"LiteLLM.LoggingError: [Non-Blocking] ..."). A strict logger writes the same
+stderr line, then raises to LiteLLM, which logs it.
 """
 
 from ..session import recording_failed

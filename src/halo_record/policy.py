@@ -165,7 +165,10 @@ Every rule needs forbid, require, or expect_evidence. Unknown keys, unknown
 matchers, field paths that are not Runtime Record fields, values a field cannot
 hold (outside its allowed set, the wrong type, null, non-finite), matchers that
 do not fit the field, contradictory matchers, and repeated JSON keys are
-rejected. A verdict names the policy by the SHA-256 of its file
+rejected. findings[].type takes the scanner's finding types; threats[].type
+takes policy_violation, prompt_injection_direct, prompt_injection_indirect,
+tool_misuse. A rule whose "when" already decides its forbid or require on a
+single-valued field (it could never be violated) is rejected. A verdict names the policy by the SHA-256 of its file
 (shasum -a 256 <file>).
 Fields are dotted record paths; "[]" fans out over a list
 (findings[].type, threats[].type). Matchers: a bare value (equality), or
@@ -174,10 +177,39 @@ Bundled packs (run by name): %s. Full guide: examples/policies/README.md in
 the source repository."""
 
 
+# Fields the record schema leaves as free text, but whose values a policy can
+# only usefully name from a known list: the scanner's finding types and the
+# documented threat types. A value outside the list (a typo, another
+# detector's spelling) would never match and the rule would PASS vacuously.
+THREAT_TYPES = ("policy_violation", "prompt_injection_direct", "prompt_injection_indirect",
+                "tool_misuse")
+
+
+def policy_vocabularies():
+    """{"findings": [...], "threats": [...]}: the values a policy may name."""
+    from .redact import FINDING_TYPES
+    return {"findings": sorted(FINDING_TYPES), "threats": list(THREAT_TYPES)}
+
+
+def with_vocabularies(schema):
+    """A copy of the record schema whose findings[].type and threats[].type
+    carry the policy vocabularies as their allowed values. Used only to
+    validate policies; records are verified against the schema as shipped."""
+    import copy
+    schema = copy.deepcopy(schema)
+    vocab = policy_vocabularies()
+    for field in ("findings", "threats"):
+        try:
+            schema["properties"][field]["items"]["properties"]["type"]["enum"] = vocab[field]
+        except (KeyError, TypeError):
+            pass
+    return schema
+
+
 def _schema_props():
     try:
         from .verify import load_schema
-        return load_schema()
+        return with_vocabularies(load_schema())
     except (OSError, ValueError):
         return None
 
@@ -229,7 +261,7 @@ def _check_value(v, node, path, where):
                          "{\"exists\": false} for an absent field" % (where, path))
     if isinstance(v, float) and (v != v or v in (float("inf"), float("-inf"))):
         raise ValueError("%s: %r needs a finite number" % (where, path))
-    if isinstance(v, int) and not isinstance(v, bool) and abs(v) > _MAX_SAFE:
+    if isinstance(v, (int, float)) and not isinstance(v, bool) and abs(v) > _MAX_SAFE:
         raise ValueError("%s: %r: a number beyond 2^53-1, which a browser cannot compare "
                          "exactly" % (where, path))
     if isinstance(v, (dict, list)):
@@ -334,6 +366,92 @@ def _check_condition(cond, schema, where):
         _check_matcher(path, spec, node, fanned, where)
 
 
+_SCALAR_TYPES = ("string", "number", "integer", "boolean")
+
+
+def _ops(spec):
+    return spec if isinstance(spec, dict) else {"eq": spec}
+
+
+def _present(ops):
+    """Whether a condition can only hold for a record that has the field."""
+    return ops.get("exists") is True or any(k not in ("exists", "ne", "nin") for k in ops)
+
+
+def _value_options(spec):
+    """The value lists a single-valued field can hold under ``spec`` when that
+    set is finite: [[]] for an absent field, [[v], ...] for eq/in; else None."""
+    ops = _ops(spec)
+    if ops.get("exists") is False:
+        return [[]]
+    cands = None
+    if "eq" in ops:
+        cands = [ops["eq"]]
+    elif "in" in ops:
+        cands = list(ops["in"])
+    if cands is None:
+        return None
+    return [[v] for v in cands if _match([v], spec)]
+
+
+def _forbid_can_hold(wspec, fspec):
+    """Whether one value of a single-valued field can meet both ``wspec``
+    (from when) and ``fspec`` (from forbid). Conservative: True unless it
+    provably cannot."""
+    opts = _value_options(wspec)
+    if opts is not None:
+        return any(_match(vals, fspec) for vals in opts)
+    wops, fops = _ops(wspec), _ops(fspec)
+    if fops.get("exists") is False and _present(wops):
+        return False
+    fopts = _value_options(fspec)
+    if fopts is not None and fopts != [[]]:
+        return any(_match(vals, wspec) for vals in fopts)
+    merged = {}
+    for k in _RANGE_OPS:
+        bounds = [o[k] for o in (wops, fops) if k in o]
+        if bounds:
+            merged[k] = max(bounds) if k in ("gt", "gte") else min(bounds)
+    lo = [(merged[k], k == "gte") for k in ("gt", "gte") if k in merged]
+    hi = [(merged[k], k == "lte") for k in ("lt", "lte") if k in merged]
+    for a, a_inc in lo:
+        for b, b_inc in hi:
+            if a > b or (a == b and not (a_inc and b_inc)):
+                return False
+    return True
+
+
+def _check_rule_scope(rule, schema, where):
+    """Refuse a rule whose "when" already decides its outcome on a single-valued
+    field: a forbid no selected record can meet, or a require every selected
+    record meets. Either way the rule can never be violated."""
+    when = rule.get("when") or {}
+    scalar = {}
+    for path, spec in when.items():
+        node, fanned = _field(path, schema, where)
+        if not fanned and node is not None and node.get("type") in _SCALAR_TYPES:
+            scalar[path] = spec
+    if not scalar:
+        return
+    forbid = rule.get("forbid")
+    if isinstance(forbid, dict):
+        for path, fspec in forbid.items():
+            if path in scalar and not _forbid_can_hold(scalar[path], fspec):
+                raise ValueError("%s: forbid on %r can never hold for a record that \"when\" "
+                                 "selects, so the rule can never be violated" % (where, path))
+    require = rule.get("require")
+    if isinstance(require, dict) and require:
+        entailed = []
+        for path, rspec in require.items():
+            opts = _value_options(scalar[path]) if path in scalar else None
+            if opts is None or not all(_match(vals, rspec) for vals in opts):
+                return
+            entailed.append(path)
+        raise ValueError("%s: require on %s always holds for a record that \"when\" selects, "
+                         "so the rule can never be violated"
+                         % (where, ", ".join(repr(p) for p in entailed)))
+
+
 def validate_policy(rules):
     """Reject a policy that could not mean what it says. A misspelled key, an
     unknown matcher, a field path that is not a record field, or a rule with
@@ -371,6 +489,7 @@ def validate_policy(rules):
         for k in ("when", "forbid", "require"):
             if k in rule:
                 _check_condition(rule[k], schema, "%s %s" % (where, k))
+        _check_rule_scope(rule, schema, where)
     return rules
 
 

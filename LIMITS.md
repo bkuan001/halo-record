@@ -26,6 +26,23 @@ yourself, or hold your own copy captured earlier. Signed witness receipts are
 deliberately outside the zero-dependency core; until they exist, treat any
 relayed checkpoint as the operator's assertion.
 
+**Pin the subject.** Checkpoints are looked up by the subject id the records
+carry, and the vendor writes that id. A chain re-keyed to another subject id is
+checked against that id's checkpoints, so it can read as unwitnessed, or as
+consistent with checkpoints the vendor anchored under the new id, while the
+customer's own checkpoints are never consulted. `halo anchor --check
+--expect-subject <id>`, `halo report --expect-subject`, `halo export
+--expect-subject` and the report page's subject field look up the id you
+expect and refuse a chain carrying any other. Without one, a completeness
+verdict is about the id the vendor chose.
+
+**A damaged witness is refused.** A witness file with a torn or garbled line,
+or a line without a checkpoint's shape, is not read around: the damaged
+checkpoint may be the one that exposes a truncation. `halo anchor --check`,
+`halo report` and `halo export` refuse it with exit 2, the code they use for a
+missing witness file, and the hosted witness answers reads with 503 until its
+operator restores the store.
+
 For *time* specifically, `halo anchor --timestamp` attaches an external RFC 3161
 timestamp to a checkpoint: a Timestamp Authority the operator does not control
 signs the checkpoint's state hash, proving the chain reached that state **no
@@ -159,13 +176,25 @@ does, that is a vulnerability report we want (see SECURITY.md).
 
 Two bounds keep the scanner linear on hostile text. A stored text value is
 masked up to its first 65,536 characters and the rest is withheld, replaced by
-`[… N more characters withheld]` (the cut lands on whitespace, or before a
-partial token); findings still cover the whole text, scanned in overlapping
-windows. Invisible characters spliced inside a token — every Unicode format
-character (category Cf, as of Unicode 15.1), the combining grapheme joiner,
-variation selectors, and Hangul fillers — are dropped before matching, so they
-cannot split a key; outside a token (an emoji sequence, a bidi mark in prose)
-they are kept.
+`[… N more characters withheld]`. The cut never falls inside a pattern match
+or a token: every pattern is matched first over the text up to 4,096
+characters past the cap, and the cut moves back to the start of any match it
+would split, so a grouped card number, SSN, IBAN or phone number is either kept
+whole (and masked) or withheld whole. Within that rule the cut lands after
+whitespace, else after a character that cannot be part of a token. A single
+match longer than 4,096 characters that runs past that window is seen only as
+far as the window reaches. Findings still cover the whole text, scanned in
+overlapping windows. Invisible characters spliced inside a token are dropped before
+matching, so they cannot split a key. The set is every Unicode format character
+(category Cf) and every Default_Ignorable_Code_Point, both as of Unicode 15.1
+(this covers the soft hyphen, the combining grapheme joiner, Hangul fillers,
+the Khmer inherent vowels U+17B4/U+17B5, variation selectors and tag
+characters), plus U+2800 BRAILLE PATTERN BLANK and U+1D159 MUSICAL SYMBOL NULL
+NOTEHEAD. "Inside a token" means between two of `A-Z a-z 0-9 _ - + / = . :`
+(the second may also be `@`). Outside a token (an emoji sequence, a bidi mark
+in prose) they are kept. They are dropped only to find secrets: a value in
+which nothing is masked (an agent id, a tool name, a session id, prose) is
+stored exactly as given, invisible characters included.
 
 The credential coverage, by finding type:
 
@@ -243,15 +272,27 @@ A policy is validated against the record schema before it runs, so a rule
 cannot pass by matching nothing: values outside a field's allowed set, values
 of the wrong type, `null`, non-finite numbers or numbers beyond 2⁵³−1,
 matchers that do not apply to the field, contradictory matchers, and duplicate
-JSON keys are refused (exit 2). A rule whose `when` selects no record reports
-"matched no records", never PASS. Validation catches a rule that cannot mean
-what it says; it cannot catch a valid rule aimed at the wrong field.
+JSON keys are refused (exit 2). The two free-text type fields take only a known
+vocabulary in a policy: `findings[].type` the scanner's finding types (section
+6), `threats[].type` the documented threat types (`policy_violation`,
+`prompt_injection_direct`, `prompt_injection_indirect`, `tool_misuse`). A
+threat type outside that list, as a detector of your own may emit, cannot be
+named in a policy. A rule whose `when` already decides its outcome on a
+single-valued field is refused too: a `forbid` that no selected record can meet
+(`when action.type=network`, `forbid action.type=read`) or a `require` that
+every selected record meets, since either can never be violated. A rule whose
+`when` selects no record reports "matched no records", never PASS. Validation
+catches a rule that cannot mean what it says; it cannot catch a valid rule
+aimed at the wrong field.
 
 A verdict names its policy by `Policy sha256`: the SHA-256 of the policy file's
 bytes, the value `shasum -a 256 <file>` prints. A report page carries the
-policy file's text, re-reads the rules from it in the browser, and names the
-digest of the text it carries; those rules were embedded by whoever generated
-the page, so compare the digest with the policy file you hold.
+policy file's text and re-reads it in the browser exactly as `halo policy`
+reads the file, refusing the same texts (a repeated key, a non-finite number,
+an invalid rule) with the same reason. Those rules were embedded by whoever
+generated the page: a matching digest says the page used the file you hold,
+not that the file is a sound policy, so run `halo policy` on that file
+yourself.
 
 ---
 
@@ -331,12 +372,16 @@ action did not execute. And `policy_ref` is only as strong as its resolution:
 a content hash of a retained ruleset can be produced and compared; an
 unresolvable label cannot.
 
-A gate's `blocked` does not outrank the recorded outcome. When a record says
-`verification.status: blocked` (or `authorization.decision: denied`) and its
-outcome is recorded as `ok`, the report shows both ("Gate reported blocked;
-outcome recorded: ok") and prefers neither. The starter packs' egress rules
-take a record out of scope only when its outcome is recorded as `denied`, so a
-gate's report alone never removes a record from an egress check.
+A gate's `blocked` does not outrank the recorded outcome. The report reads a
+record as stopped ("Blocked by gate", "Denied") only when its outcome is
+recorded as `denied`. When a record says `verification.status: blocked` (or
+`authorization.decision: denied`) and its outcome is recorded as `ok` or
+`error`, or not recorded at all, the report shows both ("Gate reported
+blocked; outcome recorded: error", "Decision recorded denied; outcome not
+recorded") and prefers neither. The starter packs' egress rules draw the same
+line: they take a record out of scope only when its outcome is recorded as
+`denied`, so a gate's report alone never removes a record from an egress
+check, and the page never calls a record blocked that the egress rule counts.
 
 **What you say to a reviewer:** "`verification.status` is the named gate's own
 report of its decision, written by the operator's integration and sealed so it
@@ -604,15 +649,40 @@ exception through unchanged and print one line to stderr:
 
     halo-record: FAILED to record '<tool>' (<ErrorType>: <message>); the action ran, but its record is NOT in the evidence log. The action's own result or error is passed through unchanged (set HALO_STRICT_RECORDING=1 to raise instead).
 
+`@record` and `trace()` wrap an `async def` function in an `async def`
+wrapper that awaits it, so the record (or the boundary record) holds what the
+coroutine returned or raised, written after it ran; a cancellation is recorded
+as an error.
+
+When there is no usable stderr (`pythonw`, a closed file descriptor 2), the
+same line is logged on the `halo_record` logger instead, and the action's
+result still passes through.
+
 The chain itself cannot show a record that was never written: the remaining
-records still verify. Witness checkpoints on a cadence are what reveal a
-stalled chain (section 1).
+records still verify. A witness checkpoint cadence reveals a chain that has
+*stalled* (an expected checkpoint that never arrives, section 1), but no
+witness can reveal a single record that was never written while later records
+were: the stderr line is the only signal for that.
 
 `strict_recording=True`, or `HALO_STRICT_RECORDING=1` in the environment,
-raises the recording error instead. The action has already happened by then; a
-caller that reads the error as a failed action and retries repeats the action.
+raises the recording error after writing the same line (its tail then says
+strict recording is on). The action has already happened by then; a caller
+that reads the error as a failed action and retries repeats the action. Where
+the error goes depends on the wrapper:
+
+| Wrapper | Strict mode |
+|---|---|
+| `trace()`, `record_call`, `@record`, MCP wrapper, OpenAI Agents hooks | raised to the caller |
+| LangChain `HaloCallbackHandler` | the handler sets LangChain's `raise_error`, so LangChain raises it to the caller of the tool |
+| OTel `HaloSpanExporter` | cannot reach the application: the SDK's span processor catches what an exporter raises and logs "Exception while exporting Span". The exporter tries every span in the batch, writes a line per lost span, then raises the first error to the SDK |
+| LiteLLM `HaloLiteLLMLogger` | cannot reach the caller: LiteLLM runs callbacks after returning the response and logs what they raise ("LiteLLM.LoggingError: [Non-Blocking] ...") |
+| `halo hook` | the hook exits 1 with the error; the agent harness decides what that means |
+
+For the OTel and LiteLLM adapters the stderr line (and the framework's own
+log) is the only signal in either mode.
 
 **What you say to a reviewer:** "A failed write is reported on stderr and the
-action's outcome is unchanged; the chain has a gap there that only a witness
-cadence or the stderr log reveals. Strict mode turns that into an error at the
-cost of a possible repeated action."
+action's outcome is unchanged; only the stderr log reveals a single missing
+record (a witness cadence shows a chain that stopped). Strict mode turns that
+into an error, raised to the caller wherever the framework lets it through, at
+the cost of a possible repeated action."

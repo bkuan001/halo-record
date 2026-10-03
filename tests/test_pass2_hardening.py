@@ -56,12 +56,16 @@ class WitnessInputTest(unittest.TestCase):
             urllib.request.urlopen(req, timeout=5)
         self.assertEqual(cm.exception.code, 400)
 
-    def test_one_damaged_line_does_not_break_reads(self):
+    def test_a_damaged_line_refuses_reads(self):
+        # A torn checkpoint may be the one that exposes a truncation, so a
+        # damaged witness is refused rather than read around.
+        from halo_record.anchor import WitnessFileError
         self.notary.record_checkpoint({"subject": "acme", "count": 1, "head": "a" * 64,
                                        "chain_root": None, "ts": "x"})
         with open(self.notary.path, "a") as fh:
             fh.write('{"subject": "trunc')
-        self.assertEqual(len(self.notary.checkpoints(subject="acme")), 1)
+        with self.assertRaises(WitnessFileError):
+            self.notary.checkpoints(subject="acme")
 
 
 class AccessBudgetTest(unittest.TestCase):

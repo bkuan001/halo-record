@@ -53,7 +53,8 @@ from urllib.parse import urlparse, parse_qs, urlencode
 
 from ._private import open_private
 from . import __version__
-from .anchor import Notary, checkpoint, _now
+from .anchor import Notary, WitnessFileError, checkpoint, damaged_witness, parse_checkpoint_line, _now
+from .anchor import _fcntl
 
 WITNESS_FILE = "witness.jsonl"
 KEY_FILE = ".halo_witness_key"
@@ -219,6 +220,9 @@ class _CheckpointIndex:
     def _reset(self):
         self.offset, self.ident = 0, None
         self.by_subject, self.by_root = {}, {}
+        self.lines = 0
+        self.damage = None
+        self.torn = None
 
     def _refresh(self):
         try:
@@ -231,22 +235,39 @@ class _CheckpointIndex:
             self._reset()
             self.ident = ident
         if st.st_size == self.offset:
+            self.torn = None
             return
         with open(self.path, "rb") as fh:
-            fh.seek(self.offset)
-            data = fh.read(st.st_size - self.offset)
+            # Appends happen under an exclusive lock; a shared lock here means
+            # every line read is complete unless a write was torn.
+            if _fcntl is not None:
+                _fcntl.flock(fh, _fcntl.LOCK_SH)
+            try:
+                fh.seek(self.offset)
+                data = fh.read()
+            finally:
+                if _fcntl is not None:
+                    _fcntl.flock(fh, _fcntl.LOCK_UN)
         end = data.rfind(b"\n")
+        tail = data[end + 1:]
+        # An unterminated last line: torn (or, without file locks, still being
+        # written). Reads are refused while it is there; it is re-read each time.
+        self.torn = (self.lines + data[:end + 1].count(b"\n") + 1) if tail.strip() else None
         if end < 0:
-            return  # a line still being written
+            return
         self.offset += end + 1
         for raw in data[:end].split(b"\n"):
             if not raw.strip():
                 continue
+            self.lines += 1
             try:
-                cp = json.loads(raw.decode("utf-8"))
-            except (ValueError, RecursionError):
-                continue  # a damaged line never hides the rest
-            if not isinstance(cp, dict):
+                cp = parse_checkpoint_line(raw.decode("utf-8"))
+            except UnicodeDecodeError:
+                cp = None
+            if cp is None:
+                # A damaged line may be the checkpoint that exposes a
+                # truncation: refuse reads rather than answer around it.
+                self.damage = self.damage or self.lines
                 continue
             if cp.get("subject") is not None:
                 self.by_subject.setdefault(cp["subject"], []).append(cp)
@@ -256,6 +277,9 @@ class _CheckpointIndex:
     def lookup(self, subject=None, chain_root=None):
         with self._lock:
             self._refresh()
+            at = self.damage or self.torn
+            if at is not None:
+                raise damaged_witness(os.path.basename(self.path), at)
             if subject is not None:
                 return list(self.by_subject.get(subject, []))
             return list(self.by_root.get(chain_root, []))
@@ -308,7 +332,12 @@ class _Handler(BaseHTTPRequestHandler):
                     return self._send(403, {"error": "key not authorized for this subject"},
                                       cors=True)
             # subject is only ever a filter, never a path — traversal impossible.
-            cps = self._index().lookup(subject=subject, chain_root=root)
+            try:
+                cps = self._index().lookup(subject=subject, chain_root=root)
+            except WitnessFileError:
+                return self._send(503, {"error": "the witness store is damaged; checkpoints are "
+                                                 "withheld until the operator restores it"},
+                                  cors=True)
             return self._send(200, {"checkpoints": cps, "count": len(cps)}, cors=True)
         return self._send(404, {"error": "not found"})
 

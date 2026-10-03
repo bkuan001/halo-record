@@ -53,8 +53,10 @@ def reset_recorder(token):
 # Claude Code hook) pass the action's own result or error through unchanged and
 # say on stderr which record is missing: raising instead would make a completed
 # action look failed, and a retry would repeat its side effects. Strict mode
-# raises the recording error instead, for callers that prefer an error to a
-# missing record and accept that risk.
+# also raises the recording error, after the same stderr line, for callers that
+# prefer an error to a missing record and accept that risk. Where a framework
+# catches what its callbacks raise (OpenTelemetry's span processors, LiteLLM's
+# logging), the error cannot reach the caller and the line is the signal.
 STRICT_RECORDING_ENV = "HALO_STRICT_RECORDING"
 
 
@@ -67,14 +69,41 @@ def strict_recording(value=None):
     return os.environ.get(STRICT_RECORDING_ENV, "").strip().lower() in ("1", "true", "yes")
 
 
-def recording_failed(what, exc, strict=None, note=""):
-    """Handle ``exc``, raised while recording ``what`` after the action ran:
-    raise it in strict mode, otherwise report it on stderr and return."""
-    if strict_recording(strict):
-        raise exc
+def _warn(line):
+    """Write ``line`` to stderr; when there is no usable stderr (pythonw, a
+    closed fd 2), log it on the ``halo_record`` logger instead. Never raises:
+    a missing stderr must not cost the action's result."""
     import sys
-    sys.stderr.write(
-        "halo-record: FAILED to record %r (%s: %s); the action ran, but its record is "
-        "NOT in the evidence log. The action's own result or error is passed through "
-        "unchanged (set %s=1 to raise instead).%s\n"
-        % (what, type(exc).__name__, exc, STRICT_RECORDING_ENV, note))
+    stream = sys.stderr
+    if stream is not None:
+        try:
+            stream.write(line)
+            return
+        except Exception:
+            pass
+    try:
+        import logging
+        logging.getLogger("halo_record").warning(line.rstrip("\n"))
+    except Exception:
+        pass
+
+
+def recording_failed(what, exc, strict=None, note=""):
+    """Handle ``exc``, raised while recording ``what`` after the action ran.
+
+    The Halo warning line is always written first (to stderr, or the
+    ``halo_record`` logger when there is no usable stderr). Then strict mode
+    raises ``exc``; otherwise this returns and the action's own result or
+    error passes through."""
+    strict = strict_recording(strict)
+    if strict:
+        tail = ("Strict recording is on (%s / strict_recording=True): the recording error "
+                "is raised; the action has already run, so do not retry it blindly."
+                % STRICT_RECORDING_ENV)
+    else:
+        tail = ("The action's own result or error is passed through unchanged "
+                "(set %s=1 to raise instead)." % STRICT_RECORDING_ENV)
+    _warn("halo-record: FAILED to record %r (%s: %s); the action ran, but its record is "
+          "NOT in the evidence log. %s%s\n" % (what, type(exc).__name__, exc, tail, note))
+    if strict:
+        raise exc

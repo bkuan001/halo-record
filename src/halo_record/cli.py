@@ -101,11 +101,16 @@ def _cmd_report(args):
         return 2
     out = args.out or (args.log.rsplit(".", 1)[0] + ".html")
     status = {}
+    from .anchor import WitnessFileError
     try:
         _, count = write_report(args.log, out, witness_log=args.witness,
                                 witness_url=args.witness_url, policy_path=args.policy,
                                 start=start, end=end, expected_subject=args.expect_subject,
                                 status=status)
+    except WitnessFileError as e:
+        # A missing or damaged witness file: exit 2, as in anchor and export.
+        print("REFUSED: %s" % e)
+        return 2
     except (ValueError, OSError) as e:
         print("REFUSED: %s" % e)
         return 1
@@ -163,8 +168,13 @@ def _cmd_policy(args):
 def _cmd_anchor(args):
     # Unreadable input (a missing file, a torn line, an integer too long to
     # read) is reported in one line and fails closed with exit 1.
+    from .anchor import WitnessFileError
     try:
         return _anchor(args)
+    except WitnessFileError as e:
+        # Same exit code as a missing witness file, in anchor, report and export.
+        print("halo anchor: REFUSED: %s" % e, file=sys.stderr)
+        return 2
     except (ValueError, OSError, RecursionError) as e:
         print("halo anchor: cannot read %s: %s" % (args.log, e), file=sys.stderr)
         return 1
