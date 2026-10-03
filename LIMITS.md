@@ -612,9 +612,9 @@ verification, and the external time proof is the anchored checkpoint."
 A crash mid-write, a full disk, or a truncated copy can leave the last line of
 a chain file incomplete. The recorder does not repair or remove it. On the
 next append it keeps those bytes in place, prints a stderr warning (`N line(s)
-at the end of <file> are not a complete record (a torn write or a
-truncation); they are kept in place, the next record links to the last
-complete record, and halo verify will report them`), ends the torn line, and
+at the end of <file> are not a complete record (a torn write, a truncation,
+or a line that repeats a key); they are kept in place, the next record links
+to the last complete record, and halo verify will report them`), ends the torn line, and
 writes the new record on its own line, linked to the last complete record. A
 file with no complete record at all keeps its bytes too, and the chain starts
 after them.
@@ -632,6 +632,15 @@ answers (§1).
 checkpoint log split a file the same way: on `\n` only, with a carriage return
 treated as JSON whitespace and a leading byte-order mark skipped, so each sees
 the records `halo verify` checked.
+
+**A repeated key is refused.** A line in which one JSON object repeats a key,
+at any depth, fails verification (`record N: duplicate key 'k' in one object
+— …`), and `halo report`, `halo export`, `halo policy`, `halo anchor`, `halo
+serve` and the witness refuse to read it; the report page's in-browser
+verifier fails it too. JSON parsers disagree on which of two repeated values
+wins, so such a line could show one reader a value the hash never covered. The
+recorder never writes one, and the appender does not take such a line as the
+chain's head.
 
 ---
 

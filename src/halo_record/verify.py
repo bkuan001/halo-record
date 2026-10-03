@@ -109,6 +109,29 @@ def _parse_int(text):
     return int(text)
 
 
+class DuplicateKeyError(ValueError):
+    """A JSON object on a chain line repeats a key."""
+
+
+def _no_duplicate_keys(pairs):
+    out = {}
+    for k, v in pairs:
+        if k in out:
+            # The last one would win silently: one reader would see one value
+            # and another reader (or the hash) the other.
+            raise DuplicateKeyError("duplicate key %r in one object" % k)
+        out[k] = v
+    return out
+
+
+def parse_record_line(line):
+    """One chain line (a record or a checkpoint) as every halo reader reads it:
+    integer literals bounded, and a key repeated in one object, at any depth,
+    refused. Parsers disagree on which of two repeated values wins, so a line
+    that carries both can show a reader text the hash never covered."""
+    return json.loads(line, parse_int=_parse_int, object_pairs_hook=_no_duplicate_keys)
+
+
 _TS_PARTS = re.compile(
     r"(\d{4})-(\d{2})-(\d{2})[Tt](\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,9}))?"
     r"(?:([Zz])|([+-])(\d{2}):(\d{2}))$")
@@ -151,9 +174,25 @@ def _verify_lines(lines, schema, out):
     prev_instant = None       # last parseable ts, for the ordering warning
     prev_ts = None
     backdated = 0             # records whose ts is earlier than the one before
+    repeated = 0              # lines that repeat a key in one object
     for n, line in enumerate(lines, start=1):
         try:
-            record = json.loads(line, parse_int=_parse_int)
+            record = parse_record_line(line)
+        except DuplicateKeyError as dup:
+            # Refused, and named: the line carries two values for one field.
+            # It is still read (last value wins, as the hash was computed) so
+            # the records after it keep being checked.
+            try:
+                record = json.loads(line, parse_int=_parse_int)
+            except (ValueError, RecursionError) as e:
+                out("record %d: not valid JSON: %s" % (n, e))
+                ok = False
+                unreadable += 1
+                continue
+            out("record %d: %s — the line carries two values for one field, so "
+                "readers can disagree on what it says; it is refused" % (n, dup))
+            ok = False
+            repeated += 1
         except RecursionError:
             out("record %d: not valid JSON: nested too deeply" % n)
             ok = False
@@ -304,6 +343,10 @@ def _verify_lines(lines, schema, out):
         out("note: this is integrity, not completeness — a self-held chain cannot show records that were removed and the chain re-sealed, anywhere in it; an external witness (halo anchor --check) is what attests nothing was dropped.")
     elif not chain_ok:
         out("FAIL: log did not verify — sequence integrity gap detected (see above).")
+    elif repeated:
+        out("FAIL: log did not verify — %d record(s) repeat a key in one object (see "
+            "above); a repeated key gives one field two values, so what a reader sees "
+            "depends on its JSON parser." % repeated)
     elif unreadable:
         out("FAIL: log did not verify — %d line(s) are not complete records (a torn "
             "write or a truncation; see above); the hash chain of the remaining "

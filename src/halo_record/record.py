@@ -20,6 +20,7 @@ except ImportError:  # pragma: no cover
     fcntl = None
 
 from .canon import CIRCULAR, GENESIS_PREV, MAX_DEPTH, TOO_DEEP, canon, compute_hash, input_hash, int_text, json_key, sha256_hex, sort_key
+from .verify import parse_record_line
 from .redact import CREDENTIAL_MASK, SEVERITY_RANK, credential_value, mask_known_secrets, mask_secrets_only, pseudonymize_secrets, redact_fields, redact_text, scan, scan_fields, top_severity
 
 SCHEMA_VERSION = "0.1"
@@ -781,7 +782,9 @@ def _identifier_like(path):
 def _complete_record(line):
     """The record on ``line`` if it is a complete sealed record, else None."""
     try:
-        rec = json.loads(line)
+        # A line that repeats a key is not taken as a sealed record (verify
+        # refuses it too), so the next record never links to it.
+        rec = parse_record_line(line)
     except (ValueError, RecursionError):
         return None
     if not isinstance(rec, dict):
@@ -914,7 +917,8 @@ class Recorder:
         if incomplete:
             sys.stderr.write(
                 "halo-record: %d line(s) at the end of %s are not a complete record "
-                "(a torn write or a truncation); they are kept in place, the next "
+                "(a torn write, a truncation, or a line that repeats a key); they are "
+                "kept in place, the next "
                 "record %s, and `halo verify` will report them\n"
                 % (incomplete, self.path,
                    "links to the last complete record" if rec is not None
@@ -1127,8 +1131,8 @@ class TenantRecorder:
                 if not line.strip():
                     continue
                 try:
-                    rec = json.loads(line)
-                except ValueError:
+                    rec = parse_record_line(line)
+                except (ValueError, RecursionError):
                     continue
                 if not isinstance(rec, dict):
                     continue

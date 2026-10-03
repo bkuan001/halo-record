@@ -8,6 +8,8 @@
   "cr_whitespace.jsonl": true,
   "crlf.jsonl": true,
   "dup_id.jsonl": false,
+  "dup_key.jsonl": false,
+  "dup_key_nested.jsonl": false,
   "exp_number.jsonl": false,
   "fffd_char.jsonl": true,
   "float.jsonl": false,

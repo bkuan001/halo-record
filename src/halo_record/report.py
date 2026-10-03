@@ -25,12 +25,12 @@ from . import _view
 
 
 def _load(path):
-    from .verify import _parse_int
+    from .verify import parse_record_line
     lines = read_log_lines(path)
     records = []
     for n, ln in enumerate(lines, start=1):
         try:
-            records.append(json.loads(ln, parse_int=_parse_int))
+            records.append(parse_record_line(ln))
         except (ValueError, RecursionError) as e:
             raise ValueError(
                 "record %d is not readable (%s) — run `halo verify %s` for "
@@ -149,6 +149,48 @@ async function verify(records){
     prev = integ.hash;
   }
   return {ok:true, head:prev};
+}
+function repeatedKey(text){
+  // The first key repeated in one object of the records JSON (at any depth),
+  // and the record (1-based) that holds it; null if none. halo verify refuses
+  // such a line: parsers disagree on which value wins, so it can carry text
+  // the hash never covered. Assumes text is JSON that JSON.parse accepted.
+  const stack = [];
+  let i = 0, item = 1;
+  const n = text.length;
+  while (i < n){
+    const c = text[i];
+    if (c === '"'){
+      let j = i + 1;
+      while (text[j] !== '"'){ if (text[j] === "\\") j++; j++; }
+      const top = stack.length ? stack[stack.length - 1] : null;
+      if (top && top.obj && top.expectKey){
+        const key = JSON.parse(text.slice(i, j + 1));
+        if (top.keys.has(key)) return {at: item, key: key};
+        top.keys.add(key);
+        top.expectKey = false;
+      }
+      i = j + 1;
+      continue;
+    }
+    if (c === "{") stack.push({obj: true, keys: new Set(), expectKey: true});
+    else if (c === "[") stack.push({obj: false});
+    else if (c === "}" || c === "]") stack.pop();
+    else if (c === ","){
+      const top = stack.length ? stack[stack.length - 1] : null;
+      if (top && top.obj) top.expectKey = true;
+      else if (stack.length === 1) item++;
+    }
+    i++;
+  }
+  return null;
+}
+async function verifyText(text){
+  // Verify the records as embedded: a repeated key fails before any hashing.
+  const records = JSON.parse(text);
+  const dup = repeatedKey(text);
+  if (dup) return {ok:false, at:dup.at, why:"duplicate key " + JSON.stringify(dup.key) + " in one object"};
+  return verify(records);
 }
 function cleanCheckpoints(list){
   // Checkpoints arrive from the page or from a witness URL the report names, so
@@ -378,7 +420,8 @@ async function haloCompleteness(records, embedded, cfg, pinned){
 }
 (async function(){
   const el = document.getElementById("verdict");
-  const records = JSON.parse(document.getElementById("records").textContent);
+  const recordsText = document.getElementById("records").textContent;
+  const records = JSON.parse(recordsText);
   const embedded = JSON.parse(document.getElementById("checkpoints").textContent);
   const cfg = JSON.parse(document.getElementById("halo-config").textContent);
   const cel = document.getElementById("completeness");
@@ -397,11 +440,11 @@ async function haloCompleteness(records, embedded, cfg, pinned){
       if (cel){ cel.className = "verdict neutral"; cel.innerHTML = "No records to check for completeness."; }
       return;
     }
-    const res = await verify(records);
+    const res = await verifyText(recordsText);
     window.__haloVerify = res;  // the drawer's chain-position note reads this
     if (!res.ok){
       el.className = "verdict fail";
-      el.innerHTML = "&#10007; Verification FAILED at record " + res.at + " (" + res.why + ").";
+      el.innerHTML = "&#10007; Verification FAILED at record " + res.at + " (" + haloEsc(res.why) + ").";
       haloWithhold("the records embedded in this page failed verification.");
       if (cel){ cel.className = "verdict fail"; cel.innerHTML = "Completeness not checked: the records failed verification."; }
       return;

@@ -54,6 +54,7 @@ from urllib.parse import urlparse, parse_qs, urlencode
 
 from ._private import open_private
 from . import __version__
+from .verify import parse_record_line
 from .anchor import Notary, WitnessFileError, checkpoint, damaged_witness, parse_checkpoint_line, _now
 from .anchor import _fcntl
 
@@ -187,7 +188,7 @@ def anchor_remote(witness_url, key, records, *, timeout=10):
         headers={"Content-Type": "application/json",
                  "Authorization": "Bearer " + key})
     with urllib.request.urlopen(req, timeout=timeout) as resp:
-        out = json.loads(resp.read().decode("utf-8"))
+        out = parse_record_line(resp.read().decode("utf-8"))
     return out.get("receipt", out)
 
 
@@ -209,7 +210,8 @@ def fetch_checkpoints(witness_url, subject=None, *, chain_root=None, timeout=10,
                                                if key else {}))
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
-            out = json.loads(resp.read().decode("utf-8"))
+            # Read as a chain line is read: a repeated key is refused.
+            out = parse_record_line(resp.read().decode("utf-8"))
     except urllib.error.HTTPError as e:
         if e.code == 503:
             raise WitnessDamagedError(
@@ -389,7 +391,7 @@ class _Handler(BaseHTTPRequestHandler):
             return self._send(429, {"error": "too many anchors for this key; retry later"})
         raw = self.rfile.read(length) if length else b""
         try:
-            payload = json.loads(raw.decode("utf-8"))
+            payload = parse_record_line(raw.decode("utf-8"))
         except (ValueError, UnicodeDecodeError, RecursionError):
             # The parser's message quotes the body back; say only what failed.
             return self._send(400, {"error": "body is not valid JSON"})

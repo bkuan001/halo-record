@@ -51,7 +51,7 @@ import json
 import os
 
 from .redact import INVISIBLE_CHARS
-from .verify import read_log_lines
+from .verify import _no_duplicate_keys, parse_record_line, read_log_lines
 
 _MISSING = object()
 
@@ -596,7 +596,7 @@ def evaluate(records, policy):
 
 
 def load_records(path):
-    return [json.loads(ln) for ln in read_log_lines(path)]
+    return [parse_record_line(ln) for ln in read_log_lines(path)]
 
 
 _PACK_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "policies")
@@ -619,17 +619,6 @@ def resolve_policy_path(path):
     if path in (name, name + ".json") and name in bundled_packs():
         return os.path.join(_PACK_DIR, name + ".json")
     return path
-
-
-def _no_duplicate_keys(pairs):
-    out = {}
-    for k, v in pairs:
-        if k in out:
-            # The last one would win silently: a reader would see one rule and
-            # the evaluator run another.
-            raise ValueError("duplicate key %r in one object" % k)
-        out[k] = v
-    return out
 
 
 def _finite_float(text):

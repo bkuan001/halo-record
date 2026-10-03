@@ -34,7 +34,7 @@ except ImportError:  # Windows
 from datetime import datetime, timezone
 
 from .canon import GENESIS_PREV, canon, compute_hash, sha256_hex
-from .verify import _parse_int, read_log_lines
+from .verify import parse_record_line, read_log_lines
 
 
 def _now():
@@ -176,7 +176,7 @@ def is_checkpoint(cp):
 def parse_checkpoint_line(line):
     """The checkpoint on one witness line, or None if the line is damaged."""
     try:
-        cp = json.loads(line, parse_int=_parse_int)
+        cp = parse_record_line(line)
     except (ValueError, RecursionError):
         return None
     return cp if is_checkpoint(cp) else None
