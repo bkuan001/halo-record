@@ -26,6 +26,23 @@ yourself, or hold your own copy captured earlier. Signed witness receipts are
 deliberately outside the zero-dependency core; until they exist, treat any
 relayed checkpoint as the operator's assertion.
 
+**Pin the subject.** Checkpoints are looked up by the subject id the records
+carry, and the vendor writes that id. A chain re-keyed to another subject id is
+checked against that id's checkpoints, so it can read as unwitnessed, or as
+consistent with checkpoints the vendor anchored under the new id, while the
+customer's own checkpoints are never consulted. `halo anchor --check
+--expect-subject <id>`, `halo report --expect-subject`, `halo export
+--expect-subject` and the report page's subject field look up the id you
+expect and refuse a chain carrying any other. Without one, a completeness
+verdict is about the id the vendor chose.
+
+**A damaged witness is refused.** A witness file with a torn or garbled line,
+or a line without a checkpoint's shape, is not read around: the damaged
+checkpoint may be the one that exposes a truncation. `halo anchor --check`,
+`halo report` and `halo export` refuse it with exit 2, the code they use for a
+missing witness file, and the hosted witness answers reads with 503 until its
+operator restores the store.
+
 For *time* specifically, `halo anchor --timestamp` attaches an external RFC 3161
 timestamp to a checkpoint: a Timestamp Authority the operator does not control
 signs the checkpoint's state hash, proving the chain reached that state **no
@@ -631,6 +648,11 @@ adapters, the MCP wrapper and `halo hook` pass the action's own result or
 exception through unchanged and print one line to stderr:
 
     halo-record: FAILED to record '<tool>' (<ErrorType>: <message>); the action ran, but its record is NOT in the evidence log. The action's own result or error is passed through unchanged (set HALO_STRICT_RECORDING=1 to raise instead).
+
+`@record` and `trace()` wrap an `async def` function in an `async def`
+wrapper that awaits it, so the record (or the boundary record) holds what the
+coroutine returned or raised, written after it ran; a cancellation is recorded
+as an error.
 
 When there is no usable stderr (`pythonw`, a closed file descriptor 2), the
 same line is logged on the `halo_record` logger instead, and the action's
