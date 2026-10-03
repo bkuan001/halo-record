@@ -297,7 +297,7 @@ _VALIDATORS = {"credit_card": _luhn_ok, "iban": _iban_ok}
 # characters that render blank: U+2800 BRAILLE PATTERN BLANK and U+1D159
 # MUSICAL SYMBOL NULL NOTEHEAD. They are dropped when they sit between token
 # characters; elsewhere (an emoji ZWJ sequence, a bidi mark in prose) they are
-# kept. The ranges are fixed here, not read from ``unicodedata``, so every
+# kept. The ranges are listed here, not read from ``unicodedata``, so every
 # Python version and the TypeScript port strip the same set.
 _INVISIBLE_RANGES = (
     (0x00AD, 0x00AD), (0x034F, 0x034F), (0x0600, 0x0605), (0x061C, 0x061C),
