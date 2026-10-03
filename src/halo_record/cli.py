@@ -513,7 +513,8 @@ def main(argv=None):
                                "the operator's clock)")
     p_anchor.add_argument("--tsa",
                           help="Timestamp Authority URL for --timestamp "
-                               "(default: a public RFC 3161 TSA; use a commercial one in production)")
+                               "(default: a public RFC 3161 TSA; in production use a TSA outside your "
+                               "control: a commercial one, or one your relying party names)")
     p_anchor.set_defaults(func=_cmd_anchor)
 
     p_serve = sub.add_parser(
