@@ -116,6 +116,45 @@ class PasswordAssignmentTextTest(unittest.TestCase):
                          "reset your password via the portal")
 
 
+class InvisibleCharacterInKeyTest(unittest.TestCase):
+    """An invisible character in a field name, or between a password's name and
+    its separator, does not stop the value from being masked."""
+
+    KEYS = ["password\u200b", "pass\u200bword", "password\u2060", "PASSWORD\ufeff",
+            "\u200bpassword", "pass\U000e0041word", "db_pass\u00adword", "api\u200b_key",
+            "to\u200dken", "client_secret\u180e"]
+
+    def test_credential_key_ignores_invisible_characters(self):
+        from halo_record.redact import credential_key, credential_value
+        for key in self.KEYS:
+            self.assertTrue(credential_key(key), ascii(key))
+        self.assertTrue(credential_value("pass\u200bword", 739184265))
+        self.assertFalse(credential_key("max\u200b_tokens"))
+
+    def test_value_under_such_a_key_is_masked_and_flagged(self):
+        for key in self.KEYS:
+            rec, blob = _sealed(tool_input={key: PW, "user": "admin"})
+            self.assertNotIn(PW, blob, ascii(key))
+            self.assertIn("credential_field", [f["type"] for f in rec["findings"]], ascii(key))
+
+    TEXTS = ['"password"\u200b: "%s"', '"password\u200b": "%s"', '{"password\u2060": "%s"}',
+             'password\u200b"\u200b:\u200b"\u200b%s"', "password\u200b=%s", "pwd\ufeff = %s",
+             "password    =    %s", "password\t\t\t\t\t: %s", "PASSWORD          = %s",
+             '{"db_password"\U000e0041\u200b : "%s"}']
+
+    def test_password_text_with_a_gap_before_the_separator_is_masked(self):
+        for form in self.TEXTS:
+            text = form % PW
+            self.assertNotIn(PW, redact_text(text), ascii(text))
+            self.assertIn("password", [f["type"] for f in scan(text)], ascii(text))
+            rec, blob = _sealed(tool_input={"q": text})
+            self.assertNotIn(PW, blob, ascii(text))
+
+    def test_prose_is_still_untouched(self):
+        for text in ("reset your password    via the portal", "password\u200b reset"):
+            self.assertEqual(redact_text(text), text)
+
+
 class ZeroWidthSplitTest(unittest.TestCase):
     def test_zero_width_inside_known_key_is_still_masked(self):
         for zw in ("​", "‌", "‍", "⁠", "﻿", "­"):

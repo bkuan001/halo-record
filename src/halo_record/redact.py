@@ -75,8 +75,11 @@ PATTERNS = [
     # An invisible run beside the separator or the quote is part of the gap,
     # never the value: the value class leaves invisible characters out, so a
     # zero-width space after "password": cannot be masked in place of it.
+    # Before the separator, an invisible run beside the closing quote and a
+    # run of up to 16 spaces, tabs or invisible characters are also a gap.
     ("password",     "CRITICAL", re.compile(
-        r'(?i)(?<![A-Za-z0-9])(?:password|passwd|passphrase|pwd)["\']?[ \t]{0,3}[=:]'
+        r'(?i)(?<![A-Za-z0-9])(?:password|passwd|passphrase|pwd)'
+        r'[' + _INVISIBLE_CLASS + r']{0,8}["\']?[ \t' + _INVISIBLE_CLASS + r']{0,16}[=:]'
         r'(?:[ \t' + _INVISIBLE_CLASS + r']{0,8})["\']?[' + _INVISIBLE_CLASS + r']{0,8}'
         r'[^\s"\',;<>' + _INVISIBLE_CLASS + r']{1,256}')),
     # A JWT starts a token (the lookbehind), so a run like "eyJeyJeyJ..." is
@@ -730,7 +733,9 @@ _KEY_SEP_RE = re.compile(r'[\s.\-]+')
 
 
 def _norm_key(key):
-    return _KEY_SEP_RE.sub("_", key.strip().lower())
+    # An invisible character in a field name ("pass\u200bword") is not part
+    # of the name a reader sees, so it is dropped before the name is matched.
+    return _KEY_SEP_RE.sub("_", _ZW_HINT_RE.sub("", key).strip().lower())
 
 
 def credential_key(key):
