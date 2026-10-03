@@ -565,4 +565,7 @@ def export(log_path, out_path, *, start=None, end=None, tools=None,
         return 3
     else:
         out("COMPLETE — every checkpoint the witness holds for this chain is present.")
+        if witness_log:
+            from .anchor import LOCAL_WITNESS_NOTE
+            out(LOCAL_WITNESS_NOTE)
     return 0

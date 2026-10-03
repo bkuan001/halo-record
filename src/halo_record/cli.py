@@ -261,6 +261,9 @@ def _anchor(args):
                                      expected_subject=args.expect_subject)
         status = {True: "COMPLETE", False: "INCOMPLETE", None: "UNWITNESSED"}[result["ok"]]
         print("%s — %s" % (status, json.dumps(result)))
+        if result["ok"] is True:
+            from .anchor import LOCAL_WITNESS_NOTE
+            print(LOCAL_WITNESS_NOTE)
         if result.get("subjectless_caveat"):
             print("NOTE (subjectless chain): %s" % result["subjectless_caveat"])
         if result["ok"] is True:

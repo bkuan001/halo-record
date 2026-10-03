@@ -163,6 +163,14 @@ class WitnessFileError(ValueError):
     be the very one that would expose a truncation. The CLI exits 2 for it."""
 
 
+# Printed beside a COMPLETE verdict read from a local witness file: the same
+# meaning as the report page's "Self-attested" label and the export manifest's
+# operator_note.
+LOCAL_WITNESS_NOTE = ("NOTE (local witness file): completeness is only as independent as "
+                      "whoever holds this witness file; treat it as self-attested unless that "
+                      "party is outside the operator's control.")
+
+
 def is_checkpoint(cp):
     """Whether ``cp`` has a checkpoint's shape: an object with a non-negative
     integer ``count`` and a string ``head``."""
