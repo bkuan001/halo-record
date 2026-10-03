@@ -322,7 +322,12 @@ async function haloBind(records, cfg){
   haloSet("r-policy", R.policy);
   try { document.title = R.title + " — Runtime Report"; } catch (e){}
   if (typeof window.__haloSetRows === "function") window.__haloSetRows(R.rows);
-  else haloSet("activity-body", R.rows.join("\n"));
+  else {
+    // The table script has not run yet. Leave it these rows to take as the
+    // whole table, so it never adds the page's static rows to them.
+    window.__haloPendingRows = R.rows;
+    haloSet("activity-body", R.rows.join("\n"));
+  }
   return {policy: policy, digest: digest};
 }
 function haloWithhold(why){
@@ -516,11 +521,23 @@ _PAGINATE_JS = r"""
   /* One array owns every row; the table body is a rendered view of the
      filtered+sorted subset. Rows never go back into the template. */
   var ALL = [];
-  Array.prototype.push.apply(ALL, tbody.querySelectorAll("tr"));
-  Array.prototype.push.apply(ALL, tpl.content.querySelectorAll("tr"));
+  function rowsOf(rowsHtml){
+    var t = document.createElement("template");
+    t.innerHTML = rowsHtml.join("");
+    return Array.prototype.slice.call(t.content.querySelectorAll("tr"));
+  }
+  if (Array.isArray(window.__haloPendingRows)){
+    // Verification finished first: the table is the re-rendered verified
+    // rows only; the static rows (table and template) are not read.
+    ALL = rowsOf(window.__haloPendingRows);
+    window.__haloPendingRows = null;
+  } else {
+    Array.prototype.push.apply(ALL, tbody.querySelectorAll("tr"));
+    Array.prototype.push.apply(ALL, tpl.content.querySelectorAll("tr"));
+  }
   ALL = ALL.filter(function(r){ return r.hasAttribute("data-ts"); });
-  if (!ALL.length) return;
   tpl.remove();
+  if (!ALL.length) return;
 
   var view = ALL.slice();     // current filtered+sorted set
   var drawn = 0;              // how many of `view` are in the DOM
@@ -528,9 +545,7 @@ _PAGINATE_JS = r"""
   /* The verifier re-renders the rows from the records it verified and hands
      them over here; from then on the table is that set, not the static one. */
   window.__haloSetRows = function(rowsHtml){
-    var t = document.createElement("template");
-    t.innerHTML = rowsHtml.join("");
-    ALL = Array.prototype.slice.call(t.content.querySelectorAll("tr"));
+    ALL = rowsOf(rowsHtml);
     fillOptions(fTool, "data-tool");
     fillOptions(fType, "data-type");
     paintTimes();

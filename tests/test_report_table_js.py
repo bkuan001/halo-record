@@ -48,6 +48,7 @@ class El {
   set innerHTML(v){
     this._html = String(v);
     if (this.tag === "template"){ const rows = rowsFrom(this._html); this.content = {querySelectorAll: () => rows}; }
+    if (this.tag === "tbody") this.children = rowsFrom(this._html);
   }
   get textContent(){ return this._html.replace(/<[^>]*>/g, ""); }
   set textContent(v){ this._html = String(v); this.children = []; }
@@ -95,9 +96,14 @@ globalThis.document = {
   addEventListener(){},
 };
 %(prelude)s
-%(scripts)s
+const SCRIPTS = %(scripts)s;
+const STAGGER = %(stagger)s;
 function settle(){ return new Promise(r => setTimeout(r, 300)); }
 (async () => {
+  // Each page script runs as its own script, in page order. Staggered, each
+  // one finishes its async work before the next is parsed, as when a slow
+  // connection delivers the table script after verification has completed.
+  for (const s of SCRIPTS){ require("vm").runInThisContext(s); if (STAGGER) await settle(); }
   await settle();
   const log = [];
   const snap = () => ({rowcount: ELS["rowcount"].innerHTML,
@@ -109,6 +115,7 @@ function settle(){ return new Promise(r => setTimeout(r, 300)); }
     if (a === "observe") OBSERVERS.forEach(cb => cb([{isIntersecting: true}]));
     else if (a === "filter"){ ELS["f-tool"].value = ""; ELS["f-tool"].fire("change"); }
     else if (a === "search"){ ELS["f-q"].value = "a"; ELS["f-q"].fire("input"); }
+    else if (a.startsWith("search:")){ ELS["f-q"].value = a.slice(7); ELS["f-q"].fire("input"); }
     else if (a.startsWith("open:")){
       const row = ELS["activity-body"].children[+a.slice(5)];
       (ELS["activity-body"].listeners.click || []).forEach(f => f({target: {closest: () => row}, preventDefault(){}}));
@@ -121,10 +128,11 @@ function settle(){ return new Promise(r => setTimeout(r, 300)); }
 """
 
 
-def _run(html, actions=(), prelude=""):
+def _run(html, actions=(), prelude="", stagger=False):
     scripts = re.findall(r"<script>(.*?)</script>", html, re.S)
     code = _DOM % {"html": json.dumps(html), "actions": json.dumps(list(actions)),
-                   "prelude": prelude, "scripts": "\n;\n".join(scripts)}
+                   "prelude": prelude, "scripts": json.dumps(scripts),
+                   "stagger": "true" if stagger else "false"}
     js = os.path.join(tempfile.mkdtemp(), "page.js")
     with open(js, "w", encoding="utf-8") as fh:
         fh.write(code)
@@ -179,6 +187,64 @@ class WithheldNoticeStaysTest(unittest.TestCase):
         out = _run(html, ["observe", "filter"])
         self.assertIn("ok", out["verdict"])
         self.assertIn("Showing 2 of 2 actions", out["log"][-1]["rowcount"])
+
+
+_FAKE_ROW = ('<tr data-ts="2030-01-01T00:00:00+00:00" data-tool="EVILTOOL" data-type="tool_call" '
+             'data-sev="INFO" data-status="ok" data-flags="0" data-rid="evil" '
+             'data-text="2030-01-01t00:00:00+00:00 eviltool tool_call wire $1m approved by cfo">'
+             '<td class="mono dim ts-cell">2030-01-01 00:00:00</td><td class="mono">EVILTOOL</td>'
+             '<td>tool_call</td><td>wire $1M approved by CFO</td></tr>')
+
+
+@unittest.skipUnless(NODE, "node not installed")
+class VerifiedTableIsTheVerifiedRecordsTest(unittest.TestCase):
+    """A report with more rows than the first batch keeps rows past it in a
+    static <template>. Once the records verify, the table is the rows
+    re-rendered from those records and nothing else, whichever of the
+    verifier and the table script finishes first."""
+
+    N = 230
+
+    def setUp(self):
+        self.html = _report([("t%d" % (i % 7), None) for i in range(self.N)])
+        self.assertIn('<template id="more-rows"><tr', self.html)
+
+    def _check_count(self, stagger):
+        out = _run(self.html, ["observe", "filter"], stagger=stagger)
+        self.assertIn("ok", out["verdict"])
+        for step in out["log"]:
+            self.assertIn("of %d actions" % self.N, step["rowcount"])
+            self.assertNotIn("filtered", step["rowcount"])
+
+    def test_count_equals_record_count(self):
+        self._check_count(stagger=False)
+
+    def test_count_equals_record_count_when_verification_finishes_first(self):
+        self._check_count(stagger=True)
+
+    def _check_injected(self, stagger):
+        html = self.html.replace('<template id="more-rows">', '<template id="more-rows">' + _FAKE_ROW, 1)
+        out = _run(html, ["observe", "filter", "search:eviltool"], stagger=stagger)
+        self.assertIn("ok", out["verdict"])
+        for step in out["log"]:
+            self.assertNotIn("EVILTOOL", [o["value"] for o in step["toolOptions"]])
+            self.assertNotIn("EVILTOOL", step["order"])
+        self.assertIn("of %d actions" % self.N, out["log"][1]["rowcount"])
+        self.assertIn("Showing 0 of 0 actions (filtered from %d)" % self.N, out["log"][-1]["rowcount"])
+
+    def test_template_row_not_shown_after_verification(self):
+        self._check_injected(stagger=False)
+
+    def test_template_row_not_shown_when_verification_finishes_first(self):
+        self._check_injected(stagger=True)
+
+    def test_failed_verification_keeps_static_rows_withheld(self):
+        block = re.search(r'<script id="records" type="application/json">(.*?)</script>', self.html, re.S).group(1)
+        html = self.html.replace(block, block.replace('"t3"', '"t9"', 1))
+        out = _run(html, ["observe"], stagger=True)
+        self.assertIn("fail", out["verdict"])
+        for step in out["log"]:
+            self.assertIn("Withheld", step["rowcount"])
 
 
 @unittest.skipUnless(NODE, "node not installed")
