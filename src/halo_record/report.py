@@ -284,8 +284,48 @@ function haloSet(id, html){
   const node = document.getElementById(id);
   if (node) node.innerHTML = html;
 }
+// Regions a layout refusal overwrites. A refusal for a hidden region is held
+// (window.__haloLayoutHeld keeps what they showed) and lifted when the region
+// shows again; a refusal for a repeated id is kept for the life of the page.
+const HALO_HELD = ["completeness", "r-policy", "r-cards", "rowcount"];
+function haloOut(id){
+  // Where a write to a held region goes: its held copy while a layout refusal
+  // is shown, so lifting the refusal shows the latest content.
+  const held = window.__haloLayoutHeld;
+  if (held && held.byId[id]) return held.byId[id];
+  return document.getElementById(id);
+}
+function haloHold(){
+  if (window.__haloLayoutHeld) return;
+  const held = {withheld: window.__haloWithheld, nodes: [], byId: {}};
+  const one = document.getElementById("verdict");
+  if (one) held.nodes.push({node: one, className: one.className, innerHTML: one.innerHTML});
+  HALO_HELD.forEach(function(id){
+    const n = document.getElementById(id);
+    if (!n) return;
+    const e = {node: n, className: n.className, innerHTML: n.innerHTML};
+    held.nodes.push(e);
+    held.byId[id] = e;
+  });
+  window.__haloLayoutHeld = held;
+}
+function haloLift(){
+  const held = window.__haloLayoutHeld;
+  if (!held) return;
+  window.__haloLayoutHeld = null;
+  held.nodes.forEach(function(e){ e.node.className = e.className; e.node.innerHTML = e.innerHTML; });
+  window.__haloWithheld = held.withheld;
+  if (typeof window.__haloRecount === "function") window.__haloRecount();
+}
 function haloRefuseLayout(problem){
-  window.__haloLayoutRefused = true;
+  if (problem.latch){
+    if (window.__haloLayoutHeld){ haloLift(); }
+    window.__haloLayoutRefused = true;
+  } else {
+    if (window.__haloLayoutHeld && window.__haloLayoutHeld.why === problem.why) return;
+    haloHold();
+    window.__haloLayoutHeld.why = problem.why;
+  }
   const copies = (document.querySelectorAll && document.querySelectorAll('[id="verdict"]')) || [];
   const one = document.getElementById("verdict");
   const targets = copies.length ? Array.prototype.slice.call(copies) : (one ? [one] : []);
@@ -312,10 +352,15 @@ function haloLayoutProblem(){
     seen[id] = true;
   }
   if (dups.length)
-    return {ids: dups, why: "this page repeats the element id" + (dups.length > 1 ? "s " : " ") +
+    return {ids: dups, latch: true, why: "this page repeats the element id" + (dups.length > 1 ? "s " : " ") +
             dups.map(function(d){ return JSON.stringify(d); }).join(", ") +
             ", so what it shows cannot be tied to the verified records."};
   if (typeof window.getComputedStyle !== "function") return null;
+  // A hidden document, or a viewport too small to show the regions (a frame
+  // or preview pane collapsed to a few pixels, a frame loaded at zero height),
+  // says nothing about what the reader is shown: the check waits for a
+  // viewport that can show them.
+  if (haloLayoutWaits()) return {wait: true};
   // Every region whose content the badge or the scripts vouch for.
   const watched = ["verdict", "completeness", "r-h1", "r-meta", "r-period", "r-cards",
                    "tablewrap", "activity-body", "rowcount"];
@@ -335,6 +380,11 @@ function haloFlat(transform){
   const v = m[2].split(",").map(parseFloat);
   const det = m[1] ? v[0] * v[5] - v[1] * v[4] : v[0] * v[3] - v[1] * v[2];
   return !(Math.abs(det) >= 0.01);
+}
+function haloLayoutWaits(){
+  if (document.visibilityState === "hidden") return true;
+  const w = window.innerWidth, h = window.innerHeight;
+  return typeof w === "number" && typeof h === "number" && (w < 100 || h < 100);
 }
 function haloHidden(n){
   // Not displayed, invisible, without area, off the page, or under an
@@ -455,6 +505,7 @@ async function haloCompleteness(records, embedded, cfg, pinned){
     const ids = new Set(records.map(function(r){
       const s = r.subject; return (s && typeof s === "object" && s.id) ? s.id : null; }));
     if (ids.size !== 1 || !ids.has(pinned)){
+      const cel = haloOut("completeness");
       cel.className = "verdict fail";
       cel.innerHTML = "&#10007; SUBJECT MISMATCH &mdash; you expect " + haloEsc(JSON.stringify(pinned)) +
         "; the records carry " + haloEsc(JSON.stringify(Array.from(ids))) + ".";
@@ -477,22 +528,24 @@ async function haloCompleteness(records, embedded, cfg, pinned){
     ? " <span class='dim'>(couldn't reach the live witness — checked the embedded snapshot instead)</span>"
     : "") + pinNote;
   const forWho = pinned ? " for " + haloEsc(JSON.stringify(pinned)) : "";
+  if (window.__haloLayoutRefused) return;
+  const out = haloOut("completeness");
   if (comp.ok === null && comp.windowed){
-    cel.className = "verdict neutral";
-    cel.innerHTML = "No witness checkpoint" + forWho + " falls inside this window — window integrity is " +
+    out.className = "verdict neutral";
+    out.innerHTML = "No witness checkpoint" + forWho + " falls inside this window — window integrity is " +
       "verified against its anchor above" +
       (comp.beyond ? "; the witness holds " + comp.beyond + " checkpoint(s) beyond this window, up to record " +
                      comp.latest + " of the " + WINDOW.total + "-record chain" : "") +
       (comp.before ? "; " + comp.before + " checkpoint(s) precede the window and cannot be checked from this page (run halo anchor --check on the full chain)" : "") +
       "." + note;
   } else if (comp.ok === null){
-    cel.className = "verdict open";
-    cel.innerHTML = "<b>Not yet anchored" + forWho + ".</b> No witness checkpoint was found — " +
+    out.className = "verdict open";
+    out.innerHTML = "<b>Not yet anchored" + forWho + ".</b> No witness checkpoint was found — " +
       "completeness rests on the vendor alone until the chain is witnessed. " +
       "Integrity is verified above; completeness is not." + note;
   } else if (comp.ok && WINDOW){
-    cel.className = "verdict neutral";
-    cel.innerHTML = (src.live
+    out.className = "verdict neutral";
+    out.innerHTML = (src.live
         ? "Consistent within window" + forWho + " &mdash; "
         : "Self-attested" + forWho + " &mdash; the checkpoint was supplied with this report by its operator, so treat completeness as self-attested until a witness outside the operator confirms it. Within the window it is consistent: ") +
       witness + " confirmed " + comp.inWin +
@@ -504,8 +557,8 @@ async function haloCompleteness(records, embedded, cfg, pinned){
         ? " Whether this counts as independent verification depends on who operates the witness at " + haloEsc(String(witnessBase(cfg.witnessUrl) || "the configured URL")) + " &mdash; treat it as self-attested unless that party is outside the operator's control."
         : "") + note;
   } else if (comp.ok){
-    cel.className = "verdict neutral";
-    cel.innerHTML = (src.live
+    out.className = "verdict neutral";
+    out.innerHTML = (src.live
         ? "Consistent" + forWho + " &mdash; "
         : "Self-attested" + forWho + " &mdash; the checkpoint was supplied with this report by its operator, so treat completeness as self-attested until a witness outside the operator confirms it. Against that checkpoint the chain is consistent: ") +
       witness + " confirmed " + comp.witnessed +
@@ -515,8 +568,8 @@ async function haloCompleteness(records, embedded, cfg, pinned){
         ? " Whether this counts as independent verification depends on who operates the witness at " + haloEsc(String(witnessBase(cfg.witnessUrl) || "the configured URL")) + " &mdash; treat it as self-attested unless that party is outside the operator's control."
         : "") + note;
   } else {
-    cel.className = "verdict fail";
-    cel.innerHTML = "&#10007; INCOMPLETE" + forWho + " &mdash; conflicts with " + witness + " (" +
+    out.className = "verdict fail";
+    out.innerHTML = "&#10007; INCOMPLETE" + forWho + " &mdash; conflicts with " + witness + " (" +
       haloEsc(comp.why) + (comp.at ? " at record " + comp.at : "") + ")." + note;
   }
 }
@@ -531,8 +584,10 @@ async function haloCompleteness(records, embedded, cfg, pinned){
   const embedded = JSON.parse(document.getElementById("checkpoints").textContent);
   const cfg = JSON.parse(document.getElementById("halo-config").textContent);
   const cel = document.getElementById("completeness");
+  // A repeated id refuses here, before anything is written. A hidden region
+  // is checked once the verified content is in place, below.
   const problem = haloLayoutProblem();
-  if (problem){ haloRefuseLayout(problem); return; }
+  if (problem && problem.latch){ haloRefuseLayout(problem); return; }
   if (!(window.crypto && crypto.subtle)){
     el.className = "verdict neutral";
     el.innerHTML = "Not verified &mdash; self-verification needs a secure context (https or localhost). " +
@@ -591,15 +646,21 @@ async function haloCompleteness(records, embedded, cfg, pinned){
   // Stylesheets that finish loading later, animations and transitions, and
   // print can still hide what was written, so check again on each, and once
   // a second for changes that fire no event.
+  // A hidden region withholds only while it is hidden; a repeated id
+  // withholds for good.
   const recheck = function(){
     if (window.__haloLayoutRefused) return;
-    const p = haloLayoutProblem(); if (p) haloRefuseLayout(p);
+    const p = haloLayoutProblem();
+    if (p && p.wait) return;
+    if (p) haloRefuseLayout(p); else haloLift();
   };
   recheck();
   if (window.__haloLayoutRefused) return;
   if (typeof window.addEventListener === "function"){
     if (document.readyState !== "complete") window.addEventListener("load", recheck);
     window.addEventListener("beforeprint", recheck);
+    window.addEventListener("resize", recheck);
+    document.addEventListener("visibilitychange", recheck);
     ["animationstart", "animationiteration", "animationend", "transitionend"].forEach(function(t){
       document.addEventListener(t, recheck, true);
     });
@@ -820,6 +881,8 @@ _PAGINATE_JS = r"""
       (filtered ? " (filtered from " + ALL.length + ")" : "") +
       (drawn < view.length ? " — scroll the table for more" : "");
   }
+  // The page script calls this when a held layout refusal is lifted.
+  window.__haloRecount = update;
   function apply(){
     view = ALL.filter(matches);
     view.sort(cmp);

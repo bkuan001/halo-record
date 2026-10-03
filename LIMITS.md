@@ -811,8 +811,15 @@ count) or an ancestor of it is not displayed, invisible, without area, off the
 page, clipped to nothing (`overflow`, `clip-path`), masked, filtered,
 collapsed by a transform such as `scale(0)`, or skipped by
 `content-visibility`. They check at load, after verification, when late
-stylesheets load, on animation and transition events, before printing, and
-once a second.
+stylesheets load, on animation and transition events, on resize, when the
+page becomes visible, before printing, and once a second. A repeated id
+withholds for the life of the page. A hidden region withholds while it is
+hidden, and the verified view comes back when it shows again; a page that
+hides a region only some of the time therefore shows the badge the rest of
+the time. While the document is hidden, or the viewport is under 100 px
+wide or tall (a collapsed frame or preview pane), the layout check waits:
+the page keeps the verdict it last showed, and a page first opened that small
+shows the verified badge until the viewport grows and the check runs.
 
 What it does not catch, among others: text made unreadable while its box
 stays (`font-size:0`, transparent color), a region placed under the page
