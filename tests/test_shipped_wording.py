@@ -43,3 +43,28 @@ class ShippedWordingTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class StarterPackCitationsTest(unittest.TestCase):
+    """The bundled packs cite the control IDs and titles their sources use, and
+    the examples/ copies match the shipped ones byte for byte."""
+
+    PACKS = os.path.join(SRC, "policies")
+    EXAMPLES = os.path.join(os.path.dirname(__file__), "..", "examples", "policies")
+
+    def _read(self, d, name):
+        with open(os.path.join(d, name), encoding="utf-8") as fh:
+            return fh.read()
+
+    def test_examples_match_the_shipped_packs(self):
+        for name in ("aiuc-1-starter.json", "owasp-starter.json"):
+            self.assertEqual(self._read(self.PACKS, name), self._read(self.EXAMPLES, name), name)
+
+    def test_cited_ids_and_titles(self):
+        aiuc = self._read(self.PACKS, "aiuc-1-starter.json")
+        self.assertNotIn("B004 (prompt-injection", aiuc)  # B004 is endpoint anti-scraping
+        self.assertIn("AIUC-1 B002 / B005 (detect adversarial input; real-time input filtering)", aiuc)
+        self.assertIn("evidence toward AIUC-1 E015", aiuc)
+        owasp = self._read(self.PACKS, "owasp-starter.json")
+        self.assertIn("(T1–T17)", owasp)
+        self.assertIn("LLM04:2025 Data & Model Poisoning", owasp)
