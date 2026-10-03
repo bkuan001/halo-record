@@ -17,7 +17,6 @@ run them with e.g. ``uvx --with langchain-core --with opentelemetry-sdk
 """
 
 import contextlib
-import importlib.util
 import io
 import logging
 import os
@@ -30,10 +29,25 @@ from halo_record import record_call
 from halo_record.session import recording_failed
 
 MSG = "is NOT in the evidence log"
-HAS_LC = importlib.util.find_spec("langchain_core") is not None
-HAS_OTEL = importlib.util.find_spec("opentelemetry") is not None and \
-    importlib.util.find_spec("opentelemetry.sdk") is not None
-HAS_LITELLM = importlib.util.find_spec("litellm") is not None
+# Looked up on sys.path, not in sys.modules: other tests install stand-in
+# modules under these names.
+from importlib.machinery import PathFinder
+
+HAS_LC = PathFinder.find_spec("langchain_core") is not None
+HAS_OTEL = PathFinder.find_spec("opentelemetry") is not None
+HAS_LITELLM = PathFinder.find_spec("litellm") is not None
+
+
+def _real_modules(test, *prefixes):
+    """Drop stand-in modules (no __file__) under ``prefixes`` for one test, so
+    the real framework is imported."""
+    p = mock.patch.dict(sys.modules)
+    p.start()
+    test.addCleanup(p.stop)
+    for name in list(sys.modules):
+        if any(name == x or name.startswith(x + ".") for x in prefixes):
+            if getattr(sys.modules[name], "__file__", None) is None:
+                del sys.modules[name]
 
 
 class _Failing:
@@ -107,6 +121,10 @@ def _lc_tool():
 
 @unittest.skipUnless(HAS_LC, "langchain-core not installed")
 class RealLangChainTest(_Env):
+    def setUp(self):
+        super().setUp()
+        _real_modules(self, "langchain_core", "langchain")
+
     def _handler(self, **kw):
         from halo_record.integrations.langchain import HaloCallbackHandler
         return HaloCallbackHandler(_Failing(), **kw)
@@ -149,6 +167,10 @@ class RealLangChainTest(_Env):
 
 @unittest.skipUnless(HAS_OTEL, "opentelemetry-sdk not installed")
 class RealOtelTest(_Env):
+    def setUp(self):
+        super().setUp()
+        _real_modules(self, "opentelemetry")
+
     def _run(self, exporter):
         from opentelemetry.sdk.trace import TracerProvider
         from opentelemetry.sdk.trace.export import SimpleSpanProcessor
@@ -185,6 +207,10 @@ class RealOtelTest(_Env):
 
 @unittest.skipUnless(HAS_LITELLM, "litellm not installed")
 class RealLiteLLMTest(_Env):
+    def setUp(self):
+        super().setUp()
+        _real_modules(self, "litellm")
+
     def test_strict_cannot_reach_the_caller_but_the_line_is_written(self):
         import time
         import litellm
