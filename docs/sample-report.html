@@ -133,7 +133,7 @@ footer a{color:var(--gold);text-decoration:none}
 <div class="eyebrow">Halo Runtime Report</div>
 <h1 id="r-h1">Acme Corp<!--/r-h1--></h1>
 <div class="meta" id="r-meta">Agent <b>Globex Support Agent</b> &middot; <b>6</b> recorded actions</div><div id="r-subject-note"><div class="meta">Subject id: <span class="mono">acme-corp</span></div></div>
-<div class="period" id="r-period"><span class="period-l">Records span</span> <b>2026-10-01 00:32:10</b> &ndash; <b>2026-10-03 01:20:10</b> <span class="period-tz">UTC</span><!--/r-period--></div>
+<div class="period" id="r-period"><span class="period-l">Records span</span> <b>2026-10-01 02:26:26</b> &ndash; <b>2026-10-03 03:14:26</b> <span class="period-tz">UTC</span><!--/r-period--></div>
 <div id="verdict" class="verdict neutral">Not verified yet &mdash; this page verifies its records in your browser with JavaScript.</div>
 <div id="completeness" class="verdict neutral">Checking completeness against the witness checkpoints&hellip;</div>
 <form id="pin" class="filters" autocomplete="off">
@@ -174,12 +174,12 @@ footer a{color:var(--gold);text-decoration:none}
 <table>
 <thead><tr><th id="th-time" data-sort="data-ts" data-active="desc">Time (UTC)</th><th data-sort="data-tool">Tool</th><th data-sort="data-type">Type</th><th>Source</th><th>Scope</th><th>Decision</th><th data-sort="data-status">Outcome</th><th data-sort="data-flags">Findings</th><th>Summary</th><th>Hash</th></tr></thead>
 <tbody id="activity-body">
-<tr data-ts="2026-10-03T01:20:10+00:00" data-tool="mcp__jira__create_ticket" data-type="tool_call" data-sev="INFO" data-status="ok" data-flags="0" data-rid="ecb21103-b1de-4293-bafd-dd231f7bcdc5" data-text="2026-10-03t01:20:10+00:00 mcp__jira__create_ticket tool_call mcp:jira allowed ok info {&#x27;tenant&#x27;: &#x27;acme-corp&#x27;, &#x27;issue&#x27;: &#x27;recurring billing bug behind zd-30412&#x27;} escalation glx-218 created globex support agent 3b0ba05f288c ecb21103-b1de-4293-bafd-dd231f7bcdc5 ran mcp__jira__create_ticket — result: escalation glx-218 created" tabindex="0" class="rowclick" title="Click for the full record"><td class="mono dim ts-cell">2026-10-03 01:20:10</td><td class="mono">mcp__jira__create_ticket</td><td>tool_call</td><td><span class="pill ing" title="Ingested from telemetry the vendor already emits — the witness attests &quot;this is the stream you sent me&quot;, not &quot;I watched it happen&quot;.">langfuse</span></td><td class="mono">mcp:jira</td><td><span class="pill ok">allowed</span></td><td><span class="pill ok">ok</span></td><td><span class="pill ok" title="no redaction pattern matched and no threat flag supplied; not a guarantee no sensitive data is present">no flags</span></td><td class="trunc dim">Ran mcp__jira__create_ticket — result: escalation GLX-218 created</td><td class="mono dim">3b0ba05f288c</td></tr>
-<tr data-ts="2026-10-02T22:44:10+00:00" data-tool="email.send" data-type="network" data-sev="INFO" data-status="ok" data-flags="0" data-rid="0a98d55f-9929-4259-b34b-7dc97b79084a" data-text="2026-10-02t22:44:10+00:00 email.send network network allowed ok info {&#x27;tenant&#x27;: &#x27;acme-corp&#x27;, &#x27;to_domain&#x27;: &#x27;acme-corp.com&#x27;, &#x27;ticket&#x27;: &#x27;zd-30412&#x27;} reply sent to customer globex support agent 6c53f772e60a 0a98d55f-9929-4259-b34b-7dc97b79084a ran email.send — result: reply sent to customer" tabindex="0" class="rowclick" title="Click for the full record"><td class="mono dim ts-cell">2026-10-02 22:44:10</td><td class="mono">email.send</td><td>network</td><td><span class="pill ing" title="Ingested from telemetry the vendor already emits — the witness attests &quot;this is the stream you sent me&quot;, not &quot;I watched it happen&quot;.">otel</span></td><td class="mono">network</td><td><span class="pill ok">allowed</span></td><td><span class="pill ok">ok</span></td><td><span class="pill ok" title="no redaction pattern matched and no threat flag supplied; not a guarantee no sensitive data is present">no flags</span></td><td class="trunc dim">Ran email.send — result: reply sent to customer</td><td class="mono dim">6c53f772e60a</td></tr>
-<tr data-ts="2026-10-02T04:02:10+00:00" data-tool="refund.issue" data-type="write" data-sev="INFO" data-status="ok" data-flags="0" data-rid="9e39d035-1b91-4c70-b444-0cfb8bb68161" data-text="2026-10-02t04:02:10+00:00 refund.issue write billing.write human_approved ok info {&#x27;tenant&#x27;: &#x27;acme-corp&#x27;, &#x27;order&#x27;: &#x27;ord_2291&#x27;, &#x27;amount_usd&#x27;: 48} $48 refund issued after human approval globex support agent 05c040406079 9e39d035-1b91-4c70-b444-0cfb8bb68161 ran refund.issue — result: $48 refund issued after human approval" tabindex="0" class="rowclick" title="Click for the full record"><td class="mono dim ts-cell">2026-10-02 04:02:10</td><td class="mono">refund.issue</td><td>write</td><td><span class="pill cap" title="Declared captured at the boundary — per this record&#x27;s own source tag, the integration observed the call directly. The tag is set by the integration, not independently verified.">recorder</span></td><td class="mono">billing.write</td><td><span class="pill ok">human_approved</span></td><td><span class="pill ok">ok</span></td><td><span class="pill ok" title="no redaction pattern matched and no threat flag supplied; not a guarantee no sensitive data is present">no flags</span></td><td class="trunc dim">Ran refund.issue — result: $48 refund issued after human approval</td><td class="mono dim">05c040406079</td></tr>
-<tr data-ts="2026-10-01T22:14:10+00:00" data-tool="model.generate" data-type="tool_call" data-sev="INFO" data-status="ok" data-flags="0" data-rid="972acb1a-6733-4850-a54a-cce4d238989a" data-text="2026-10-01t22:14:10+00:00 model.generate tool_call model:anthropic allowed ok info {&#x27;provider&#x27;: &#x27;anthropic&#x27;, &#x27;model&#x27;: &#x27;claude-opus-4-8&#x27;, &#x27;zdr&#x27;: true, &#x27;purpose&#x27;: &#x27;draft reply to ticket zd-30412&#x27;, &#x27;messages&#x27;: 6} reply drafted (zero-data-retention) globex support agent 00e5a1d93c53 972acb1a-6733-4850-a54a-cce4d238989a ran model.generate — result: reply drafted (zero-data-retention)" tabindex="0" class="rowclick" title="Click for the full record"><td class="mono dim ts-cell">2026-10-01 22:14:10</td><td class="mono">model.generate</td><td>tool_call</td><td><span class="pill ing" title="Ingested from telemetry the vendor already emits — the witness attests &quot;this is the stream you sent me&quot;, not &quot;I watched it happen&quot;.">litellm</span></td><td class="mono">model:anthropic</td><td><span class="pill ok">allowed</span></td><td><span class="pill ok">ok</span></td><td><span class="pill ok" title="no redaction pattern matched and no threat flag supplied; not a guarantee no sensitive data is present">no flags</span></td><td class="trunc dim">Ran model.generate — result: reply drafted (zero-data-retention)</td><td class="mono dim">00e5a1d93c53</td></tr>
-<tr data-ts="2026-10-01T00:38:10+00:00" data-tool="mcp__zendesk__get_ticket" data-type="read" data-sev="INFO" data-status="ok" data-flags="0" data-rid="eecb90c5-4acc-479f-b8c4-a8358ea009b7" data-text="2026-10-01t00:38:10+00:00 mcp__zendesk__get_ticket read mcp:zendesk allowed ok info {&#x27;tenant&#x27;: &#x27;acme-corp&#x27;, &#x27;ticket&#x27;: &#x27;zd-30412&#x27;} read ticket thread (4 messages) globex support agent 869fd6f27f9e eecb90c5-4acc-479f-b8c4-a8358ea009b7 ran mcp__zendesk__get_ticket — result: read ticket thread (4 messages)" tabindex="0" class="rowclick" title="Click for the full record"><td class="mono dim ts-cell">2026-10-01 00:38:10</td><td class="mono">mcp__zendesk__get_ticket</td><td>read</td><td><span class="pill cap" title="Declared captured at the boundary — per this record&#x27;s own source tag, the integration observed the call directly. The tag is set by the integration, not independently verified.">recorder</span></td><td class="mono">mcp:zendesk</td><td><span class="pill ok">allowed</span></td><td><span class="pill ok">ok</span></td><td><span class="pill ok" title="no redaction pattern matched and no threat flag supplied; not a guarantee no sensitive data is present">no flags</span></td><td class="trunc dim">Ran mcp__zendesk__get_ticket — result: read ticket thread (4 messages)</td><td class="mono dim">869fd6f27f9e</td></tr>
-<tr data-ts="2026-10-01T00:32:10+00:00" data-tool="mcp__crm__get_customer" data-type="read" data-sev="INFO" data-status="ok" data-flags="0" data-rid="7bfde1b4-76f4-4d7c-b5ab-b64f5e133096" data-text="2026-10-01t00:32:10+00:00 mcp__crm__get_customer read mcp:crm allowed ok info {&#x27;tenant&#x27;: &#x27;acme-corp&#x27;, &#x27;customer&#x27;: &#x27;cust_8841&#x27;, &#x27;region&#x27;: &#x27;us-east-1&#x27;} looked up account + order history, tenant-scoped globex support agent 7ed3143ef45f 7bfde1b4-76f4-4d7c-b5ab-b64f5e133096 ran mcp__crm__get_customer — result: looked up account + order history, tenant-scoped" tabindex="0" class="rowclick" title="Click for the full record"><td class="mono dim ts-cell">2026-10-01 00:32:10</td><td class="mono">mcp__crm__get_customer</td><td>read</td><td><span class="pill cap" title="Declared captured at the boundary — per this record&#x27;s own source tag, the integration observed the call directly. The tag is set by the integration, not independently verified.">mcp</span></td><td class="mono">mcp:crm</td><td><span class="pill ok">allowed</span></td><td><span class="pill ok">ok</span></td><td><span class="pill ok" title="no redaction pattern matched and no threat flag supplied; not a guarantee no sensitive data is present">no flags</span></td><td class="trunc dim">Ran mcp__crm__get_customer — result: looked up account + order history, tenant-scoped</td><td class="mono dim">7ed3143ef45f</td></tr>
+<tr data-ts="2026-10-03T03:14:26+00:00" data-tool="mcp__jira__create_ticket" data-type="tool_call" data-sev="INFO" data-status="ok" data-flags="0" data-rid="595967ee-4dbe-4842-93a6-b0de8b70102d" data-text="2026-10-03t03:14:26+00:00 mcp__jira__create_ticket tool_call mcp:jira allowed ok info {&#x27;tenant&#x27;: &#x27;acme-corp&#x27;, &#x27;issue&#x27;: &#x27;recurring billing bug behind zd-30412&#x27;} escalation glx-218 created globex support agent 1de93b3dee08 595967ee-4dbe-4842-93a6-b0de8b70102d ran mcp__jira__create_ticket — result: escalation glx-218 created" tabindex="0" class="rowclick" title="Click for the full record"><td class="mono dim ts-cell">2026-10-03 03:14:26</td><td class="mono">mcp__jira__create_ticket</td><td>tool_call</td><td><span class="pill ing" title="Ingested from telemetry the vendor already emits — the witness attests &quot;this is the stream you sent me&quot;, not &quot;I watched it happen&quot;.">langfuse</span></td><td class="mono">mcp:jira</td><td><span class="pill ok">allowed</span></td><td><span class="pill ok">ok</span></td><td><span class="pill ok" title="no redaction pattern matched and no threat flag supplied; not a guarantee no sensitive data is present">no flags</span></td><td class="trunc dim">Ran mcp__jira__create_ticket — result: escalation GLX-218 created</td><td class="mono dim">1de93b3dee08</td></tr>
+<tr data-ts="2026-10-03T00:38:26+00:00" data-tool="email.send" data-type="network" data-sev="INFO" data-status="ok" data-flags="0" data-rid="8f172d1c-0387-4295-ad81-36d66f661ee7" data-text="2026-10-03t00:38:26+00:00 email.send network network allowed ok info {&#x27;tenant&#x27;: &#x27;acme-corp&#x27;, &#x27;to_domain&#x27;: &#x27;acme-corp.com&#x27;, &#x27;ticket&#x27;: &#x27;zd-30412&#x27;} reply sent to customer globex support agent 6a7451f2086f 8f172d1c-0387-4295-ad81-36d66f661ee7 ran email.send — result: reply sent to customer" tabindex="0" class="rowclick" title="Click for the full record"><td class="mono dim ts-cell">2026-10-03 00:38:26</td><td class="mono">email.send</td><td>network</td><td><span class="pill ing" title="Ingested from telemetry the vendor already emits — the witness attests &quot;this is the stream you sent me&quot;, not &quot;I watched it happen&quot;.">otel</span></td><td class="mono">network</td><td><span class="pill ok">allowed</span></td><td><span class="pill ok">ok</span></td><td><span class="pill ok" title="no redaction pattern matched and no threat flag supplied; not a guarantee no sensitive data is present">no flags</span></td><td class="trunc dim">Ran email.send — result: reply sent to customer</td><td class="mono dim">6a7451f2086f</td></tr>
+<tr data-ts="2026-10-02T05:56:26+00:00" data-tool="refund.issue" data-type="write" data-sev="INFO" data-status="ok" data-flags="0" data-rid="73509b98-a233-4b4e-8b07-c3040de891d6" data-text="2026-10-02t05:56:26+00:00 refund.issue write billing.write human_approved ok info {&#x27;tenant&#x27;: &#x27;acme-corp&#x27;, &#x27;order&#x27;: &#x27;ord_2291&#x27;, &#x27;amount_usd&#x27;: 48} $48 refund issued after human approval globex support agent 1697ea991ee7 73509b98-a233-4b4e-8b07-c3040de891d6 ran refund.issue — result: $48 refund issued after human approval" tabindex="0" class="rowclick" title="Click for the full record"><td class="mono dim ts-cell">2026-10-02 05:56:26</td><td class="mono">refund.issue</td><td>write</td><td><span class="pill cap" title="Declared captured at the boundary — per this record&#x27;s own source tag, the integration observed the call directly. The tag is set by the integration, not independently verified.">recorder</span></td><td class="mono">billing.write</td><td><span class="pill ok">human_approved</span></td><td><span class="pill ok">ok</span></td><td><span class="pill ok" title="no redaction pattern matched and no threat flag supplied; not a guarantee no sensitive data is present">no flags</span></td><td class="trunc dim">Ran refund.issue — result: $48 refund issued after human approval</td><td class="mono dim">1697ea991ee7</td></tr>
+<tr data-ts="2026-10-02T00:08:26+00:00" data-tool="model.generate" data-type="tool_call" data-sev="INFO" data-status="ok" data-flags="0" data-rid="9c75092a-89aa-4c40-8684-49111739372b" data-text="2026-10-02t00:08:26+00:00 model.generate tool_call model:anthropic allowed ok info {&#x27;provider&#x27;: &#x27;anthropic&#x27;, &#x27;model&#x27;: &#x27;claude-opus-4-8&#x27;, &#x27;zdr&#x27;: true, &#x27;purpose&#x27;: &#x27;draft reply to ticket zd-30412&#x27;, &#x27;messages&#x27;: 6} reply drafted (zero-data-retention) globex support agent eab913906c12 9c75092a-89aa-4c40-8684-49111739372b ran model.generate — result: reply drafted (zero-data-retention)" tabindex="0" class="rowclick" title="Click for the full record"><td class="mono dim ts-cell">2026-10-02 00:08:26</td><td class="mono">model.generate</td><td>tool_call</td><td><span class="pill ing" title="Ingested from telemetry the vendor already emits — the witness attests &quot;this is the stream you sent me&quot;, not &quot;I watched it happen&quot;.">litellm</span></td><td class="mono">model:anthropic</td><td><span class="pill ok">allowed</span></td><td><span class="pill ok">ok</span></td><td><span class="pill ok" title="no redaction pattern matched and no threat flag supplied; not a guarantee no sensitive data is present">no flags</span></td><td class="trunc dim">Ran model.generate — result: reply drafted (zero-data-retention)</td><td class="mono dim">eab913906c12</td></tr>
+<tr data-ts="2026-10-01T02:32:26+00:00" data-tool="mcp__zendesk__get_ticket" data-type="read" data-sev="INFO" data-status="ok" data-flags="0" data-rid="c62f1307-0b8b-429f-be42-6f49b2545fd2" data-text="2026-10-01t02:32:26+00:00 mcp__zendesk__get_ticket read mcp:zendesk allowed ok info {&#x27;tenant&#x27;: &#x27;acme-corp&#x27;, &#x27;ticket&#x27;: &#x27;zd-30412&#x27;} read ticket thread (4 messages) globex support agent c1de835c1199 c62f1307-0b8b-429f-be42-6f49b2545fd2 ran mcp__zendesk__get_ticket — result: read ticket thread (4 messages)" tabindex="0" class="rowclick" title="Click for the full record"><td class="mono dim ts-cell">2026-10-01 02:32:26</td><td class="mono">mcp__zendesk__get_ticket</td><td>read</td><td><span class="pill cap" title="Declared captured at the boundary — per this record&#x27;s own source tag, the integration observed the call directly. The tag is set by the integration, not independently verified.">recorder</span></td><td class="mono">mcp:zendesk</td><td><span class="pill ok">allowed</span></td><td><span class="pill ok">ok</span></td><td><span class="pill ok" title="no redaction pattern matched and no threat flag supplied; not a guarantee no sensitive data is present">no flags</span></td><td class="trunc dim">Ran mcp__zendesk__get_ticket — result: read ticket thread (4 messages)</td><td class="mono dim">c1de835c1199</td></tr>
+<tr data-ts="2026-10-01T02:26:26+00:00" data-tool="mcp__crm__get_customer" data-type="read" data-sev="INFO" data-status="ok" data-flags="0" data-rid="f3fe6735-a7cd-46c1-90d1-78a79dbda3da" data-text="2026-10-01t02:26:26+00:00 mcp__crm__get_customer read mcp:crm allowed ok info {&#x27;tenant&#x27;: &#x27;acme-corp&#x27;, &#x27;customer&#x27;: &#x27;cust_8841&#x27;, &#x27;region&#x27;: &#x27;us-east-1&#x27;} looked up account + order history, tenant-scoped globex support agent 7d0ab9c5dc0c f3fe6735-a7cd-46c1-90d1-78a79dbda3da ran mcp__crm__get_customer — result: looked up account + order history, tenant-scoped" tabindex="0" class="rowclick" title="Click for the full record"><td class="mono dim ts-cell">2026-10-01 02:26:26</td><td class="mono">mcp__crm__get_customer</td><td>read</td><td><span class="pill cap" title="Declared captured at the boundary — per this record&#x27;s own source tag, the integration observed the call directly. The tag is set by the integration, not independently verified.">mcp</span></td><td class="mono">mcp:crm</td><td><span class="pill ok">allowed</span></td><td><span class="pill ok">ok</span></td><td><span class="pill ok" title="no redaction pattern matched and no threat flag supplied; not a guarantee no sensitive data is present">no flags</span></td><td class="trunc dim">Ran mcp__crm__get_customer — result: looked up account + order history, tenant-scoped</td><td class="mono dim">7d0ab9c5dc0c</td></tr>
 </tbody></table>
 <div id="more-sentinel"></div>
 </div>
@@ -193,8 +193,8 @@ footer a{color:var(--gold);text-decoration:none}
 </aside>
 <footer>Generated by <a href="https://github.com/bkuan001/halo-record">halo-record</a> &middot; format <a href="https://github.com/bkuan001/halo-record/blob/main/src/halo_record/halo-record.schema.json">Halo Runtime Record v0.1</a></footer>
 </div>
-<script id="records" type="application/json">[{"schema_version":"0.1","record_id":"7bfde1b4-76f4-4d7c-b5ab-b64f5e133096","session_id":"demo-acme-corp","ts":"2026-10-01T00:32:10+00:00","agent":{"id":"globex-agent","name":"Globex Support Agent","version":"2.4.1","model":"claude-opus-4-8"},"action":{"type":"read","category":"privacy","tool":"mcp__crm__get_customer","authorization":{"decision":"allowed","scope":"mcp:crm"},"input":{"hash":"sha256:9fa798f0ebf933885b5ff5d95e9a3974dcbb30e60003ebeb003e4bb527d2b5c9","summary":"{'tenant': 'acme-corp', 'customer': 'cust_8841', 'region': 'us-east-1'}"}},"severity":"INFO","findings":[],"integrity":{"alg":"sha-256","canon":"rfc8785","prev_hash":"0000000000000000000000000000000000000000000000000000000000000000","hash":"7ed3143ef45f37b5bffe9b2098750efd8661ef3d6d764a2384598eb3f9b10781"},"subject":{"id":"acme-corp","name":"Acme Corp"},"source":{"adapter":"mcp","via":"MCP interceptor","capture":"captured"},"data":{"region":"us-east-1"},"outcome":{"status":"ok","summary":"looked up account + order history, tenant-scoped"}},{"schema_version":"0.1","record_id":"eecb90c5-4acc-479f-b8c4-a8358ea009b7","session_id":"demo-acme-corp","ts":"2026-10-01T00:38:10+00:00","agent":{"id":"globex-agent","name":"Globex Support Agent","version":"2.4.1","model":"claude-opus-4-8"},"action":{"type":"read","category":"privacy","tool":"mcp__zendesk__get_ticket","authorization":{"decision":"allowed","scope":"mcp:zendesk"},"input":{"hash":"sha256:c4c8e6f6a33435a47345dbbc9df63be3d08e70660eadea20e0e4636953db6432","summary":"{'tenant': 'acme-corp', 'ticket': 'ZD-30412'}"}},"severity":"INFO","findings":[],"integrity":{"alg":"sha-256","canon":"rfc8785","prev_hash":"7ed3143ef45f37b5bffe9b2098750efd8661ef3d6d764a2384598eb3f9b10781","hash":"869fd6f27f9ea73d16b5da9292f2735d4573f7cdba501e4164225dea9f40a242"},"subject":{"id":"acme-corp","name":"Acme Corp"},"source":{"adapter":"recorder","via":"Halo recorder (native)","capture":"captured"},"outcome":{"status":"ok","summary":"read ticket thread (4 messages)"}},{"schema_version":"0.1","record_id":"972acb1a-6733-4850-a54a-cce4d238989a","session_id":"demo-acme-corp","ts":"2026-10-01T22:14:10+00:00","agent":{"id":"globex-agent","name":"Globex Support Agent","version":"2.4.1","model":"claude-opus-4-8"},"action":{"type":"tool_call","category":"privacy","tool":"model.generate","authorization":{"decision":"allowed","scope":"model:anthropic"},"input":{"hash":"sha256:1a99bd61816e0f8db733ac54158dc5a01eaa6c502cc6a99ea3c97e24849baf0f","summary":"{'provider': 'anthropic', 'model': 'claude-opus-4-8', 'zdr': True, 'purpose': 'draft reply to ticket ZD-30412', 'messages': 6}"}},"severity":"INFO","findings":[],"integrity":{"alg":"sha-256","canon":"rfc8785","prev_hash":"869fd6f27f9ea73d16b5da9292f2735d4573f7cdba501e4164225dea9f40a242","hash":"00e5a1d93c53d3125a4ede065d725c2bfcc85d5035b16d43258ecf35bd2c4ee5"},"subject":{"id":"acme-corp","name":"Acme Corp"},"source":{"adapter":"litellm","via":"LiteLLM gateway","capture":"ingested"},"data":{"purpose":"draft reply to ticket ZD-30412"},"outcome":{"status":"ok","summary":"reply drafted (zero-data-retention)"}},{"schema_version":"0.1","record_id":"9e39d035-1b91-4c70-b444-0cfb8bb68161","session_id":"demo-acme-corp","ts":"2026-10-02T04:02:10+00:00","agent":{"id":"globex-agent","name":"Globex Support Agent","version":"2.4.1","model":"claude-opus-4-8"},"action":{"type":"write","category":"safety","tool":"refund.issue","authorization":{"decision":"human_approved","scope":"billing.write","approver":"casey.lead@support.example"},"input":{"hash":"sha256:ccc488ec5fd0159f9a79c8dee3a99b62f10b3985e3c820b7fa9c9361598b2cd0","summary":"{'tenant': 'acme-corp', 'order': 'ord_2291', 'amount_usd': 48}"}},"severity":"INFO","findings":[],"integrity":{"alg":"sha-256","canon":"rfc8785","prev_hash":"00e5a1d93c53d3125a4ede065d725c2bfcc85d5035b16d43258ecf35bd2c4ee5","hash":"05c040406079fd29f5bc34d76b02a6e4045fe5f1c554a26d35934769c8398de5"},"subject":{"id":"acme-corp","name":"Acme Corp"},"source":{"adapter":"recorder","via":"Halo recorder (native)","capture":"captured"},"outcome":{"status":"ok","summary":"$48 refund issued after human approval"}},{"schema_version":"0.1","record_id":"0a98d55f-9929-4259-b34b-7dc97b79084a","session_id":"demo-acme-corp","ts":"2026-10-02T22:44:10+00:00","agent":{"id":"globex-agent","name":"Globex Support Agent","version":"2.4.1","model":"claude-opus-4-8"},"action":{"type":"network","category":"security","tool":"email.send","authorization":{"decision":"allowed","scope":"network"},"input":{"hash":"sha256:b4a4eee4fa43f06f2d13d02fd9c973ddb7dc657f4b34b9b1055759d7357a73e0","summary":"{'tenant': 'acme-corp', 'to_domain': 'acme-corp.com', 'ticket': 'ZD-30412'}"}},"severity":"INFO","findings":[],"integrity":{"alg":"sha-256","canon":"rfc8785","prev_hash":"05c040406079fd29f5bc34d76b02a6e4045fe5f1c554a26d35934769c8398de5","hash":"6c53f772e60a44155978e01b8d51ac6bd4f9b0a1b2cb21fa57e16da03f2ed4fe"},"subject":{"id":"acme-corp","name":"Acme Corp"},"source":{"adapter":"otel","via":"OpenTelemetry GenAI spans","capture":"ingested"},"outcome":{"status":"ok","summary":"reply sent to customer"}},{"schema_version":"0.1","record_id":"ecb21103-b1de-4293-bafd-dd231f7bcdc5","session_id":"demo-acme-corp","ts":"2026-10-03T01:20:10+00:00","agent":{"id":"globex-agent","name":"Globex Support Agent","version":"2.4.1","model":"claude-opus-4-8"},"action":{"type":"tool_call","category":"reliability","tool":"mcp__jira__create_ticket","authorization":{"decision":"allowed","scope":"mcp:jira"},"input":{"hash":"sha256:13daee84ed723a1eb6e74c616b0cf4a982404a516ebd694bda89e1ea48b87ebd","summary":"{'tenant': 'acme-corp', 'issue': 'recurring billing bug behind ZD-30412'}"}},"severity":"INFO","findings":[],"integrity":{"alg":"sha-256","canon":"rfc8785","prev_hash":"6c53f772e60a44155978e01b8d51ac6bd4f9b0a1b2cb21fa57e16da03f2ed4fe","hash":"3b0ba05f288c1fb4fafe10178872b07e06c64f4fce2257e82e8dff50a7a01969"},"subject":{"id":"acme-corp","name":"Acme Corp"},"source":{"adapter":"langfuse","via":"Langfuse traces","capture":"ingested"},"outcome":{"status":"ok","summary":"escalation GLX-218 created"}}]</script>
-<script id="checkpoints" type="application/json">[{"chain_root":"7ed3143ef45f37b5bffe9b2098750efd8661ef3d6d764a2384598eb3f9b10781","subject":"acme-corp","count":6,"head":"3b0ba05f288c1fb4fafe10178872b07e06c64f4fce2257e82e8dff50a7a01969","ts":"2026-10-03T02:56:10.772768Z"}]</script>
+<script id="records" type="application/json">[{"schema_version":"0.1","record_id":"f3fe6735-a7cd-46c1-90d1-78a79dbda3da","session_id":"demo-acme-corp","ts":"2026-10-01T02:26:26+00:00","agent":{"id":"globex-agent","name":"Globex Support Agent","version":"2.4.1","model":"claude-opus-4-8"},"action":{"type":"read","category":"privacy","tool":"mcp__crm__get_customer","authorization":{"decision":"allowed","scope":"mcp:crm"},"input":{"hash":"sha256:9fa798f0ebf933885b5ff5d95e9a3974dcbb30e60003ebeb003e4bb527d2b5c9","summary":"{'tenant': 'acme-corp', 'customer': 'cust_8841', 'region': 'us-east-1'}"}},"severity":"INFO","findings":[],"integrity":{"alg":"sha-256","canon":"rfc8785","prev_hash":"0000000000000000000000000000000000000000000000000000000000000000","hash":"7d0ab9c5dc0c86d6d64ef774a0ac6054d6964d00edf2e68f92432a0beceec74c"},"subject":{"id":"acme-corp","name":"Acme Corp"},"source":{"adapter":"mcp","via":"MCP interceptor","capture":"captured"},"data":{"region":"us-east-1"},"outcome":{"status":"ok","summary":"looked up account + order history, tenant-scoped"}},{"schema_version":"0.1","record_id":"c62f1307-0b8b-429f-be42-6f49b2545fd2","session_id":"demo-acme-corp","ts":"2026-10-01T02:32:26+00:00","agent":{"id":"globex-agent","name":"Globex Support Agent","version":"2.4.1","model":"claude-opus-4-8"},"action":{"type":"read","category":"privacy","tool":"mcp__zendesk__get_ticket","authorization":{"decision":"allowed","scope":"mcp:zendesk"},"input":{"hash":"sha256:c4c8e6f6a33435a47345dbbc9df63be3d08e70660eadea20e0e4636953db6432","summary":"{'tenant': 'acme-corp', 'ticket': 'ZD-30412'}"}},"severity":"INFO","findings":[],"integrity":{"alg":"sha-256","canon":"rfc8785","prev_hash":"7d0ab9c5dc0c86d6d64ef774a0ac6054d6964d00edf2e68f92432a0beceec74c","hash":"c1de835c1199c520854aafcbdf2f0da9f5845049398e3da9b6facdf6276b9a45"},"subject":{"id":"acme-corp","name":"Acme Corp"},"source":{"adapter":"recorder","via":"Halo recorder (native)","capture":"captured"},"outcome":{"status":"ok","summary":"read ticket thread (4 messages)"}},{"schema_version":"0.1","record_id":"9c75092a-89aa-4c40-8684-49111739372b","session_id":"demo-acme-corp","ts":"2026-10-02T00:08:26+00:00","agent":{"id":"globex-agent","name":"Globex Support Agent","version":"2.4.1","model":"claude-opus-4-8"},"action":{"type":"tool_call","category":"privacy","tool":"model.generate","authorization":{"decision":"allowed","scope":"model:anthropic"},"input":{"hash":"sha256:1a99bd61816e0f8db733ac54158dc5a01eaa6c502cc6a99ea3c97e24849baf0f","summary":"{'provider': 'anthropic', 'model': 'claude-opus-4-8', 'zdr': True, 'purpose': 'draft reply to ticket ZD-30412', 'messages': 6}"}},"severity":"INFO","findings":[],"integrity":{"alg":"sha-256","canon":"rfc8785","prev_hash":"c1de835c1199c520854aafcbdf2f0da9f5845049398e3da9b6facdf6276b9a45","hash":"eab913906c124be1887932199cdff9f210e97b3003c972f4c1613721b063c94d"},"subject":{"id":"acme-corp","name":"Acme Corp"},"source":{"adapter":"litellm","via":"LiteLLM gateway","capture":"ingested"},"data":{"purpose":"draft reply to ticket ZD-30412"},"outcome":{"status":"ok","summary":"reply drafted (zero-data-retention)"}},{"schema_version":"0.1","record_id":"73509b98-a233-4b4e-8b07-c3040de891d6","session_id":"demo-acme-corp","ts":"2026-10-02T05:56:26+00:00","agent":{"id":"globex-agent","name":"Globex Support Agent","version":"2.4.1","model":"claude-opus-4-8"},"action":{"type":"write","category":"safety","tool":"refund.issue","authorization":{"decision":"human_approved","scope":"billing.write","approver":"casey.lead@support.example"},"input":{"hash":"sha256:ccc488ec5fd0159f9a79c8dee3a99b62f10b3985e3c820b7fa9c9361598b2cd0","summary":"{'tenant': 'acme-corp', 'order': 'ord_2291', 'amount_usd': 48}"}},"severity":"INFO","findings":[],"integrity":{"alg":"sha-256","canon":"rfc8785","prev_hash":"eab913906c124be1887932199cdff9f210e97b3003c972f4c1613721b063c94d","hash":"1697ea991ee7b1672fc6ec7773be66cea6639919ef9c9791eb60fd7c7d35cb33"},"subject":{"id":"acme-corp","name":"Acme Corp"},"source":{"adapter":"recorder","via":"Halo recorder (native)","capture":"captured"},"outcome":{"status":"ok","summary":"$48 refund issued after human approval"}},{"schema_version":"0.1","record_id":"8f172d1c-0387-4295-ad81-36d66f661ee7","session_id":"demo-acme-corp","ts":"2026-10-03T00:38:26+00:00","agent":{"id":"globex-agent","name":"Globex Support Agent","version":"2.4.1","model":"claude-opus-4-8"},"action":{"type":"network","category":"security","tool":"email.send","authorization":{"decision":"allowed","scope":"network"},"input":{"hash":"sha256:b4a4eee4fa43f06f2d13d02fd9c973ddb7dc657f4b34b9b1055759d7357a73e0","summary":"{'tenant': 'acme-corp', 'to_domain': 'acme-corp.com', 'ticket': 'ZD-30412'}"}},"severity":"INFO","findings":[],"integrity":{"alg":"sha-256","canon":"rfc8785","prev_hash":"1697ea991ee7b1672fc6ec7773be66cea6639919ef9c9791eb60fd7c7d35cb33","hash":"6a7451f2086f5acb193467dc497fedf1d532adfee6fd1929bc1487a7ff459492"},"subject":{"id":"acme-corp","name":"Acme Corp"},"source":{"adapter":"otel","via":"OpenTelemetry GenAI spans","capture":"ingested"},"outcome":{"status":"ok","summary":"reply sent to customer"}},{"schema_version":"0.1","record_id":"595967ee-4dbe-4842-93a6-b0de8b70102d","session_id":"demo-acme-corp","ts":"2026-10-03T03:14:26+00:00","agent":{"id":"globex-agent","name":"Globex Support Agent","version":"2.4.1","model":"claude-opus-4-8"},"action":{"type":"tool_call","category":"reliability","tool":"mcp__jira__create_ticket","authorization":{"decision":"allowed","scope":"mcp:jira"},"input":{"hash":"sha256:13daee84ed723a1eb6e74c616b0cf4a982404a516ebd694bda89e1ea48b87ebd","summary":"{'tenant': 'acme-corp', 'issue': 'recurring billing bug behind ZD-30412'}"}},"severity":"INFO","findings":[],"integrity":{"alg":"sha-256","canon":"rfc8785","prev_hash":"6a7451f2086f5acb193467dc497fedf1d532adfee6fd1929bc1487a7ff459492","hash":"1de93b3dee08d1a7df43f15387cde955325fefd66840430254f34477cf2590fd"},"subject":{"id":"acme-corp","name":"Acme Corp"},"source":{"adapter":"langfuse","via":"Langfuse traces","capture":"ingested"},"outcome":{"status":"ok","summary":"escalation GLX-218 created"}}]</script>
+<script id="checkpoints" type="application/json">[{"chain_root":"7d0ab9c5dc0c86d6d64ef774a0ac6054d6964d00edf2e68f92432a0beceec74c","subject":"acme-corp","count":6,"head":"1de93b3dee08d1a7df43f15387cde955325fefd66840430254f34477cf2590fd","ts":"2026-10-03T04:50:26.089553Z"}]</script>
 <script id="halo-config" type="application/json">{"witnessUrl":null,"subject":"acme-corp","chainRoot":null,"expectedSubject":"acme-corp","chainVerified":true}</script>
 <script id="halo-policy" type="application/json">null</script>
 <script>
@@ -582,7 +582,7 @@ var HaloView = (function(){
         '"><span class="pill ' + tier + '">' + label + '</span><span class="prov-via">' + esc(b.via) +
         '</span><span class="prov-n">' + b.n + " action" + (b.n === 1 ? "" : "s") + "</span></div>";
     }).join("");
-    var note = (nIng && nCap) ? "Each action is tagged with how it was observed. <b>Captured</b> means the record's source tag declares the integration observed the call at the boundary as it happened \u2014 the tag comes from the integration that wrote the record. <b>Ingested</b> means the record was built from telemetry the vendor already emits (a gateway, tracing store, or OTel span) \u2014 real and anchorable, but the witness attests \u201cthis is the stream you sent me,\u201d not \u201cI watched it happen.\u201d The tier is disclosed, never flattened." : (nIng ? "These records were <b>ingested</b> from telemetry the vendor already emits \u2014 real and anchorable, but the witness attests \u201cthis is the stream you sent me,\u201d not \u201cI watched it happen.\u201d Source-capture would strengthen them to the <b>captured</b> tier." : "Every action is <b>declared captured</b> at the boundary: each record's own source tag says the integration recorded the call as it ran, rather than rebuilding it later from other telemetry. That is what the tag asserts; it is set by the integration and not independently verified.");
+    var note = (nIng && nCap) ? "Each action is tagged with how it was observed. <b>Captured</b> means the record's source tag declares the integration observed the call at the boundary as it happened \u2014 the tag comes from the integration that wrote the record. <b>Ingested</b> means the record was built from telemetry the vendor already emits (a gateway, tracing store, or OTel span) \u2014 real and anchorable, but the witness attests \u201cthis is the stream you sent me,\u201d not \u201cI watched it happen.\u201d The tier is disclosed, never flattened." : (nIng ? "These records were <b>ingested</b> from telemetry the vendor already emits \u2014 real and anchorable, but the witness attests \u201cthis is the stream you sent me,\u201d not \u201cI watched it happen.\u201d Source-capture would strengthen them to the <b>captured</b> tier." : "Every recorded action is <b>declared captured</b> at the boundary: each record's own source tag says the integration recorded the call as it ran, rather than rebuilding it later from other telemetry. That is what the tag asserts; it is set by the integration and not independently verified.");
     return '<h2>Captured via</h2>\n<div class="provgrid">' + cells + '</div>\n<div class="note prov-note">' + note + "</div>";
   }
   function row(r, showAgent){
@@ -623,7 +623,7 @@ var HaloView = (function(){
       '" tabindex="0" class="rowclick" title="Click for the full record">' +
       '<td class="mono dim ts-cell">' + esc(fmtTs(r.ts)) + "</td>" + agentCell +
       '<td class="mono">' + esc(showId(str(or(action.tool, "\u2014")))) + "</td><td>" + esc(str(or(action.type, "\u2014"))) +
-      "</td><td>" + sourceCell + '</td><td class="mono">' + esc(str(or(auth.scope, "\u2014"))) +
+      "</td><td>" + sourceCell + '</td><td class="mono">' + esc(showId(str(or(auth.scope, "\u2014")))) +
       '</td><td><span class="pill ' + (!truthy(decision) ? "neutral" : (decision === "allowed" || decision === "human_approved") ? "ok" : "warn") +
       '">' + esc(str(or(decision, "\u2014"))) + '</span></td><td><span class="pill ' +
       (status === "ok" ? "ok" : (status === "error" || status === "denied") ? "warn" : "neutral") + '">' + esc(status) +
@@ -664,7 +664,7 @@ var HaloView = (function(){
       period: '<span class="period-l">Records span</span> <b>' + esc(st.start) + "</b> &ndash; <b>" + esc(st.end) +
               '</b> <span class="period-tz">UTC</span>',
       cards: cards(records, res),
-      scopes: st.scopes.map(function(s){ return '<span class="pill">' + esc(s) + "</span>"; }).join("") ||
+      scopes: st.scopes.map(function(s){ return '<span class="pill">' + esc(showId(s)) + "</span>"; }).join("") ||
               '<span class="dim">none</span>',
       provenance: provenance(records),
       rows: rows,
@@ -674,7 +674,7 @@ var HaloView = (function(){
                       : res ? panelCard(res, label) : ""
     };
   }
-  return {regions: regions, tsUtc: tsUtc, fmtTs: fmtTs, plain: plain, esc: esc, subjectId: subjectId,
+  return {regions: regions, tsUtc: tsUtc, cmpTs: cmpTs, fmtTs: fmtTs, plain: plain, esc: esc, subjectId: subjectId,
           showId: showId, evaluate: typeof evaluate === "function" ? evaluate : null,
           validatePolicy: typeof validatePolicy === "function" ? validatePolicy : null,
           parsePolicyText: typeof parsePolicyText === "function" ? function(text){
@@ -725,6 +725,48 @@ async function verify(records){
     prev = integ.hash;
   }
   return {ok:true, head:prev};
+}
+function repeatedKey(text){
+  // The first key repeated in one object of the records JSON (at any depth),
+  // and the record (1-based) that holds it; null if none. halo verify refuses
+  // such a line: parsers disagree on which value wins, so it can carry text
+  // the hash never covered. Assumes text is JSON that JSON.parse accepted.
+  const stack = [];
+  let i = 0, item = 1;
+  const n = text.length;
+  while (i < n){
+    const c = text[i];
+    if (c === '"'){
+      let j = i + 1;
+      while (text[j] !== '"'){ if (text[j] === "\\") j++; j++; }
+      const top = stack.length ? stack[stack.length - 1] : null;
+      if (top && top.obj && top.expectKey){
+        const key = JSON.parse(text.slice(i, j + 1));
+        if (top.keys.has(key)) return {at: item, key: key};
+        top.keys.add(key);
+        top.expectKey = false;
+      }
+      i = j + 1;
+      continue;
+    }
+    if (c === "{") stack.push({obj: true, keys: new Set(), expectKey: true});
+    else if (c === "[") stack.push({obj: false});
+    else if (c === "}" || c === "]") stack.pop();
+    else if (c === ","){
+      const top = stack.length ? stack[stack.length - 1] : null;
+      if (top && top.obj) top.expectKey = true;
+      else if (stack.length === 1) item++;
+    }
+    i++;
+  }
+  return null;
+}
+async function verifyText(text){
+  // Verify the records as embedded: a repeated key fails before any hashing.
+  const records = JSON.parse(text);
+  const dup = repeatedKey(text);
+  if (dup) return {ok:false, at:dup.at, why:"duplicate key " + JSON.stringify(dup.key) + " in one object"};
+  return verify(records);
 }
 function cleanCheckpoints(list){
   // Checkpoints arrive from the page or from a witness URL the report names, so
@@ -863,6 +905,7 @@ function haloWithhold(why){
   // Nothing derived from unverified records is presented as if it verified.
   const msg = "<div class='verdict fail'>Withheld &mdash; " + why + " The table below is the page's " +
               "unverified static text.</div>";
+  window.__haloWithheld = msg;  // the table's row counter keeps showing this
   haloSet("r-policy", document.getElementById("halo-policy") &&
           document.getElementById("halo-policy").textContent.trim() !== "null"
           ? "<div class='verdict fail'>Policy verdict withheld &mdash; " + why + "</div>" : "");
@@ -954,7 +997,8 @@ async function haloCompleteness(records, embedded, cfg, pinned){
 }
 (async function(){
   const el = document.getElementById("verdict");
-  const records = JSON.parse(document.getElementById("records").textContent);
+  const recordsText = document.getElementById("records").textContent;
+  const records = JSON.parse(recordsText);
   const embedded = JSON.parse(document.getElementById("checkpoints").textContent);
   const cfg = JSON.parse(document.getElementById("halo-config").textContent);
   const cel = document.getElementById("completeness");
@@ -973,11 +1017,11 @@ async function haloCompleteness(records, embedded, cfg, pinned){
       if (cel){ cel.className = "verdict neutral"; cel.innerHTML = "No records to check for completeness."; }
       return;
     }
-    const res = await verify(records);
+    const res = await verifyText(recordsText);
     window.__haloVerify = res;  // the drawer's chain-position note reads this
     if (!res.ok){
       el.className = "verdict fail";
-      el.innerHTML = "&#10007; Verification FAILED at record " + res.at + " (" + res.why + ").";
+      el.innerHTML = "&#10007; Verification FAILED at record " + res.at + " (" + haloEsc(res.why) + ").";
       haloWithhold("the records embedded in this page failed verification.");
       if (cel){ cel.className = "verdict fail"; cel.innerHTML = "Completeness not checked: the records failed verification."; }
       return;
@@ -1113,7 +1157,9 @@ async function haloCompleteness(records, embedded, cfg, pinned){
     vals.sort();
     for (var j = 0; j < vals.length; j++){
       var o = document.createElement("option");
-      o.value = vals[j]; o.textContent = vals[j];
+      // The value stays as recorded (rows are matched on it); the label
+      // marks an invisible character, as the row cells do.
+      o.value = vals[j]; o.textContent = shownId(vals[j]);
       sel.appendChild(o);
     }
   }
@@ -1155,10 +1201,16 @@ async function haloCompleteness(records, embedded, cfg, pinned){
     if (sortKey === "data-flags"){ av = +av; bv = +bv; }
     if (sortKey === "data-ts"){
       // Sort by instant, not by text: offsets and precision vary across records.
+      // Seconds and their microseconds are compared exactly (HaloView.cmpTs);
+      // a timestamp that does not parse sorts as the oldest.
       var ta = (typeof HaloView !== "undefined") ? HaloView.tsUtc(av) : null,
           tb = (typeof HaloView !== "undefined") ? HaloView.tsUtc(bv) : null;
-      av = ta ? ta.ms * 1000 + ta.us % 1000 / 1000 : -Infinity;
-      bv = tb ? tb.ms * 1000 + tb.us % 1000 / 1000 : -Infinity;
+      if (ta && tb){
+        var c = HaloView.cmpTs(ta, tb);
+        return c < 0 ? -sortDir : (c > 0 ? sortDir : 0);
+      }
+      av = ta ? 1 : 0;
+      bv = tb ? 1 : 0;
     }
     if (sortKey === "data-sev"){
       var rank = {INFO:0, LOW:1, MEDIUM:2, HIGH:3, CRITICAL:4};
@@ -1186,6 +1238,9 @@ async function haloCompleteness(records, embedded, cfg, pinned){
   }
   function update(){
     if (!counter) return;
+    // Once the page has withheld its verdict, the notice that the table is
+    // unverified static text stays, whatever the table does next.
+    if (window.__haloWithheld){ counter.innerHTML = window.__haloWithheld; return; }
     var filtered = view.length !== ALL.length;
     counter.textContent = "Showing " + drawn + " of " + view.length + " actions" +
       (filtered ? " (filtered from " + ALL.length + ")" : "") +
@@ -1315,18 +1370,18 @@ async function haloCompleteness(records, embedded, cfg, pinned){
     h += field("Parent action", r.parent_id, true);
     var pr = r.principal || {};
     if (pr && typeof pr === "object"){
-      h += field("On behalf of (human)", pr.human_id);
-      h += field("Creator", pr.creator_id);
-      h += field("Service account", pr.service_account);
-      h += field("Role scope", pr.role_scope);
+      h += field("On behalf of (human)", shownId(pr.human_id));
+      h += field("Creator", shownId(pr.creator_id));
+      h += field("Service account", shownId(pr.service_account));
+      h += field("Role scope", shownId(pr.role_scope));
     }
     h += '<div class="d-sec">Arguments (as recorded)</div>';
     h += '<pre class="d-pre">' + esc(inp.summary || "(none recorded)") + "</pre>";
     h += field("Argument hash", inp.hash, true);
     h += '<div class="d-sec">Permission</div>';
-    h += field("Scope", auth.scope);
+    h += field("Scope", shownId(auth.scope));
     h += field("Decision", auth.decision);
-    h += field("Approver", auth.approver);
+    h += field("Approver", shownId(auth.approver));
     var ver = (r.verification && typeof r.verification === "object") ? r.verification : null;
     h += '<div class="d-sec">Verification gate</div>';
     if (ver){
