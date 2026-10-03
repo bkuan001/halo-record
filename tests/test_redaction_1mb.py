@@ -16,7 +16,14 @@ from halo_record import redact
 from halo_record.record import build
 
 N = 1 << 20
-LIMIT = 0.5
+
+# Growth, not wall-clock time: each check times the same work at half size and
+# at full size. Linear work about doubles; a pattern that backtracks on hostile
+# text grows four-fold or worse. Runs too fast to time reliably pass on the
+# ceiling alone, and the ceiling still catches a stall on any machine.
+RATIO = 3.0
+FLOOR = 0.2
+CEILING = 5.0
 
 # One or more hostile shapes per pattern, each repeated to 1 MB.
 HOSTILE = {
@@ -45,50 +52,62 @@ HOSTILE = {
 }
 
 
-def _mb(unit):
-    return (unit * (N // len(unit) + 1))[:N]
+def _mb(unit, n=N):
+    return (unit * (n // len(unit) + 1))[:n]
 
 
-def _took(fn):
-    """Seconds ``fn`` takes; a slow first run is retried (best of three) so a
-    busy machine does not read as a regression."""
-    best = None
-    for _ in range(3):
+def _best(fn, runs=5):
+    """Fastest of ``runs`` timings of ``fn``, in seconds."""
+    out = None
+    for _ in range(runs):
         t = time.perf_counter()
         fn()
         took = time.perf_counter() - t
-        best = took if best is None else min(best, took)
-        if best < LIMIT:
-            break
-    return best
+        out = took if out is None else min(out, took)
+    return out
 
 
-class EveryPatternIsFastAt1MBTest(unittest.TestCase):
+def _growth(run, make):
+    """Seconds at full size, and how many times longer than at half size."""
+    small = _best(lambda: run(make(N // 2)))
+    big = _best(lambda: run(make(N)))
+    return big, big / max(small, FLOOR / 2)
+
+
+class _LinearMixin:
+    def assertLinear(self, run, make):
+        big, ratio = _growth(run, make)
+        self.assertLess(big, CEILING)
+        if big >= FLOOR:
+            self.assertLess(ratio, RATIO, "%.3fs at full size" % big)
+
+
+class EveryPatternIsFastAt1MBTest(_LinearMixin, unittest.TestCase):
     def test_scan_and_redact(self):
         self.assertEqual(set(HOSTILE) - {"invisible"}, set(redact.FINDING_TYPES) - {
             "credential_field", "high_entropy_path_value"})
         for name, units in HOSTILE.items():
             for unit in units:
-                text = _mb(unit)
+                make = lambda n, u=unit: _mb(u, n)
                 with self.subTest(pattern=name, unit=unit):
-                    self.assertLess(_took(lambda: redact.scan(text)), LIMIT)
-                    self.assertLess(_took(lambda: redact.redact_text(text)), LIMIT)
+                    self.assertLinear(redact.scan, make)
+                    self.assertLinear(redact.redact_text, make)
 
     def test_build_with_1mb_input_and_outcome(self):
         for name, units in HOSTILE.items():
             for unit in units:
-                text = _mb(unit)
+                make = lambda n, u=unit: _mb(u, n)
                 with self.subTest(pattern=name, unit=unit):
-                    self.assertLess(_took(lambda: build(
-                        "tool_call", "security", tool="t", tool_input={"q": text})), LIMIT)
-                    self.assertLess(_took(lambda: build(
+                    self.assertLinear(lambda text: build(
+                        "tool_call", "security", tool="t", tool_input={"q": text}), make)
+                    self.assertLinear(lambda text: build(
                         "tool_call", "security", tool="t",
-                        outcome={"status": "error", "summary": text})), LIMIT)
+                        outcome={"status": "error", "summary": text}), make)
 
     def test_path_values_are_bounded(self):
-        text = "/" + _mb("aB3dE5fG7hJ9kL1mN3pQ5rS7tU9/")
-        self.assertLess(_took(lambda: redact.scan_fields({"path": text})), LIMIT)
-        self.assertLess(_took(lambda: redact.redact_fields({"path": text})), LIMIT)
+        make = lambda n: {"path": "/" + _mb("aB3dE5fG7hJ9kL1mN3pQ5rS7tU9/", n)}
+        self.assertLinear(redact.scan_fields, make)
+        self.assertLinear(redact.redact_fields, make)
 
 
 KEY = "sk_live_" + "a1B2c3D4e5F6g7H8i9J0"
@@ -190,7 +209,7 @@ def _old_canon_string(s):
     return "".join(out)
 
 
-class CanonStringTest(unittest.TestCase):
+class CanonStringTest(_LinearMixin, unittest.TestCase):
     def test_same_bytes_as_escaping_each_character(self):
         from halo_record.canon import _canon_string
         rnd = random.Random(3)
@@ -202,39 +221,30 @@ class CanonStringTest(unittest.TestCase):
 
     def test_hashing_1mb_is_fast(self):
         from halo_record.canon import input_hash
-        text = _mb('a"\\\n\x01')
-        self.assertLess(_took(lambda: input_hash({"q": text})), LIMIT)
+        self.assertLinear(lambda text: input_hash({"q": text}),
+                          lambda n: _mb('a"\\\n\x01', n))
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
-def _best(fn, runs=3):
-    """Fastest of ``runs`` timings of ``fn``, in seconds."""
-    out = None
-    for _ in range(runs):
-        t = time.perf_counter()
-        fn()
-        took = time.perf_counter() - t
-        out = took if out is None else min(out, took)
-    return out
-
-
-class AdjacentShortMatchesAtTheCapTest(unittest.TestCase):
+class AdjacentShortMatchesAtTheCapTest(_LinearMixin, unittest.TestCase):
     """Short matches packed edge to edge past the cap (no whitespace) keep the
     cut search linear: each long field costs about as much as scanning it."""
 
     def test_redact_text_of_adjacent_short_matches_is_fast(self):
         for unit in ("%@b.cd", "a.b@c.de", "(415).555.0132"):
-            text = unit * (1_020_000 // len(unit))
             with self.subTest(unit=unit):
-                self.assertLess(_best(lambda: redact.redact_text(text)), 0.1)
+                self.assertLinear(redact.redact_text,
+                                  lambda n, u=unit: u * (n // len(u)))
 
     def test_build_with_many_long_fields_is_fast(self):
-        field = ("%@b.cd" * 12000)[:70000]
-        outcome = {"status": "ok", "summary": "s"}
-        for i in range(20):
-            outcome["f%d" % i] = field
-        took = _best(lambda: build("tool_call", "security", tool="t", outcome=outcome))
-        self.assertLess(took, 1.5)
+        def make(n):
+            field = ("%@b.cd" * (n // 6 + 1))[:n // 15]
+            outcome = {"status": "ok", "summary": "s"}
+            for i in range(20):
+                outcome["f%d" % i] = field
+            return outcome
+        self.assertLinear(lambda outcome: build("tool_call", "security", tool="t",
+                                                outcome=outcome), make)
+
+
+if __name__ == "__main__":
+    unittest.main()
