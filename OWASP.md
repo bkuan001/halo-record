@@ -29,7 +29,7 @@ The rules above ship as [`examples/policies/owasp-starter.json`](examples/polici
 
 ## Boundaries
 
-- **Tamper-*evident*, not immutable.** Records can be edited; the edit is *detectable* against the hash chain, not *prevented*. The claim is "modification, reordering, or deletion before the last record is detectable relative to a verified head; removal from the end is caught against a witness checkpoint," never "cannot be changed."
+- **Tamper-*evident*, not immutable.** Records can be edited; the edit is *detectable* against the hash chain, not *prevented*. The claim is "modification, reordering, or deletion is detectable relative to a head you already hold (a witness checkpoint); file-alone verification catches edits that were not re-sealed, except removal from the end," never "cannot be changed."
 - **A record documents what was recorded under the declared capture surface, not what a control prevented.** The two ❌ categories (ASI08, ASI09) are systemic-runtime and human/organizational risks a record policy cannot assert — the record still supplies the forensic trace for post-hoc reconstruction, it just yields no deterministic pass/fail verdict.
 - **Integrity is not completeness.** A record the operator holds proves nothing was *edited* relative to a verified head, never that nothing was *omitted*. Completeness against removal comes from an independent witness holding periodic checkpoints of the chain (the subject id, a record count, the head and the chain root) — see [Integrity vs. completeness](README.md#integrity-vs-completeness-read-this-part). This is the layer that makes the evidence trustworthy to a party outside the operator.
 
