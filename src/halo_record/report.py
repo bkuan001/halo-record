@@ -268,7 +268,13 @@ async function liveCheckpoints(cfg, embedded){
     const u = base + "/v1/checkpoints?" + q;
     const resp = await fetch(u, {mode: "cors"});
     if (!resp.ok) throw new Error("HTTP " + resp.status);
-    const data = await resp.json();
+    // Read as halo's own clients read it: a key repeated in one object is
+    // refused, since parsers disagree on which of its values wins.
+    const text = await resp.text();
+    const data = JSON.parse(text);
+    const dup = repeatedKey(text);
+    if (dup) throw new Error("the witness response repeats the key " + JSON.stringify(dup.key) +
+                             " (duplicate key in one object)");
     return {cps: cleanCheckpoints(data.checkpoints), live: true, error: null};
   } catch (e){
     return {cps: cleanCheckpoints(embedded), live: false, error: e.message};

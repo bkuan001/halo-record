@@ -150,6 +150,48 @@ class RemoteWitnessResponseTest(unittest.TestCase):
             httpd.server_close()
 
 
+@unittest.skipUnless(NODE, "node not installed")
+class PageWitnessFetchRefusesRepeatedKeysTest(unittest.TestCase):
+    """The report page's live witness lookup reads the response as the Python
+    and TypeScript clients do: a repeated key refuses the response, and the
+    page falls back to its embedded snapshot with the reason shown."""
+
+    def _live(self, body):
+        from halo_record.canon import GENESIS_PREV
+        page = report._VERIFY_JS % {"genesis": json.dumps(GENESIS_PREV), "window_json": "null"}
+        funcs = page[:page.index("function haloSet(")]
+        script = (funcs + "\nglobalThis.fetch = async () => ({ok: true, status: 200, "
+                  "text: async () => %s, json: async () => JSON.parse(%s)});\n"
+                  "const r = await liveCheckpoints({witnessUrl: 'https://witness.example', subject: 'acme'}, []);\n"
+                  "console.log(JSON.stringify(r));\n") % (json.dumps(body), json.dumps(body))
+        js = os.path.join(tempfile.mkdtemp(), "w.mjs")
+        with open(js, "w", encoding="utf-8") as fh:
+            fh.write(script)
+        p = subprocess.run([NODE, js], capture_output=True, text=True, timeout=60)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        return json.loads(p.stdout)
+
+    def test_response_with_a_repeated_key_is_refused(self):
+        body = ('{"checkpoints":[],"checkpoints":[{"subject":"acme","count":1,"head":"%s"}]}'
+                % ("a" * 64))
+        r = self._live(body)
+        self.assertFalse(r["live"])
+        self.assertEqual(r["cps"], [])
+        self.assertIn("duplicate key", r["error"])
+
+    def test_nested_repeated_key_is_refused(self):
+        body = ('{"checkpoints":[{"subject":"acme","count":1,"count":3,"head":"%s"}]}' % ("a" * 64))
+        r = self._live(body)
+        self.assertFalse(r["live"])
+        self.assertIn("duplicate key", r["error"])
+
+    def test_well_formed_response_is_used(self):
+        body = '{"checkpoints":[{"subject":"acme","count":1,"head":"%s"}]}' % ("a" * 64)
+        r = self._live(body)
+        self.assertTrue(r["live"])
+        self.assertEqual(len(r["cps"]), 1)
+
+
 class HostedWitnessRefusesRepeatedKeysTest(unittest.TestCase):
     def test_anchor_body_with_a_repeated_key_gets_400(self):
         import threading
