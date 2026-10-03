@@ -1646,7 +1646,7 @@ var HaloView = (function(){
                       : res ? panelCard(res, label) : ""
     };
   }
-  return {regions: regions, tsUtc: tsUtc, fmtTs: fmtTs, plain: plain, esc: esc, subjectId: subjectId,
+  return {regions: regions, tsUtc: tsUtc, cmpTs: cmpTs, fmtTs: fmtTs, plain: plain, esc: esc, subjectId: subjectId,
           showId: showId, evaluate: typeof evaluate === "function" ? evaluate : null,
           validatePolicy: typeof validatePolicy === "function" ? validatePolicy : null,
           parsePolicyText: typeof parsePolicyText === "function" ? function(text){

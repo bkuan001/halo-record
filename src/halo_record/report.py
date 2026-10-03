@@ -329,6 +329,7 @@ function haloWithhold(why){
   // Nothing derived from unverified records is presented as if it verified.
   const msg = "<div class='verdict fail'>Withheld &mdash; " + why + " The table below is the page's " +
               "unverified static text.</div>";
+  window.__haloWithheld = msg;  // the table's row counter keeps showing this
   haloSet("r-policy", document.getElementById("halo-policy") &&
           document.getElementById("halo-policy").textContent.trim() !== "null"
           ? "<div class='verdict fail'>Policy verdict withheld &mdash; " + why + "</div>" : "");
@@ -630,10 +631,16 @@ _PAGINATE_JS = r"""
     if (sortKey === "data-flags"){ av = +av; bv = +bv; }
     if (sortKey === "data-ts"){
       // Sort by instant, not by text: offsets and precision vary across records.
+      // Seconds and their microseconds are compared exactly (HaloView.cmpTs);
+      // a timestamp that does not parse sorts as the oldest.
       var ta = (typeof HaloView !== "undefined") ? HaloView.tsUtc(av) : null,
           tb = (typeof HaloView !== "undefined") ? HaloView.tsUtc(bv) : null;
-      av = ta ? ta.ms * 1000 + ta.us % 1000 / 1000 : -Infinity;
-      bv = tb ? tb.ms * 1000 + tb.us % 1000 / 1000 : -Infinity;
+      if (ta && tb){
+        var c = HaloView.cmpTs(ta, tb);
+        return c < 0 ? -sortDir : (c > 0 ? sortDir : 0);
+      }
+      av = ta ? 1 : 0;
+      bv = tb ? 1 : 0;
     }
     if (sortKey === "data-sev"){
       var rank = {INFO:0, LOW:1, MEDIUM:2, HIGH:3, CRITICAL:4};
@@ -661,6 +668,9 @@ _PAGINATE_JS = r"""
   }
   function update(){
     if (!counter) return;
+    // Once the page has withheld its verdict, the notice that the table is
+    // unverified static text stays, whatever the table does next.
+    if (window.__haloWithheld){ counter.innerHTML = window.__haloWithheld; return; }
     var filtered = view.length !== ALL.length;
     counter.textContent = "Showing " + drawn + " of " + view.length + " actions" +
       (filtered ? " (filtered from " + ALL.length + ")" : "") +
