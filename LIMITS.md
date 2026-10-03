@@ -239,9 +239,12 @@ whole: undelimited it passes through unmasked, and grouped at most a leading
 
 **Hash-only mode** (`summaries=False`) also covers identifier fields: in
 `session_id`, `parent_id`, `version`, `ref`, `policy_ref`, any `id`, and the
-`agent` and `threats` blocks, each secret-shaped token is replaced by
-`sha256:` plus 16 hex digits of its digest — deterministic, so equal ids still
-group and link — while UUIDs and hex ids are kept as written. `subject.id` is
+`agent` and `threats` blocks, a token in a known secret format is masked as in
+summaries (`ghp_****`, `sk-a****`), and any other secret-shaped token is
+replaced by `sha256:` plus 16 hex digits of its digest — deterministic, so
+equal ids still group and link — while UUIDs and hex ids are kept as written. A
+masked id keeps only a prefix or its last characters, so two secrets of one
+format can mask to the same id. `subject.id` is
 the exception: it is stored as given, because it routes the record to its
 tenant's chain. With summaries on, those identifier fields skip the
 high-entropy catch-all (it would mangle legitimate opaque ids) and get named
@@ -476,14 +479,14 @@ can carry personal data, and only the summaries and caller-defined `outcome` and
 | `threats[].type` / `.ref` | ticket references and notes copied from an upstream detector |
 | `data.*` | any key you add beyond `region` / `purpose` / `cross_region` — scanned and masked like `outcome.*`, with the same gap for names and addresses |
 | `action.input.summary`, `outcome.summary` | redacted best-effort only — and per section 6 a **name or postal address has no reliable pattern, is not detected, and is not masked** |
-| `findings[].type` / `.sample` | masked fragments *when the scanner produced them* — a masked email keeps its full domain and an SSN keeps its last four. Findings you supply yourself are stored exactly as given, unmasked |
+| `findings[].type` / `.sample` | masked fragments *when the scanner produced them* — a masked email keeps its full domain and an SSN keeps its last four. Findings you supply yourself keep only `type`, `severity` and `sample`: the `sample` is masked like a summary, and any other key is dropped |
 
 Note what `summaries=False` does and does not empty: human-readable summaries,
 `findings[].sample` excerpts (from scanner findings and findings you supply
 alike), and custom `outcome` keys are all dropped, but `data.pii_types` (detected
-type names) survives, and the `authority` block and any non-`sample` keys on your
-own findings are stored as given even then (authority gets known secret formats
-masked; see section 6).
+type names) survives, and the `authority` block is stored even then (with known
+secret and personal-data formats masked; see section 6). On findings you supply,
+keys other than `type`, `severity` and `sample` are dropped.
 
 **The stored fingerprint can confirm a guess.** `action.input.hash` is an unsalted
 SHA-256 over the canonical tool arguments. Where those arguments come from a small

@@ -408,9 +408,10 @@ def _as_str(field, value):
 
 
 def _norm_caller_findings(findings):
-    """Caller-supplied findings are sealed as given (LIMITS §13), but never in a
-    shape the verifier rejects or the recorder cannot rank: entries must be
-    mappings with a ``type``; a missing/unknown ``severity`` becomes INFO.
+    """Caller-supplied findings keep ``type``, ``severity`` and ``sample`` only
+    (LIMITS §13), never in a shape the verifier rejects or the recorder cannot
+    rank: entries must be mappings with a ``type``; a missing/unknown
+    ``severity`` becomes INFO.
     A non-list is dropped (returns None so the recorder scans instead)."""
     if not isinstance(findings, list):
         sys.stderr.write(

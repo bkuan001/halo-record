@@ -284,8 +284,9 @@ A hosted, recognized witness is how this project will sustain itself. Early acce
 The chain is append-only: anything sealed into a record stays there, because
 removing it would break verification for everything after it. Tool arguments are
 already handled — stored as a hash plus a redacted summary capped at 200 characters
-(hash-only mode keeps no summary, and replaces secret-shaped tokens in id fields
-with a digest — all but `subject.id`, which routes the record to its tenant's chain).
+(hash-only mode keeps no summary; in id fields it masks a token in a known secret
+format as in summaries and replaces any other secret-shaped token with `sha256:`
+plus 16 hex digits — all but `subject.id`, which routes the record to its tenant's chain).
 
 Note the limit in that sentence: *redacted*, not removed. [LIMITS.md](https://github.com/bkuan001/halo-record/blob/main/LIMITS.md)
 section 6 is explicit that a name or a postal address has no reliable pattern, so
