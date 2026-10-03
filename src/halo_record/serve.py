@@ -182,40 +182,131 @@ def chain_key(directory, name):
     return found[0] if found else name
 
 
+def _file_name_reading(name, keys, files, legacy):
+    """How a grant keyed by ``name`` before 0.2.46 (when the key was a file
+    name) reads now that grants are keyed by subject id. Returns one of:
+
+    ``("same", name)``: ``<name>.jsonl`` holds subject id ``name``, which is
+    served, so both readings name one chain.
+    ``("ambiguous", None)``: ``name`` is a served subject id, but
+    ``<name>.jsonl`` holds a different subject id or no longer exists, so the
+    file-name reading and the subject-id reading name different chains.
+    ``("carry", key)``: ``name`` is not a served subject id, and
+    ``<name>.jsonl`` names the served subject ``key``.
+    ``("orphan", None)``: neither reading names a served chain."""
+    stem_keys = [key for key, stem, _p, _n in files if stem == name]
+    if name in keys:
+        if stem_keys == [name]:
+            return "same", name
+        return "ambiguous", None
+    if name in legacy:
+        return "carry", legacy[name]
+    return "orphan", None
+
+
+def honored_recipients(directory, key):
+    """The recipients ``halo serve`` admits to the chain served under ``key``.
+    A grant issued by subject id (0.2.46 and later) is honored as stored. A
+    grant written before 0.2.46 was keyed by a file name; it is honored only
+    while that file name and the subject id ``key`` name the same chain, so a
+    file-name grant never admits anyone to a different tenant's chain that now
+    has that name as its subject id."""
+    record = _access.load_access(directory).get(key)
+    if not isinstance(record, dict):
+        return []
+    allow = list(record.get("allow") or [])
+    if _access.is_subject_keyed(record) or not allow:
+        return allow
+    served, _withheld, files = _chain_index(directory)
+    keys = {k for k, _p in served}
+    reading, _target = _file_name_reading(key, keys, files, {})
+    return allow if reading == "same" else []
+
+
+def _quarantine_line(directory, name, recipients, served, files):
+    stem_keys = [key for key, stem, _p, _n in files if stem == name]
+    if stem_keys:
+        held_by = "%s.jsonl holds subject id %r" % (name, stem_keys[0])
+    else:
+        held_by = "no file named %s.jsonl remains" % name
+    paths = dict(served)
+    if name in paths:
+        now = "subject id %r is served from %s" % (name, os.path.basename(paths[name]))
+    else:
+        now = "no chain has subject id %r now" % name
+    return ("  quarantined grant %r (recipients: %s): it was keyed by file name before "
+            "0.2.46, and that name now also reads as a subject id of a different chain "
+            "(%s; %s), so it admits no one. If it was for a customer, re-issue it by "
+            "subject id (halo grant %s <subject id> <recipient>) and send the link shown "
+            "in the operator console."
+            % (name, ", ".join(recipients) or "none", held_by, now, directory))
+
+
 def reconcile_grants(directory):
-    """Carry grants keyed by a 0.2.45 file name to the subject id that file is
-    served under, and describe what cannot be carried. Returns the lines to
-    print at ``halo serve`` startup. A grant is carried only when its name is
-    the file name of exactly one served subject and that name matches the
-    subject id; otherwise it is left in place and listed with how to re-issue
-    it. Share links keyed by the same file names keep opening their chain (see
-    ``_Handler._resolve``)."""
-    served, withheld, _files = _chain_index(directory)
+    """Read each grant written before 0.2.46 (keyed by file name, with no
+    ``"by": "subject"`` marker) under 0.2.46's subject-id keying, and return the
+    lines to print at ``halo serve`` startup:
+
+    - both readings name the same chain: the grant is marked as keyed by
+      subject id and keeps working;
+    - the name is a served subject id and its file is a different chain's (or
+      gone): the grant is quarantined, its recipients moved to
+      ``quarantined``, admitting no one, and printed with how to re-issue it;
+    - the name is only a file name, and that file's name matches the subject id
+      it is served under: the grant is carried to that subject id, and the
+      earlier share link still opens it (see ``_Handler._resolve``);
+    - neither: the grant is left in place, admitting no one while no chain has
+      that name, and printed with how to re-issue it.
+
+    ``honored_recipients`` applies the same rule per request, so a grant is
+    never read with the wrong meaning before this has run."""
+    served, withheld, files = _chain_index(directory)
     keys = {k for k, _p in served}
     legacy = _legacy_stems(directory)
     data = _access.load_access(directory)
     lines = []
     changed = False
+    carries = []
     for name in sorted(data):
-        if name in keys:
+        record = data.get(name)
+        if not isinstance(record, dict) or _access.is_subject_keyed(record):
             continue
-        allow = list((data.get(name) or {}).get("allow") or [])
-        target = legacy.get(name)
-        if target is not None:
-            merged = data.setdefault(target, {}).setdefault("allow", [])
-            for entry in allow:
-                if entry not in merged:
-                    merged.append(entry)
-            del data[name]
+        allow = list(record.get("allow") or [])
+        held = list(record.get("quarantined") or [])
+        reading, target = _file_name_reading(name, keys, files, legacy)
+        if held and not allow:
+            lines.append(_quarantine_line(directory, name, held, served, files))
+            continue
+        if reading == "same":
+            record["by"] = _access.BY_SUBJECT
             changed = True
-            lines.append("  carried grant %r (recipients: %s) to subject id %r; its earlier "
-                         "share link (keyed by %s.jsonl) still opens the report."
-                         % (name, ", ".join(allow) or "none", target, name))
+            continue
+        if reading == "ambiguous":
+            record.pop("allow", None)
+            record["quarantined"] = held + [e for e in allow if e not in held]
+            changed = True
+            lines.append(_quarantine_line(directory, name, record["quarantined"],
+                                          served, files))
+            continue
+        if reading == "carry":
+            carries.append((name, target, allow))
             continue
         lines.append("  grant %r (recipients: %s) matches no served chain, so it admits no "
                      "one. If it was for a customer, re-issue it by subject id "
                      "(halo grant %s <subject id> <recipient>) and send the link shown in "
                      "the operator console." % (name, ", ".join(allow) or "none", directory))
+    for name, target, allow in carries:
+        dest = data.setdefault(target, {})
+        dest["by"] = _access.BY_SUBJECT
+        merged = dest.setdefault("allow", [])
+        for entry in allow:
+            if entry not in merged:
+                merged.append(entry)
+        del data[name]
+        changed = True
+        lines.append("  carried grant %r (recipients: %s) to subject id %r; its earlier "
+                     "share link (keyed by %s.jsonl) still opens the report."
+                     % (name, ", ".join(allow) or "none", target, name))
     for key, names in withheld:
         lines.append("  withheld: subject id %r also has records in %s, a file named for "
                      "a different tenant; its link opens nothing until that file is "
@@ -223,6 +314,31 @@ def reconcile_grants(directory):
     if changed:
         _access.save_access(directory, data)
     return lines
+
+
+def _ambiguous_link_keys(directory):
+    """{key: (other subject id, served file)} for each served subject id that is
+    also the file name of a different chain. A 0.2.45 share link for that file
+    is the same token as the subject id's link, so with gating off (where the
+    link is the only check) neither is served by that token."""
+    served, _withheld, files = _chain_index(directory)
+    out = {}
+    for key, path in served:
+        for other, stem, _p, _n in files:
+            if stem == key and other != key:
+                out[key] = (other, os.path.basename(path))
+                break
+    return out
+
+
+def ambiguous_link_lines(directory):
+    """Startup lines for ``halo serve --open``; see ``_ambiguous_link_keys``."""
+    return ["  link withheld: subject id %r (served from %s) is also the file name of "
+            "%s.jsonl, which holds subject id %r, so its link was that file's link "
+            "before 0.2.46. With gating off the link is the only check, so it opens "
+            "nothing; serve with gating on and grant recipients by subject id."
+            % (key, served_from, key, other)
+            for key, (other, served_from) in sorted(_ambiguous_link_keys(directory).items())]
 
 
 def load_secret(directory):
@@ -451,6 +567,8 @@ class _Handler(BaseHTTPRequestHandler):
         served = _served_chains(self.config["dir"])
         for key, path in served:
             if hmac.compare_digest(token_for(self.config["secret"], key), token):
+                if not self.config.get("gated", True) and key in _ambiguous_link_keys(self.config["dir"]):
+                    return None, None
                 return key, path
         # A share link issued by 0.2.45 was keyed by file name; it still opens
         # the chain that file name names.
@@ -495,8 +613,9 @@ class _Handler(BaseHTTPRequestHandler):
         morsel = cookie.get("halo_" + token[:16])
         if not morsel:
             return None
-        return _access.session_email_if_allowed(self.config["dir"], self.config["secret"],
-                                                morsel.value, stem)
+        return _access.session_email_if_allowed(
+            self.config["dir"], self.config["secret"], morsel.value, stem,
+            allow=honored_recipients(self.config["dir"], stem))
 
     def do_GET(self):
         return self._guarded(self._do_get)
@@ -575,7 +694,7 @@ class _Handler(BaseHTTPRequestHandler):
 
         # Recipient check first — same for both gate stages. The email is
         # attacker-controlled (hidden field on the code form), so re-check it.
-        if not _access.is_allowed(email, _access.allowed_for(cfg["dir"], stem)):
+        if not _access.is_allowed(email, honored_recipients(cfg["dir"], stem)):
             return self._send(403, _gate_html(
                 subject, token,
                 error="That address isn't on the recipient list for this report.",
@@ -658,6 +777,9 @@ def serve(directory, *, host="127.0.0.1", port=DEFAULT_PORT, witness=None,
           % (len(_chains(directory)), directory, mode))
     for line in reconcile_grants(directory):
         print(line)
+    if not gated:
+        for line in ambiguous_link_lines(directory):
+            print(line)
     print("  operator console: http://%s:%s/?key=%s" % (host, port, key))
     print("  per-customer link: http://%s:%s/r/<token>  (see console for tokens)" % (host, port))
     print("  Ctrl-C to stop.")

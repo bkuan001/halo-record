@@ -685,12 +685,51 @@ If such a file sits beside another file for the same subject, `halo serve`
 withholds that subject (its link opens nothing) and names the files at
 startup, rather than guess which file an existing grant was meant for.
 
+**Granting a name that matches no chain.** `halo grant` stores a grant for a
+name that is neither a served subject id nor a chain's file name, so a
+recipient can be designated before a customer's first record. It exits 0 and
+prints a warning on stderr: `no chain in <dir> has subject id or file name
+'<name>'`, that the grant admits its recipients to the chain for that subject
+id if one appears later, and any served subject ids that the file-name
+cleaning maps to the same name, ignoring case (`initech.` for `initech`). Check the name against the operator console before sending a link.
+
 **Serving a directory first served by 0.2.45.** 0.2.45 keyed share links and
-grants by file name (`Acme_Corp` for subject id `Acme Corp`). At startup,
-`halo serve` carries each such grant to the subject id its file is served
-under, when the file name matches that id and names exactly one served chain,
-and the earlier share link keeps opening the same report. A grant that cannot
-be carried is left in place and printed with how to re-issue it by subject id.
+grants by file name (`Acme_Corp` for subject id `Acme Corp`); 0.2.46 keys
+them by subject id and marks each grant it writes as keyed by subject id
+(`"by": "subject"` in `.halo_access.json`). At startup, `halo serve` (and
+`halo grant`, before it adds a recipient) reads each unmarked grant both ways:
+
+- If `<name>.jsonl` holds subject id `<name>` and that subject is served, both
+  readings name one chain: the grant is marked and keeps working, silently.
+- If `<name>` is a served subject id but `<name>.jsonl` holds a different
+  subject id, or no longer exists, the readings name different chains. The
+  grant is quarantined: its recipients move to `quarantined`, it admits no one,
+  and every startup until it is re-issued prints `quarantined grant '<name>'
+  (recipients: ...)`,
+  naming the file and the chain now served under that subject id, with
+  `halo grant <dir> <subject id> <recipient>` to re-issue it. It is not
+  carried to either chain.
+- If `<name>` is not a served subject id, and `<name>.jsonl` is served under a
+  subject id that file name matches (`Acme_Corp.jsonl` for `Acme Corp`), the
+  grant is carried to that subject id and printed as `carried grant`, and the
+  earlier share link keeps opening the same report.
+- Otherwise the grant is left in place and printed as `grant '<name>' ...
+  matches no served chain`, with how to re-issue it. It admits no one while no
+  chain has that name, and later only to a chain whose file and subject id are
+  both `<name>`.
+
+The same rule is applied on every request, so an unmarked grant is never read
+with the subject-id meaning before startup has run. A recipient added with
+`halo grant` to a name that still holds an unmarked grant does not inherit
+it: the earlier recipients move to `quarantined`.
+
+Share links cannot be marked the same way: a 0.2.45 link for `initech.jsonl`
+is the same token as the link for subject id `initech`. With gating on, that
+token opens only the sign-in page of the chain served as `initech`, and only
+that chain's recipients get past it. With gating off (`--open`), the link is
+the only check, so a served subject id that is also another chain's file name
+opens nothing by its link, and `halo serve --open` prints `link withheld:` for
+it at startup.
 
 ---
 

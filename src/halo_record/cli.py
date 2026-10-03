@@ -302,7 +302,7 @@ def _cmd_serve(args):
 
 def _cmd_grant(args):
     from . import access
-    from .serve import chain_key
+    from .serve import _served_chains, chain_key, reconcile_grants
     if not access.recipient_ok(args.recipient):
         print("not a valid email address or domain: %r" % args.recipient, file=sys.stderr)
         return 2
@@ -311,8 +311,23 @@ def _cmd_grant(args):
     except ValueError as e:
         print("halo grant: %s" % e, file=sys.stderr)
         return 2
+    # Read any grants written before 0.2.46 the way halo serve does first, so
+    # their recipients are never merged into a subject-id grant.
+    for line in reconcile_grants(args.dir):
+        print(line)
     if key != args.chain:
         print("note: %s is served as chain %r" % (args.chain, key))
+    served = [k for k, _p in _served_chains(args.dir)]
+    if key not in served:
+        from .record import TenantRecorder
+        fold = TenantRecorder._safe_ascii(key).lower()
+        near = [k for k in served if TenantRecorder._safe_ascii(k).lower() == fold]
+        print("halo grant: warning: no chain in %s has subject id or file name %r. The "
+              "grant is stored under subject id %r and admits these recipients to the "
+              "chain for that subject id if one appears later.%s"
+              % (args.dir, args.chain, key,
+                 (" Served chains with a similar subject id: %s." % ", ".join(map(repr, near)))
+                 if near else ""), file=sys.stderr)
     allow = access.grant(args.dir, key, args.recipient)
     args.chain = key
     print("recipients for %s: %s" % (args.chain, ", ".join(allow)))

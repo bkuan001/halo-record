@@ -66,12 +66,33 @@ def save_access(directory, data):
         json.dump(data, fh, indent=2, sort_keys=True)
 
 
+# Grants written by 0.2.46 and later are keyed by subject id and say so with
+# ``"by": "subject"``. An entry without it was written before 0.2.46, when the
+# key was a chain's file name; ``halo serve`` decides at startup whether that
+# name still means the same chain (see ``serve.reconcile_grants``).
+BY_SUBJECT = "subject"
+
+
+def is_subject_keyed(record):
+    return isinstance(record, dict) and record.get("by") == BY_SUBJECT
+
+
 def grant(directory, chain, entry):
-    """Designate a recipient for one chain. ``entry`` is an exact email
-    (``alice@acme-corp.com``) or a domain (``acme-corp.com``). Returns the updated list."""
+    """Designate a recipient for one chain, keyed by its subject id. ``entry`` is
+    an exact email (``alice@acme-corp.com``) or a domain (``acme-corp.com``).
+    Returns the updated list. Recipients already stored under ``chain`` by a
+    file-name grant from before 0.2.46 are moved to ``quarantined`` rather than
+    merged, so they are never read with the subject-id meaning."""
     entry = entry.strip().lower().lstrip("@")
     data = load_access(directory)
-    allow = data.setdefault(chain, {}).setdefault("allow", [])
+    record = data.setdefault(chain, {})
+    if not is_subject_keyed(record):
+        earlier = record.pop("allow", None) or []
+        if earlier:
+            held = record.setdefault("quarantined", [])
+            held.extend(e for e in earlier if e not in held)
+        record["by"] = BY_SUBJECT
+    allow = record.setdefault("allow", [])
     if entry not in allow:
         allow.append(entry)
     save_access(directory, data)
@@ -171,13 +192,17 @@ def verify_session(secret, cookie, chain):
         return None
 
 
-def session_email_if_allowed(directory, secret, cookie, chain):
+def session_email_if_allowed(directory, secret, cookie, chain, allow=None):
     """A session is honored only while its email is still on the chain's
-    recipient list, so removing a recipient revokes their open sessions."""
+    recipient list, so removing a recipient revokes their open sessions.
+    ``allow`` overrides the stored list (``halo serve`` passes the recipients
+    it honors for the chain)."""
     email = verify_session(secret, cookie, chain)
     if email is None:
         return None
-    return email if is_allowed(email, allowed_for(directory, chain)) else None
+    if allow is None:
+        allow = allowed_for(directory, chain)
+    return email if is_allowed(email, allow) else None
 
 
 class OtpStore:
