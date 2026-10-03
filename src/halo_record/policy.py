@@ -50,6 +50,7 @@ existentially, e.g. "findings[].severity" or "threats[].type".
 import json
 import os
 
+from .redact import INVISIBLE_CHARS
 from .verify import read_log_lines
 
 _MISSING = object()
@@ -90,10 +91,27 @@ def _resolve(node, parts):
     return _resolve(node, rest)
 
 
+def _visible(v):
+    """``v`` with invisible characters removed from every string in it, so a
+    lookalike id (``payments\u200b-bot``) matches the rule that names the id it
+    renders as. Records keep their characters as given; only the comparison
+    ignores them."""
+    if isinstance(v, str):
+        return "".join(c for c in v if c not in INVISIBLE_CHARS) if not v.isascii() else v
+    if isinstance(v, list):
+        return [_visible(x) for x in v]
+    if isinstance(v, dict):
+        return {k: _visible(x) for k, x in v.items()}
+    return v
+
+
 def _match(values, spec):
-    """True if ANY resolved value satisfies the matcher spec."""
+    """True if ANY resolved value satisfies the matcher spec. Strings are
+    compared with invisible characters removed (``_visible``)."""
+    values = [_visible(v) for v in values]
     if isinstance(spec, dict):
         for op, arg in spec.items():
+            arg = _visible(arg)
             if op == "exists":
                 ok = (len(values) > 0) == bool(arg)
             elif op == "eq":
@@ -120,7 +138,7 @@ def _match(values, spec):
                 return False
         return True
     # bare scalar -> equality
-    return spec in values
+    return _visible(spec) in values
 
 
 def _num(v):

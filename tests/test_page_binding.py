@@ -116,6 +116,14 @@ def _cases():
     cases.append({"name": "empty", "records": [], "rules": pack})
     odd_subject = _records([(("tool_call", "security"), dict(tool="t", subject="acme​"))])
     cases.append({"name": "odd-subject", "records": odd_subject})
+    lookalike = _records([
+        (("tool_call", "security"), dict(tool=t, subject="acme", agent={"id": a, "name": a},
+                                          tool_input=ti))
+        for a, t, ti in (("payments-bot", "send_email", None),
+                         ("payments\u200b-bot", "send\u2060_email", {"to": "x"}),
+                         ("pay\U000E0041ments-bot", "Wr\u200bite", {"file_path": "/a"}))])
+    cases.append({"name": "lookalike-ids", "records": lookalike, "rules": [
+        {"id": "no-email", "when": {"agent.id": "payments-bot"}, "forbid": {"action.tool": "send_email"}}]})
     return cases
 
 

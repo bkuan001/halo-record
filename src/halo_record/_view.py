@@ -25,6 +25,54 @@ def esc(x):
     return html.escape(str(x), quote=True)
 
 
+# Identifiers are stored exactly as given, so an invisible character in one
+# (a zero-width space, a bidi control, a tag character) stays in the record. The
+# page shows each as a visible marker so a lookalike id never reads identically.
+ID_FIELDS = (("agent", "id"), ("agent", "name"), ("action", "tool"), ("session_id",),
+             ("subject", "id"), ("subject", "name"))
+
+
+def show_id(s):
+    """``s`` with each invisible character written as ``⟨U+XXXX⟩``."""
+    from .redact import INVISIBLE_CHARS
+    s = str(s)
+    if s.isascii():
+        return s
+    return "".join("\u27e8U+%04X\u27e9" % ord(c) if c in INVISIBLE_CHARS else c for c in s)
+
+
+def invisible_identifiers(records):
+    """(record_id, field path, id as shown) for each identifier field that
+    carries an invisible character."""
+    out = []
+    for r in records:
+        if not isinstance(r, dict):
+            continue
+        for path in ID_FIELDS:
+            v = r
+            for key in path:
+                v = v.get(key) if isinstance(v, dict) else None
+            if isinstance(v, str) and show_id(v) != v:
+                out.append((_str(r.get("record_id") or "?"), ".".join(path), show_id(v)))
+    return out
+
+
+def invisible_identifiers_warning(records, limit=5):
+    """One warning paragraph naming the records whose identifiers carry
+    invisible characters, or "" when none do."""
+    hits = invisible_identifiers(records)
+    if not hits:
+        return ""
+    lines = ["WARNING: %d identifier field(s) in %d record(s) contain invisible characters; "
+             "policy rules match them with those characters removed, and the report marks them:"
+             % (len(hits), len({h[0] for h in hits}))]
+    for rid, path, shown in hits[:limit]:
+        lines.append("  %s %s = %s" % (rid, path, shown))
+    if len(hits) > limit:
+        lines.append("  ... %d more" % (len(hits) - limit))
+    return "\n".join(lines)
+
+
 # --------------------------------------------------------------------------- #
 # Timestamps
 # --------------------------------------------------------------------------- #
@@ -335,13 +383,14 @@ def plain(r):
         detail = summary
     detail = _squash(detail)
     gate = _gate(r)
+    shown = show_id(tool)
     if gate:
         sep = " \u2014 " if "; outcome" in gate else ": "
-        return ("%s%s%s \u2014 %s" % (gate, sep, tool, detail)) if detail else ("%s%s%s" % (gate, sep, tool))
+        return ("%s%s%s \u2014 %s" % (gate, sep, shown, detail)) if detail else ("%s%s%s" % (gate, sep, shown))
     if not detail:
         o = _dict(r.get("outcome")).get("summary")
         o = _squash(o) if isinstance(o, str) and not o.startswith("{") else ""
-        return ("Ran %s — result: %s" % (tool, o)) if o else ("Ran %s" % tool)
+        return ("Ran %s — result: %s" % (shown, o)) if o else ("Ran %s" % shown)
     verb = PLAIN_VERB.get(action.get("type"), "Ran")
     if action.get("type") == "network" and not tool.lower().startswith(("http", "web", "fetch")):
         verb = "Ran"  # "Fetched" describes fetch-shaped tools only
@@ -452,8 +501,8 @@ def agent_meta(names):
     if not names:
         return "Agent <b>unknown</b>"
     if len(names) == 1:
-        return "Agent <b>%s</b>" % esc(names[0])
-    shown = ", ".join("<b>%s</b>" % esc(a) for a in names[:4])
+        return "Agent <b>%s</b>" % esc(show_id(names[0]))
+    shown = ", ".join("<b>%s</b>" % esc(show_id(a)) for a in names[:4])
     more = " (+%d more)" % (len(names) - 4) if len(names) > 4 else ""
     return "%d agents: %s%s" % (len(names), shown, more)
 
@@ -577,7 +626,7 @@ def row(r, show_agent=False):
     else:
         source_cell = '<span class="dim">—</span>'
     agent = _dict(r.get("agent"))
-    agent_cell = ('<td class="mono">%s</td>' % esc(_str(agent.get("name") or agent.get("id") or "—"))
+    agent_cell = ('<td class="mono">%s</td>' % esc(show_id(_str(agent.get("name") or agent.get("id") or "—")))
                   if show_agent else "")
     text = plain(r)
     haystack = " ".join(_str(x) for x in (
@@ -601,7 +650,7 @@ def row(r, show_agent=False):
         esc(_str(action.get("type") or "—")), esc(sev), esc(status),
         len(findings) + len(threats), esc(_str(r.get("record_id") or "")),
         esc(haystack + " " + text.lower()),
-        esc(fmt_ts(r.get("ts"))), agent_cell, esc(_str(action.get("tool") or "—")),
+        esc(fmt_ts(r.get("ts"))), agent_cell, esc(show_id(_str(action.get("tool") or "—"))),
         esc(_str(action.get("type") or "—")), source_cell, esc(_str(auth.get("scope") or "—")),
         # No decision = no gate reported: a statement, not an alarm. Green is
         # reserved for a supplied allow/approval; amber for a supplied denial.
@@ -733,6 +782,24 @@ var HaloView = (function(){
   function esc(x){
     return String(x).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
                     .replace(/"/g, "&quot;").replace(/'/g, "&#x27;");
+  }
+  /* Invisible characters (mirror redact.INVISIBLE_CHARS): identifiers keep
+     them, the page shows each as a marker, policy matching ignores them. */
+  var INVISIBLE = %(invisible_ranges)s;
+  function isInvisible(cp){
+    for (var i = 0; i < INVISIBLE.length; i++) if (cp >= INVISIBLE[i][0] && cp <= INVISIBLE[i][1]) return true;
+    return false;
+  }
+  function showId(s){
+    s = String(s);
+    if (!/[^\x00-\x7f]/.test(s)) return s;
+    return Array.from(s).map(function(c){
+      var cp = c.codePointAt(0);
+      if (!isInvisible(cp)) return c;
+      var h = cp.toString(16).toUpperCase();
+      while (h.length < 4) h = "0" + h;
+      return "\u27e8U+" + h + "\u27e9";
+    }).join("");
   }
   function cut(s, n){ return Array.from(s).slice(0, n).join(""); }
   function cpLen(s){ return Array.from(s).length; }
@@ -920,15 +987,15 @@ var HaloView = (function(){
       } else detail = summary;
     } else detail = summary;
     detail = squash(detail);
-    var g = gate(r);
+    var g = gate(r), shown = showId(tool);
     if (g){
       var sep = g.indexOf("; outcome") >= 0 ? " \u2014 " : ": ";
-      return detail ? (g + sep + tool + " \u2014 " + detail) : (g + sep + tool);
+      return detail ? (g + sep + shown + " \u2014 " + detail) : (g + sep + shown);
     }
     if (!detail){
       var o = dict(r.outcome).summary;
       o = (typeof o === "string" && o.slice(0, 1) !== "{") ? squash(o) : "";
-      return o ? ("Ran " + tool + " \u2014 result: " + o) : ("Ran " + tool);
+      return o ? ("Ran " + shown + " \u2014 result: " + o) : ("Ran " + shown);
     }
     var verb = has(PLAIN_VERB, action.type) ? PLAIN_VERB[action.type] : "Ran";
     var tl = tool.toLowerCase();
@@ -1010,8 +1077,8 @@ var HaloView = (function(){
   }
   function agentMeta(names){
     if (!names.length) return "Agent <b>unknown</b>";
-    if (names.length === 1) return "Agent <b>" + esc(names[0]) + "</b>";
-    var shown = names.slice(0, 4).map(function(a){ return "<b>" + esc(a) + "</b>"; }).join(", ");
+    if (names.length === 1) return "Agent <b>" + esc(showId(names[0])) + "</b>";
+    var shown = names.slice(0, 4).map(function(a){ return "<b>" + esc(showId(a)) + "</b>"; }).join(", ");
     var more = names.length > 4 ? " (+" + (names.length - 4) + " more)" : "";
     // the label is assembled here so a single-agent page's source never carries it
     return names.length + " agents" + ": " + shown + more;
@@ -1085,7 +1152,7 @@ var HaloView = (function(){
       sourceCell = '<span class="pill ' + (src.capture === "captured" ? "cap" : "ing") + '" title="' +
         esc(CAP_TITLE[src.capture]) + '">' + esc(str(or(src.adapter, src.capture))) + "</span>";
     else sourceCell = '<span class="dim">\u2014</span>';
-    var agentCell = showAgent ? '<td class="mono">' + esc(str(or(agent.name, agent.id, "\u2014"))) + "</td>" : "";
+    var agentCell = showAgent ? '<td class="mono">' + esc(showId(str(or(agent.name, agent.id, "\u2014")))) + "</td>" : "";
     var text = plain(r);
     var hay = [r.ts, action.tool, action.type, auth.scope, auth.decision, status, sev, summary,
                outcome.summary, agent.name, shortHash, r.record_id, r.parent_id, ver.status,
@@ -1099,7 +1166,7 @@ var HaloView = (function(){
       '" data-rid="' + esc(str(or(r.record_id, ""))) + '" data-text="' + esc(hay + " " + text.toLowerCase()) +
       '" tabindex="0" class="rowclick" title="Click for the full record">' +
       '<td class="mono dim ts-cell">' + esc(fmtTs(r.ts)) + "</td>" + agentCell +
-      '<td class="mono">' + esc(str(or(action.tool, "\u2014"))) + "</td><td>" + esc(str(or(action.type, "\u2014"))) +
+      '<td class="mono">' + esc(showId(str(or(action.tool, "\u2014")))) + "</td><td>" + esc(str(or(action.type, "\u2014"))) +
       "</td><td>" + sourceCell + '</td><td class="mono">' + esc(str(or(auth.scope, "\u2014"))) +
       '</td><td><span class="pill ' + (!truthy(decision) ? "neutral" : (decision === "allowed" || decision === "human_approved") ? "ok" : "warn") +
       '">' + esc(str(or(decision, "\u2014"))) + '</span></td><td><span class="pill ' +
@@ -1430,11 +1497,27 @@ var HaloView = (function(){
     }
     return resolve(node, rest);
   }
+  /* Mirror policy._visible: strings compared with invisible characters removed. */
+  function visible(v){
+    if (typeof v === "string")
+      return /[^\x00-\x7f]/.test(v)
+        ? Array.from(v).filter(function(c){ return !isInvisible(c.codePointAt(0)); }).join("") : v;
+    if (Array.isArray(v)) return v.map(visible);
+    if (isDict(v)){
+      var o = {};
+      Object.keys(v).forEach(function(k){
+        Object.defineProperty(o, k, {value: visible(v[k]), enumerable: true, writable: true, configurable: true});
+      });
+      return o;
+    }
+    return v;
+  }
   function match(values, spec){
+    values = values.map(visible);
     if (isDict(spec)){
       var ops = Object.keys(spec);
       for (var i = 0; i < ops.length; i++){
-        var op = ops[i], arg = spec[op], ok;
+        var op = ops[i], arg = visible(spec[op]), ok;
         if (op === "exists") ok = (values.length > 0) === truthy(arg);
         else if (op === "eq") ok = inList(arg, values);
         else if (op === "ne") ok = !inList(arg, values);
@@ -1450,7 +1533,7 @@ var HaloView = (function(){
       }
       return true;
     }
-    return inList(spec, values);
+    return inList(visible(spec), values);
   }
   function holds(rec, cond){
     var paths = Object.keys(cond);
@@ -1564,6 +1647,7 @@ var HaloView = (function(){
     };
   }
   return {regions: regions, tsUtc: tsUtc, fmtTs: fmtTs, plain: plain, esc: esc, subjectId: subjectId,
+          showId: showId, evaluate: typeof evaluate === "function" ? evaluate : null,
           validatePolicy: typeof validatePolicy === "function" ? validatePolicy : null,
           parsePolicyText: typeof parsePolicyText === "function" ? function(text){
             try { return {rules: parsePolicyText(text), error: null}; }
@@ -1596,6 +1680,7 @@ def render_js(with_policy=True):
     """RENDER_JS with its shared constants filled in from this module. Without
     a policy, the policy evaluator and panel are left out of the page."""
     from .policy import _FOOT_PAGE, POLICY_DIGEST_NOTE, POLICY_KEYS, RULE_KEYS, SEVERITIES
+    from .redact import _INVISIBLE_RANGES
     st_note = {}
     # The provenance notes come from provenance() itself so the two cannot drift.
     def _note(recs):
@@ -1609,6 +1694,7 @@ def render_js(with_policy=True):
         js = js[:js.index("/*POLICY-BEGIN*/")] + js[js.index("/*POLICY-END*/"):]
     return js % {
         "cap_title": json.dumps(CAP_TITLE),
+        "invisible_ranges": json.dumps([list(r) for r in _INVISIBLE_RANGES]),
         "plain_keys": json.dumps(list(PLAIN_KEYS)),
         "plain_verb": json.dumps(PLAIN_VERB),
         "foot_page": json.dumps(_FOOT_PAGE),

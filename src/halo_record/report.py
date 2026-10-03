@@ -713,6 +713,10 @@ _PAGINATE_JS = r"""
     return String(s === undefined || s === null ? "" : s)
       .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   }
+  // An identifier with an invisible character in it is shown with a marker.
+  function shownId(v){
+    return (typeof v === "string" && typeof HaloView !== "undefined" && HaloView.showId) ? HaloView.showId(v) : v;
+  }
   function field(label, value, mono){
     if (value === undefined || value === null || value === "") return "";
     return '<div class="d-row"><div class="d-k">' + esc(label) + '</div>' +
@@ -735,11 +739,11 @@ _PAGINATE_JS = r"""
     h += field("Recorded at", stamp(r.ts) + (localMode ? " (your time)" : " (UTC)"));
     h += field("Sealed timestamp", r.ts, true);
     h += '<div class="d-sec">What ran</div>';
-    h += field("Tool", a.tool);
+    h += field("Tool", shownId(a.tool));
     h += field("Action type", a.type);
     h += field("Category", a.category);
-    h += field("Agent", (r.agent || {}).name || (r.agent || {}).id);
-    h += field("Session", r.session_id, true);
+    h += field("Agent", shownId((r.agent || {}).name || (r.agent || {}).id));
+    h += field("Session", shownId(r.session_id), true);
     h += field("Parent action", r.parent_id, true);
     var pr = r.principal || {};
     if (pr && typeof pr === "object"){

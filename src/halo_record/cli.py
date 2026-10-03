@@ -90,6 +90,21 @@ def _cmd_hook(args):
     return hook_main()
 
 
+def _warn_invisible_ids(log):
+    """Print, on stderr, which records carry invisible characters in an
+    identifier (agent, tool, session or subject id). Advisory: the exit code
+    is unchanged."""
+    from ._view import invisible_identifiers_warning
+    from .policy import load_records
+    try:
+        records = load_records(log)
+    except Exception:
+        return
+    note = invisible_identifiers_warning(records)
+    if note:
+        print(note, file=sys.stderr)
+
+
 def _cmd_report(args):
     from .report import write_report
     from .export import parse_bound
@@ -115,6 +130,7 @@ def _cmd_report(args):
         print("REFUSED: %s" % e)
         return 1
     print("wrote %s (%d records)" % (out, count))
+    _warn_invisible_ids(args.log)
     # The exit code carries the verdict a script would otherwise have to read
     # out of the HTML: 1 INCOMPLETE, 3 nothing attested / not witnessed.
     comp = status.get("completeness")
@@ -144,6 +160,7 @@ def _cmd_policy(args):
         # An invalid policy or a chain for someone else is not a verdict.
         print("REFUSED: %s" % e)
         return 2
+    _warn_invisible_ids(args.log)
     if args.json:
         print(json.dumps(result, indent=2))
     elif args.html:
