@@ -302,7 +302,7 @@ def _cmd_serve(args):
 
 def _cmd_grant(args):
     from . import access
-    from .serve import _served_chains, chain_key, reconcile_grants
+    from .serve import _served_chains, chain_key, reconcile_grants, subjectless_file
     if not access.recipient_ok(args.recipient):
         print("not a valid email address or domain: %r" % args.recipient, file=sys.stderr)
         return 2
@@ -328,7 +328,20 @@ def _cmd_grant(args):
               % (args.dir, args.chain, key,
                  (" Served chains with a similar subject id: %s." % ", ".join(map(repr, near)))
                  if near else ""), file=sys.stderr)
-    allow = access.grant(args.dir, key, args.recipient)
+    bound = subjectless_file(args.dir, key)
+    if bound is not None:
+        print("halo grant: warning: %s.jsonl holds no subject id, so its chain is keyed by "
+              "its file name %r. The grant is recorded for that file: if a chain with "
+              "subject id %r appears later, it is served under that name instead, and this "
+              "grant admits no one to it (halo serve says so at startup)."
+              % (bound, bound, bound), file=sys.stderr)
+    before = list(access.load_access(args.dir).get(key, {}).get("allow") or [])
+    allow = access.grant(args.dir, key, args.recipient, file=bound)
+    moved = [e for e in before if e not in allow]
+    if moved:
+        print("note: earlier recipients for %r (%s) were granted for a different chain "
+              "under that name; they are kept under quarantined in %s and admit no one"
+              % (key, ", ".join(moved), access.ACCESS_FILE))
     args.chain = key
     print("recipients for %s: %s" % (args.chain, ", ".join(allow)))
     return 0

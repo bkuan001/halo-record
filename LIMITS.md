@@ -685,6 +685,24 @@ If such a file sits beside another file for the same subject, `halo serve`
 withholds that subject (its link opens nothing) and names the files at
 startup, rather than guess which file an existing grant was meant for.
 
+**Granting a chain whose report is withheld.** `halo grant` refuses (exit 2)
+a name whose report `halo serve` would withhold: a chain that does not
+verify, or a file holding records for more than one subject (several subject
+ids, or records with and without one). Such a file is keyed by its file name,
+so a grant on it could otherwise pass to a later chain whose subject id is
+that name. Split or restore the file, then grant each chain.
+
+**Granting a chain with no subject id.** A chain whose records carry no
+subject id (a plain `Recorder` file such as `agent.jsonl`) is keyed by its
+file name. `halo grant` accepts it, prints a warning on stderr
+(`agent.jsonl holds no subject id, so its chain is keyed by its file name`),
+and records the grant for that file (`"file": "agent"` in
+`.halo_access.json`). The grant admits its recipients only while that file is
+the chain served under the name: if a chain with subject id `agent` appears
+later, it is served under `agent` instead, the grant admits no one to it, and
+`halo serve` prints the grant at startup. A later `halo grant` for the new
+chain does not inherit the earlier recipients; they move to `quarantined`.
+
 **Granting a name that matches no chain.** `halo grant` stores a grant for a
 name that is neither a served subject id nor a chain's file name, so a
 recipient can be designated before a customer's first record. It exits 0 and

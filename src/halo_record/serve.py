@@ -146,6 +146,34 @@ def _legacy_stems(directory):
     return out
 
 
+def _withheld_reason(records):
+    """Why ``halo serve`` withholds the report for these records, or None."""
+    from .verify import verify_records
+    if records and not verify_records(records):
+        return "does not verify"
+    subjects = {(r.get("subject") or {}).get("id") if isinstance(r.get("subject"), dict)
+                else None for r in records}
+    if len(subjects) > 1:
+        return "holds records for more than one subject"
+    return None
+
+
+def _subjectless(path):
+    """True when a chain file holds records and none of them carries a subject id."""
+    from .record import TenantRecorder
+    return TenantRecorder._file_subjects(path) == {None}
+
+
+def subjectless_file(directory, key):
+    """The file name (without ``.jsonl``) of the chain served under ``key`` when
+    that chain holds no subject id, so it is keyed by its file name; else None.
+    A grant on such a chain is recorded for that file (see ``honored_recipients``)."""
+    path = dict(_served_chains(directory)).get(key)
+    if path and _stem(path) == key and _subjectless(path):
+        return key
+    return None
+
+
 def chain_key(directory, name):
     """The serving key for a chain named by its subject id (its key) or by its
     file stem. Raises ValueError when the name is ambiguous — one chain's key
@@ -179,6 +207,16 @@ def chain_key(directory, name):
             raise ValueError("subject %r is withheld: %s holds its records but is named "
                              "for a different tenant; rename or move it, then grant again"
                              % (key, ", ".join(names)))
+    if found:
+        path = dict(served)[found[0]]
+        why = _withheld_reason(_load(path))
+        if why:
+            raise ValueError(
+                "%s %s, so halo serve withholds its report and a grant would admit no "
+                "one to it. A chain whose file holds several subject ids is keyed by its "
+                "file name, so a grant on it could pass to a later chain with that name "
+                "as its subject id. Split or restore the file, then grant each chain."
+                % (os.path.basename(path), why))
     return found[0] if found else name
 
 
@@ -217,8 +255,14 @@ def honored_recipients(directory, key):
     if not isinstance(record, dict):
         return []
     allow = list(record.get("allow") or [])
-    if _access.is_subject_keyed(record) or not allow:
+    if not allow:
         return allow
+    if _access.is_subject_keyed(record):
+        if record.get("file") is None:
+            return allow
+        # Issued for a chain with no subject id, keyed by its file name: honored
+        # only while that file is still the chain served under ``key``.
+        return allow if subjectless_file(directory, key) == record.get("file") else []
     served, _withheld, files = _chain_index(directory)
     keys = {k for k, _p in served}
     reading, _target = _file_name_reading(key, keys, files, {})
@@ -285,7 +329,21 @@ def reconcile_grants(directory):
     carries = []
     for name in sorted(data):
         record = data.get(name)
-        if not isinstance(record, dict) or _access.is_subject_keyed(record):
+        if not isinstance(record, dict):
+            continue
+        if _access.is_subject_keyed(record):
+            bound = record.get("file")
+            allow = list(record.get("allow") or [])
+            if bound is not None and allow and subjectless_file(directory, name) != bound:
+                paths = dict(served)
+                now = ("subject id %r is served from %s" % (name, os.path.basename(paths[name]))
+                       if name in paths else "no chain with no subject id is named %s.jsonl"
+                       % bound)
+                lines.append("  grant %r (recipients: %s) was issued for %s.jsonl, a chain "
+                             "with no subject id keyed by its file name; %s, so the grant "
+                             "admits no one. Re-issue it by subject id (halo grant %s "
+                             "<subject id> <recipient>) if it is meant for that chain."
+                             % (name, ", ".join(allow), bound, now, directory))
             continue
         allow = list(record.get("allow") or [])
         held = list(record.get("quarantined") or [])
@@ -605,14 +663,12 @@ class _Handler(BaseHTTPRequestHandler):
     def _render_report(self, path):
         cfg = self.config
         records = _load(path)
-        subjects = {(r.get("subject") or {}).get("id") if isinstance(r.get("subject"), dict)
-                    else None for r in records}
-        from .verify import verify_records
-        if records and not verify_records(records):
+        why = _withheld_reason(records)
+        if why == "does not verify":
             return ('<!doctype html><meta charset="utf-8"><title>Report withheld</title>'
                     '<p>This chain does not verify, so the report is withheld. '
                     'Run <code>halo verify</code> on it for details.</p>')
-        if len(subjects) > 1:
+        if why:
             # One page, one customer: a file holding several subjects is withheld
             # rather than shown to the holder of any one tenant's link.
             return ('<!doctype html><meta charset="utf-8"><title>Report withheld</title>'

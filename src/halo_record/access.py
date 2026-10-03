@@ -77,21 +77,28 @@ def is_subject_keyed(record):
     return isinstance(record, dict) and record.get("by") == BY_SUBJECT
 
 
-def grant(directory, chain, entry):
+def grant(directory, chain, entry, file=None):
     """Designate a recipient for one chain, keyed by its subject id. ``entry`` is
     an exact email (``alice@acme-corp.com``) or a domain (``acme-corp.com``).
-    Returns the updated list. Recipients already stored under ``chain`` by a
-    file-name grant from before 0.2.46 are moved to ``quarantined`` rather than
-    merged, so they are never read with the subject-id meaning."""
+    ``file`` names the chain file when the chain holds no subject id and is
+    keyed by its file name; the grant then admits its recipients only while
+    that file is the chain served under ``chain``. Returns the updated list.
+    Recipients already stored under ``chain`` by a file-name grant from before
+    0.2.46, or for a different file, are moved to ``quarantined`` rather than
+    merged, so they are never read with another meaning."""
     entry = entry.strip().lower().lstrip("@")
     data = load_access(directory)
     record = data.setdefault(chain, {})
-    if not is_subject_keyed(record):
+    if not is_subject_keyed(record) or record.get("file") != file:
         earlier = record.pop("allow", None) or []
         if earlier:
             held = record.setdefault("quarantined", [])
             held.extend(e for e in earlier if e not in held)
         record["by"] = BY_SUBJECT
+        if file is None:
+            record.pop("file", None)
+        else:
+            record["file"] = file
     allow = record.setdefault("allow", [])
     if entry not in allow:
         allow.append(entry)
