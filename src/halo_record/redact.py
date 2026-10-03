@@ -296,8 +296,9 @@ _VALIDATORS = {"credit_card": _luhn_ok, "iban": _iban_ok}
 # fillers, Khmer inherent vowels, variation selectors, tags, ...), plus two
 # characters that render blank: U+2800 BRAILLE PATTERN BLANK and U+1D159
 # MUSICAL SYMBOL NULL NOTEHEAD. They are dropped when they sit between token
-# characters; elsewhere (an emoji ZWJ sequence, a bidi mark in prose) they are
-# kept. The ranges are listed here, not read from ``unicodedata``, so every
+# characters, or between a token character and a group separator (see
+# _SEP_CLASS); elsewhere (an emoji ZWJ sequence, a bidi mark between two
+# spaces) they are kept. The ranges are listed here, not read from ``unicodedata``, so every
 # Python version and the TypeScript port strip the same set.
 _INVISIBLE_RANGES = (
     (0x00AD, 0x00AD), (0x034F, 0x034F), (0x0600, 0x0605), (0x061C, 0x061C),
@@ -312,8 +313,16 @@ INVISIBLE_CHARS = frozenset(chr(c) for a, b in _INVISIBLE_RANGES for c in range(
 _INVISIBLE_CLASS = "".join(
     re.escape(chr(a)) if a == b else "%s-%s" % (re.escape(chr(a)), re.escape(chr(b)))
     for a, b in _INVISIBLE_RANGES)
+# Group separators a grouped number or a PEM header may use (every character
+# Python's str.isspace() accepts, listed so the TypeScript port uses the same
+# set). An invisible run between a separator and a token character, or
+# between a token character (or a parenthesis) and a separator, is dropped
+# too: "4539\u200b 1488 ..." is the card number it renders as.
+_SEP_CLASS = "\t\n\x0b\x0c\r\x1c-\x1f \x85\xa0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000"
 _ZW_IN_TOKEN_RE = re.compile(
-    r'(?<=[A-Za-z0-9_\-+/=.:])[' + _INVISIBLE_CLASS + r']+(?=[A-Za-z0-9_\-+/=.:@])')
+    r'(?<=[A-Za-z0-9_\-+/=.:])[' + _INVISIBLE_CLASS + r']+(?=[A-Za-z0-9_\-+/=.:@])'
+    r'|(?<=[A-Za-z0-9_\-+/=.:()])[' + _INVISIBLE_CLASS + r']+(?=[' + _SEP_CLASS + r'])'
+    r'|(?<=[' + _SEP_CLASS + r'])[' + _INVISIBLE_CLASS + r']+(?=[A-Za-z0-9_\-+/=.:()])')
 _ZW_HINT_RE = re.compile('[' + _INVISIBLE_CLASS + ']')
 
 

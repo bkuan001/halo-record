@@ -40,7 +40,7 @@ HOSTILE = {
     "ip_internal": ["10.", "192.168."],
     "phone": ["+1 ", "(555) "],
     "high_entropy_secret": ["aB3", "aB3dE5fG7hJ9kL1mN3pQ5rS7tU9 "],
-    "invisible": ["​a", "a​"],
+    "invisible": ["​a", "a​", "4\u200b ", " \u200b1", "4539\u200b 1488\u200b 0343\u200b 6467 "],
 }
 
 

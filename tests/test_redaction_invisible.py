@@ -101,3 +101,70 @@ class IdentifiersKeepTheirTextTest(unittest.TestCase):
         for value in (rec["action"]["tool"], rec["session_id"], rec["agent"]["id"]):
             self.assertNotIn(KEY[8:], value)
             self.assertNotIn(KEY[14:], value)
+
+
+ZW = "​"
+PAN = "4539 1488 0343 6467"
+
+
+class BesideASeparatorTest(unittest.TestCase):
+    """An invisible character next to a group separator (a space, NBSP, tab,
+    hyphen or dot) inside a grouped number or a PEM header is dropped for
+    matching, so the number is masked whole and reported."""
+
+    CASES = [
+        ("4539" + ZW + " 1488" + ZW + " 0343" + ZW + " 6467", "credit_card"),
+        ("4539 " + ZW + "1488 " + ZW + "0343 " + ZW + "6467", "credit_card"),
+        ("cc 4539 " + ZW + "1488 " + ZW + "0343 " + ZW + "6467", "credit_card"),
+        ("4539­ 1488 0343 6467", "credit_card"),
+        ("4539" + ZW + " 1488 0343 6467", "credit_card"),
+        ("4539⁠-1488-0343-6467", "credit_card"),
+        ("123" + ZW + " 45" + ZW + " 6789", "ssn"),
+        ("ssn 123 ⁠" + "45 ﻿6789", "ssn"),
+        ("DE89" + ZW + " 3704 0044 0532 0130 00", "iban"),
+        ("DE89 3704‍ 0044 ⁠" + "0532 0130 00", "iban"),
+        ("call (555)" + ZW + " 123-4567", "phone"),
+        ("call +1" + ZW + " 555 123 4567", "phone"),
+    ]
+
+    def test_grouped_numbers_are_found_and_masked(self):
+        for text, ftype in self.CASES:
+            with self.subTest(text=text):
+                self.assertIn(ftype, [f["type"] for f in redact.scan(text)])
+                out = redact.redact_text(text)
+                self.assertNotIn("1488", out)
+                self.assertNotIn("0532", out)
+                self.assertNotIn("45" + ZW, out)
+                rec = build("tool_call", "security", tool="t",
+                            outcome={"status": "ok", "summary": "s", "detail": text})
+                self.assertIn(ftype, [f["type"] for f in rec["findings"]])
+                self.assertNotEqual(rec["outcome"]["detail"], text)
+
+    def test_pem_header_with_an_invisible_character_is_masked(self):
+        pem = ("-----BEGIN" + ZW + " RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEA1b2c3d4e5f6g7h8i9j0\n"
+               "-----END RSA PRIVATE KEY-----")
+        self.assertIn("private_key", [f["type"] for f in redact.scan(pem)])
+        self.assertNotIn("MIIEowIBAAKCAQEA", redact.mask_known_secrets(pem))
+        pem2 = pem.replace("RSA" + " PRIVATE", "RSA ⁠PRIVATE")
+        self.assertNotIn("MIIEowIBAAKCAQEA", redact.mask_known_secrets(pem2))
+
+    def test_prose_without_a_secret_is_stored_as_given(self):
+        for text in ("hello" + ZW + " world", "a ‎ b", "id 12" + ZW + " 34",
+                     "family \U0001F468‍\U0001F469 trip", "ok" + ZW + " -" + ZW + " done"):
+            with self.subTest(text=text):
+                self.assertEqual(redact.redact_text(text, entropy=False), text)
+                self.assertEqual(redact.mask_known_secrets(text), text)
+
+    def test_the_invisible_character_cannot_carry_the_number_through_unmasked(self):
+        # The stored text keeps no run of the number's digits, however the
+        # invisible characters were placed.
+        for sep in (" ", " ", "-", "."):
+            for zw in (ZW, "­", "⁠", "﻿", "\U000e0041"):
+                for left in (True, False):
+                    groups = ["4539", "1488", "0343", "6467"]
+                    joint = (zw + sep) if left else (sep + zw)
+                    text = "pay " + joint.join(groups) + " now"
+                    with self.subTest(sep=sep, zw=hex(ord(zw)), left=left):
+                        out = redact.redact_text(text)
+                        self.assertNotIn("1488", out)
+                        self.assertIn("credit_card", [f["type"] for f in redact.scan(text)])
