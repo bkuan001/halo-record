@@ -39,15 +39,22 @@ HAS_LITELLM = PathFinder.find_spec("litellm") is not None
 
 
 def _real_modules(test, *prefixes):
-    """Drop stand-in modules (no __file__) under ``prefixes`` for one test, so
-    the real framework is imported."""
-    p = mock.patch.dict(sys.modules)
-    p.start()
-    test.addCleanup(p.stop)
+    """Set aside stand-in modules (no __file__) under ``prefixes`` for one test,
+    so the real framework is imported; the stand-ins are put back afterwards.
+    Real modules imported meanwhile stay loaded."""
+    stubs = {}
     for name in list(sys.modules):
         if any(name == x or name.startswith(x + ".") for x in prefixes):
             if getattr(sys.modules[name], "__file__", None) is None:
+                stubs[name] = sys.modules.pop(name)
+
+    def restore():
+        for name in list(sys.modules):
+            if any(name == x or name.startswith(x + ".") for x in prefixes) and name in stubs:
                 del sys.modules[name]
+        sys.modules.update(stubs)
+
+    test.addCleanup(restore)
 
 
 class _Failing:
