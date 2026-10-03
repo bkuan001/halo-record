@@ -191,10 +191,24 @@ matching, so they cannot split a key. The set is every Unicode format character
 the Khmer inherent vowels U+17B4/U+17B5, variation selectors and tag
 characters), plus U+2800 BRAILLE PATTERN BLANK and U+1D159 MUSICAL SYMBOL NULL
 NOTEHEAD. "Inside a token" means between two of `A-Z a-z 0-9 _ - + / = . :`
-(the second may also be `@`). Outside a token (an emoji sequence, a bidi mark
-in prose) they are kept. They are dropped only to find secrets: a value in
-which nothing is masked (an agent id, a tool name, a session id, prose) is
-stored exactly as given, invisible characters included.
+(the second may also be `@`). They are also dropped between a whitespace
+separator (space, tab, newline, no-break space, U+2007, U+202F, and every other
+character Python's `str.isspace()` accepts) and one of those token characters
+or a parenthesis, in either order, so `4539\u200b 1488\u200b 0343\u200b 6467` with a
+zero-width character beside each space, or a PEM header with one beside a
+space, is matched as the grouped number or header it renders as, then masked
+whole (a hyphen or dot separator is already a token character). Elsewhere (an
+emoji sequence, a bidi mark between two spaces) they are kept. They are
+dropped only to find secrets: a value in which nothing is masked (an agent id,
+a tool name, a session id, prose) is stored exactly as given, invisible
+characters included. Because identifiers keep them, two ids can differ only by
+an invisible character (`payments\u200b-bot` and `payments-bot`). The policy engine
+compares strings with invisible characters removed, so a rule on `agent.id`,
+`action.tool` or `session_id` matches the lookalike too (§7); the report shows
+each invisible character in an agent, tool or session id as a visible marker
+(`⟨U+200B⟩`); and `halo policy` and `halo report` print a warning naming each
+record whose agent, tool, session or subject id carries one. A lookalike built
+from visible characters (a Cyrillic `а` for a Latin `a`) is not detected.
 
 The credential coverage, by finding type:
 
@@ -284,6 +298,12 @@ every selected record meets, since either can never be violated. A rule whose
 `when` selects no record reports "matched no records", never PASS. Validation
 catches a rule that cannot mean what it says; it cannot catch a valid rule
 aimed at the wrong field.
+
+String values are compared with invisible characters (the set in §6) removed,
+on the record side and in the rule alike, in `halo policy` and in the page's
+evaluator. A rule naming `payments-bot` therefore also matches a record whose
+agent id is `payments\u200b-bot`; the record itself keeps the id as written, and
+`halo policy` prints a warning naming it.
 
 A verdict names its policy by `Policy sha256`: the SHA-256 of the policy file's
 bytes, the value `shasum -a 256 <file>` prints. A report page carries the
