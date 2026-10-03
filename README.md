@@ -83,6 +83,8 @@ halo report audit.jsonl -o report.html    # one chain -> HTML that re-verifies i
 halo serve ./records --port 8721          # all tenants, gated per customer
 ```
 
+Upgrading a directory first served by 0.2.45? `halo serve` re-reads each earlier grant at startup. A grant on a file whose records carry no subject id (a plain `Recorder` file such as `agent.jsonl`) is quarantined and printed at every startup with the `halo grant` command that re-issues it — see [LIMITS.md §17, "Serving a directory first served by 0.2.45"](https://github.com/bkuan001/halo-record/blob/main/LIMITS.md#17-one-chain-file-per-subject).
+
 The quickstart ends when you are looking at your own agent's Runtime Report in a browser. If you got a JSONL file and no report, something is wrong: open an issue.
 
 ### The verification block
