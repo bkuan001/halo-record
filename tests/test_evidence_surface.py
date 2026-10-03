@@ -605,6 +605,32 @@ class PreciseWordingTest(unittest.TestCase):
             self.assertNotIn("proves what happened", text, name)
             self.assertIn("declared capture surface", text, name)
 
+    def test_integrity_claims_are_relative_to_a_verified_head(self):
+        text = " ".join(_doc("ATC.md").split())
+        self.assertNotIn("nothing was edited after the fact", text)
+        self.assertIn("relative to a verified head — nothing was edited after that head "
+                      "was captured", text)
+
+    def test_witness_claims_stop_at_the_checkpoint(self):
+        # A witness detects removal after a checkpoint it holds; it does not
+        # attest that nothing was ever dropped (records never written are
+        # outside any witness).
+        for rel in ("src/halo_record/verify.py", "LIMITS.md"):
+            text = " ".join(_doc(rel).split())
+            self.assertNotIn("attests nothing was dropped", text, rel)
+            self.assertNotIn("proves nothing was dropped", text, rel)
+        self.assertIn("detects records removed after a checkpoint it holds",
+                      _doc("src/halo_record/verify.py"))
+
+    def test_page_hidden_region_list_matches_the_opacity_check(self):
+        # report.py's haloHidden refuses only opacity exactly 0; near-zero
+        # opacity is listed as not caught, and "invisible" is not claimed.
+        self.assertIn("parseFloat(cs.opacity) === 0", _doc("src/halo_record/report.py"))
+        limits = " ".join(_doc("LIMITS.md").split())
+        self.assertNotIn("not displayed, invisible,", limits)
+        self.assertIn("fully transparent (`opacity:0`)", limits)
+        self.assertIn("near-zero opacity (`opacity:0.01`)", limits)
+
     def test_reviewers_guide_matches_the_cli(self):
         text = _doc("REVIEWERS.md")
         self.assertNotIn("let it.", text)

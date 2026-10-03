@@ -830,10 +830,10 @@ records; the page's styling and any added content are not checked"). They
 withhold the verdict when an element id they write to is repeated, or when
 computed layout shows one of the regions they write to (the verdict,
 completeness, heading, metadata, period, counts, table, table body and row
-count) or an ancestor of it is not displayed, invisible, without area, off the
-page, clipped to nothing (`overflow`, `clip-path`), masked, filtered,
-collapsed by a transform such as `scale(0)`, or skipped by
-`content-visibility`. They check at load, after verification, when late
+count) or an ancestor of it is not displayed, `visibility:hidden`, fully
+transparent (`opacity:0`), without area, off the page, clipped to nothing
+(`overflow`, `clip-path`), masked, filtered, collapsed by a transform such as
+`scale(0)`, or skipped by `content-visibility`. They check at load, after verification, when late
 stylesheets load, on animation and transition events, on resize, when the
 page becomes visible, before printing, and at a random time about once a
 second. Once the check finds a repeated id, or a hidden region in a viewport
@@ -846,8 +846,8 @@ the viewport grows and the check runs, and a region that is hidden only
 while the viewport is that small is not refused.
 
 What it does not catch, among others: text made unreadable while its box
-stays (`font-size:0`, transparent color), a region placed under the page
-background (`z-index`), an element laid over a region, text added with
+stays (`font-size:0`, transparent color), near-zero opacity (`opacity:0.01`),
+a region placed under the page background (`z-index`), an element laid over a region, text added with
 `::before`/`::after`, fabricated content placed beside the verified table,
 content inside, or slotted through, a shadow root, print-only CSS
 (`@media print`), a region hidden only for brief moments (each check looks
