@@ -93,11 +93,12 @@ class ReadersRefuseRepeatedKeysTest(unittest.TestCase):
         d, path = _dup_chain()
         with self.assertRaises(ValueError):
             export.load_records(path)
-        out = os.path.join(d, "out")
-        os.makedirs(out)
-        with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
-            self.assertNotEqual(main(["export", path, "-o", out]), 0)
-        self.assertFalse(any(n.endswith(".csv") for n in os.listdir(out)))
+        out = os.path.join(d, "e.csv")
+        msg = io.StringIO()
+        with redirect_stdout(msg), redirect_stderr(msg):
+            self.assertEqual(main(["export", path, "-o", out]), 1)
+        self.assertFalse(os.path.exists(out))
+        self.assertIn("fails verification", msg.getvalue())
 
     def test_policy_refuses(self):
         _, path = _dup_chain()
