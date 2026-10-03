@@ -434,6 +434,26 @@ class OrdinaryUpgradeTest(unittest.TestCase):
                     srv.close()
 
 
+class OrphanGrantLineTest(unittest.TestCase):
+    """SEC-803: a 0.2.45 grant whose file is gone admits no one now, and the
+    startup line says it can become active if a matching chain appears."""
+
+    def test_line_says_the_grant_can_become_active_later(self):
+        d = tempfile.mkdtemp()
+        _write(os.path.join(d, "other.jsonl"), "other", "OTHER")
+        _legacy_access(d, {"initech": {"allow": ["evil.com"]}})
+        text = "\n".join(reconcile_grants(d))
+        self.assertIn("grant 'initech' (recipients: evil.com) matches no served chain", text)
+        self.assertNotIn("so it admits no one.", text)
+        self.assertIn("admits no one now", text)
+        self.assertIn("can become active later", text)
+        self.assertIn("initech.jsonl", text)
+        # And it does: a chain whose file and only subject id are ``initech``.
+        _write(os.path.join(d, "initech.jsonl"), "initech", "REAL_INITECH")
+        reconcile_grants(d)
+        self.assertEqual(access.load_access(d)["initech"].get("by"), access.BY_SUBJECT)
+
+
 class GrantForAbsentChainTest(unittest.TestCase):
     """SEC-703: a grant for a name that matches no chain pre-grants a subject id
     that may appear later; ``halo grant`` says so."""

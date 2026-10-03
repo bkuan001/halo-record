@@ -717,9 +717,11 @@ them by subject id and marks each grant it writes as keyed by subject id
   grant is carried to that subject id and printed as `carried grant`, and the
   earlier share link keeps opening the same report.
 - Otherwise the grant is left in place and printed as `grant '<name>' ...
-  matches no served chain`, with how to re-issue it. It admits no one while no
-  chain has that name, and later only to a chain whose file and subject id are
-  both `<name>`.
+  matches no served chain, so it admits no one now`, with how to re-issue it.
+  The line also says it can become active later: if a file `<name>.jsonl`
+  appears holding only subject id `<name>`, the grant is marked and admits its
+  recipients to that chain; if it appears holding one subject id whose cleaned
+  file name is `<name>`, the grant is carried to that subject id as above.
 
 The same rule is applied on every request, so an unmarked grant is never read
 with the subject-id meaning before startup has run. A recipient added with

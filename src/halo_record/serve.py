@@ -271,8 +271,8 @@ def reconcile_grants(directory):
     - the name is only a file name, and that file's name matches the subject id
       it is served under: the grant is carried to that subject id, and the
       earlier share link still opens it (see ``_Handler._resolve``);
-    - neither: the grant is left in place, admitting no one while no chain has
-      that name, and printed with how to re-issue it.
+    - neither: the grant is left in place, admitting no one now, and printed
+      with how it can become active later and how to re-issue it.
 
     ``honored_recipients`` applies the same rule per request, so a grant is
     never read with the wrong meaning before this has run."""
@@ -308,9 +308,14 @@ def reconcile_grants(directory):
             carries.append((name, target, allow))
             continue
         lines.append("  grant %r (recipients: %s) matches no served chain, so it admits no "
-                     "one. If it was for a customer, re-issue it by subject id "
-                     "(halo grant %s <subject id> <recipient>) and send the link shown in "
-                     "the operator console." % (name, ", ".join(allow) or "none", directory))
+                     "one now. It can become active later: if a chain file %s.jsonl "
+                     "appears holding only subject id %r (or one subject id whose cleaned "
+                     "file name is %r), the grant admits these recipients to it. If it "
+                     "was for a customer, re-issue it by subject id (halo grant %s "
+                     "<subject id> <recipient>) and send the link shown in the operator "
+                     "console; otherwise remove it from %s."
+                     % (name, ", ".join(allow) or "none", name, name, name, directory,
+                        _access.ACCESS_FILE))
     for name, target, allow in carries:
         dest = data.setdefault(target, {})
         dest["by"] = _access.BY_SUBJECT
