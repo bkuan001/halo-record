@@ -47,6 +47,7 @@ import threading
 import os
 import re
 import time
+import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs, urlencode
@@ -190,6 +191,11 @@ def anchor_remote(witness_url, key, records, *, timeout=10):
     return out.get("receipt", out)
 
 
+class WitnessDamagedError(ValueError):
+    """The hosted witness answered 503: its own store is damaged, so it serves
+    no checkpoints until an operator repairs it."""
+
+
 def fetch_checkpoints(witness_url, subject=None, *, chain_root=None, timeout=10, key=None):
     """Fetch the witness's checkpoints for a subject. This is what a viewer's
     browser (or a buyer's tooling) calls to check completeness against the
@@ -201,8 +207,15 @@ def fetch_checkpoints(witness_url, subject=None, *, chain_root=None, timeout=10,
         url += "?" + urlencode({"chain_root": chain_root})
     req = urllib.request.Request(url, headers=({"Authorization": "Bearer " + key}
                                                if key else {}))
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        out = json.loads(resp.read().decode("utf-8"))
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            out = json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        if e.code == 503:
+            raise WitnessDamagedError(
+                "the witness at %s reports its store is damaged (HTTP 503); completeness "
+                "cannot be checked against it" % witness_url) from None
+        raise
     return out.get("checkpoints", [])
 
 

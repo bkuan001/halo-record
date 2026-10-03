@@ -29,7 +29,7 @@ For a checkpoint's RFC 3161 timestamp, validate the TSA signature with a standar
 - **`halo verify` PASS** — no record in the file was edited, relative to the verified head. It does **not** say nothing is missing: a self-held chain that was truncated and re-sealed also passes. That boundary is [LIMITS.md §1](LIMITS.md), and the verifier prints it on every clean run on purpose.
 - **`--check` COMPLETE** — every checkpoint the witness holds still matches the presented chain. The strength of this verdict is exactly the independence of the witness: a checkpoint *handed to you by the operator* proves nothing — fetch it from the witness yourself, and ask who operates the witness.
 - **UNWITNESSED** — the chain was never anchored; completeness is simply unknown, not failed.
-- **Damaged witness** — a witness file with a torn or garbled checkpoint is refused (exit 2), never read around: the damaged checkpoint may be the one that would expose a truncation. A hosted witness with a damaged store answers 503, and the check fails (exit 1).
+- **Damaged witness** — a witness file with a torn or garbled checkpoint is refused (exit 2), never read around: the damaged checkpoint may be the one that would expose a truncation. A hosted witness with a damaged store answers 503, and the check fails (exit 1) with a message that the witness reports its store is damaged.
 - A chain with no `subject` carries a stated caveat in the verdict: its witness key (`chain_root`) changes if the first record is dropped.
 
 ## Policy verdicts

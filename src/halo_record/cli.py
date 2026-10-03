@@ -205,7 +205,7 @@ def _anchor(args):
     records = _load(args.log)
 
     if args.remote:
-        from .witness import anchor_remote, fetch_checkpoints
+        from .witness import anchor_remote, fetch_checkpoints, WitnessDamagedError
         if not args.key and not args.check:
             print("anchor --remote requires --key (the vendor bearer key) to anchor; "
                   "--check reads without one", file=sys.stderr)
@@ -228,6 +228,9 @@ def _anchor(args):
                     return 0
                 return 1 if result["ok"] is False else 3  # UNWITNESSED: distinct, non-zero (3: argparse owns 2)
             cp = anchor_remote(args.remote, args.key, records)
+        except WitnessDamagedError as e:
+            print("anchor --remote: REFUSED: %s" % e, file=sys.stderr)
+            return 1
         except Exception as e:                       # unreachable host / HTTP / bad response
             print("anchor --remote failed (%s: %s)" % (args.remote, e), file=sys.stderr)
             return 1

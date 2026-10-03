@@ -175,6 +175,26 @@ class HostedWitnessDamageTest(unittest.TestCase):
         self.assertEqual(status, 503)
         self.assertIn("damaged", body["error"])
 
+    def test_cli_says_the_witness_reports_damage(self):
+        d = tempfile.mkdtemp()
+        log = os.path.join(d, "c.jsonl")
+        rec = Recorder(log)
+        with contextlib.redirect_stderr(io.StringIO()):
+            recs = [rec.append(build("tool_call", "security", tool="t", subject="acme"))]
+        self.notary.witness(recs)
+        with open(self.notary.path, "a", encoding="utf-8") as fh:
+            fh.write('{"subject": "acme", "count": 9, "he')  # torn
+        for argv in (["anchor", log, "--check", "--remote", self.url],
+                     ["report", log, "--witness-url", self.url, "-o", os.path.join(d, "r.html")],
+                     ["export", log, "--witness-url", self.url, "-o", os.path.join(d, "x.csv")]):
+            out, err = io.StringIO(), io.StringIO()
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                rc = main(argv)
+            text = out.getvalue() + err.getvalue()
+            self.assertEqual(rc, 1, (argv[0], text))
+            self.assertIn("reports its store is damaged", text, argv[0])
+            self.assertNotIn("could not be reached", text, argv[0])
+
 
 if __name__ == "__main__":
     unittest.main()
