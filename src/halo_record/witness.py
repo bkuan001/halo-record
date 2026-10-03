@@ -197,6 +197,16 @@ class WitnessDamagedError(ValueError):
     no checkpoints until an operator repairs it."""
 
 
+def fetch_failure(witness_url, err):
+    """How a failed checkpoint read is described: a 401/403 means the witness
+    was reached and refused the read (it requires a read key, which report and
+    export do not send); anything else means it could not be reached."""
+    if isinstance(err, urllib.error.HTTPError) and err.code in (401, 403):
+        return ("the witness at %s refused the read (HTTP %d: it requires a read key, "
+                "which report and export do not send)" % (witness_url, err.code))
+    return "the witness at %s could not be reached (%s)" % (witness_url, err)
+
+
 def fetch_checkpoints(witness_url, subject=None, *, chain_root=None, timeout=10, key=None):
     """Fetch the witness's checkpoints for a subject. This is what a viewer's
     browser (or a buyer's tooling) calls to check completeness against the

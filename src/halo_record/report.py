@@ -1336,7 +1336,7 @@ def write_report(log_path, out_path=None, witness_log=None, witness_url=None,
         from .anchor import Notary
         checkpoints = Notary(witness_log).checkpoints_for(records)
     elif witness_url:
-        from .witness import fetch_checkpoints, WitnessDamagedError
+        from .witness import fetch_checkpoints, fetch_failure, WitnessDamagedError
         subj = expected_subject if expected_subject is not None else _subject_id(records)
         try:
             checkpoints = fetch_checkpoints(
@@ -1347,8 +1347,8 @@ def write_report(log_path, out_path=None, witness_log=None, witness_url=None,
                              "not checked" % (log_path, e))
         except Exception as e:
             raise ValueError(
-                "%s: the witness at %s could not be reached (%s); refusing to render a "
-                "report whose completeness was not checked" % (log_path, witness_url, e))
+                "%s: %s; refusing to render a report whose completeness was not checked"
+                % (log_path, fetch_failure(witness_url, e)))
     policy = policy_text = None
     if policy_path:
         from .policy import read_policy

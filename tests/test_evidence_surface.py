@@ -490,6 +490,31 @@ class WitnessReadKeysTest(_WitnessServer):
         self.assertEqual(fetch_checkpoints(self.url, subject="acme", key="rk-acme"), [])
 
 
+class ReadKeyRefusalIsNamedTest(_WitnessServer):
+    """A witness that answers 401/403 was reached and refused the read; report
+    and export say so rather than call it unreachable."""
+    extra = {"read_keys": [("rk-acme", ["acme"])]}
+
+    def test_report_and_export_name_the_refusal(self):
+        from halo_record.export import export
+        from halo_record.report import write_report
+        d = tempfile.mkdtemp()
+        log = os.path.join(d, "c.jsonl")
+        _chain(log, 2)
+        with self.assertRaises(ValueError) as cm:
+            write_report(log, os.path.join(d, "r.html"), witness_url=self.url)
+        msg = str(cm.exception)
+        self.assertIn("refused the read (HTTP 401", msg)
+        self.assertIn("read key", msg)
+        self.assertNotIn("could not be reached", msg)
+        lines = []
+        rc = export(log, os.path.join(d, "e.csv"), witness_url=self.url, out=lines.append)
+        self.assertEqual(rc, 1)
+        text = "\n".join(lines)
+        self.assertIn("refused the read (HTTP 401", text)
+        self.assertNotIn("could not be reached", text)
+
+
 class TwoChainsOneSubjectTest(unittest.TestCase):
     def test_a_second_chain_under_the_same_subject_is_named_as_such(self):
         from halo_record.anchor import Notary, verify_completeness

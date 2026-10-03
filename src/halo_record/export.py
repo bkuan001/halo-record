@@ -434,7 +434,7 @@ def _completeness(records, *, witness_log=None, witness_url=None, expected_subje
         cps = Notary(witness_log).checkpoints_for(records)
         info = {"kind": "local", "path": os.path.basename(str(witness_log))}
     elif witness_url:
-        from .witness import fetch_checkpoints, WitnessDamagedError
+        from .witness import fetch_checkpoints, fetch_failure, WitnessDamagedError
         subj = expected_subject if expected_subject is not None else _subject_id(records)
         try:
             cps = fetch_checkpoints(witness_url, subject=subj,
@@ -442,7 +442,7 @@ def _completeness(records, *, witness_log=None, witness_url=None, expected_subje
         except WitnessDamagedError:
             raise
         except Exception as e:
-            raise ValueError("the witness at %s could not be reached (%s)" % (witness_url, e))
+            raise ValueError(fetch_failure(witness_url, e))
         info = {"kind": "url", "url": witness_url}
     else:
         return None, None
