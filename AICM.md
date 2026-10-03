@@ -45,7 +45,7 @@ CSA's own AICM v1.1 crosswalk maps its LOG-family controls to **AIUC-1 E015** ("
 ## Boundaries
 
 - **Tamper-*evident*, not immutable.** LOG-10 says "protect from modification and deletion"; the chain's precise property is that modification and deletion are *detectable* relative to a verified head, by anyone, without trusting the operator. Prevention is a storage property the operator supplies.
-- **Integrity is not completeness.** A record the operator holds proves nothing was *edited*, never that nothing was *omitted*. Completeness against the operator requires the external witness — see [Integrity vs. completeness](README.md#integrity-vs-completeness-read-this-part) and [LIMITS.md §1](https://github.com/bkuan001/halo-record/blob/main/LIMITS.md).
+- **Integrity is not completeness.** A record the operator holds proves nothing was *edited* relative to a verified head, never that nothing was *omitted*. Completeness against the operator requires the external witness — see [Integrity vs. completeness](README.md#integrity-vs-completeness-read-this-part) and [LIMITS.md §1](https://github.com/bkuan001/halo-record/blob/main/LIMITS.md).
 - **The record does not monitor.** LOG-05/15/16 pair logging with monitoring; the record is the sealed dataset monitoring runs over, not the alerting system.
 
 This is a community mapping against CSA's published v1.1 control text, not a CSA artifact; corrections welcome.

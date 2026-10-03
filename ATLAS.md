@@ -19,7 +19,7 @@ Field by field:
 | Installation commands | Recordable as actions where they flow through an instrumented path — bounded by the capture surface ([LIMITS.md §4](https://github.com/bkuan001/halo-record/blob/main/LIMITS.md)). |
 | Identity of the agent | `agent.id` / `agent.version` / `agent.model` on every record, plus `principal` for who the agent acted for — declared identity, sealed into the hash, not cryptographically attested ([LIMITS.md §5](https://github.com/bkuan001/halo-record/blob/main/LIMITS.md)). |
 
-What ATLAS does not ask of the logs — and what this format adds — is trustworthiness to someone outside the operator: AML.M0024 asks for telemetry and is silent on log integrity. A halo-record chain is that telemetry made tamper-evident and verifiable by anyone, with open code and no account or key.
+What ATLAS does not ask of the logs — and what this format adds — is trustworthiness to someone outside the operator: AML.M0024 asks for telemetry and is silent on log integrity. A halo-record chain is that telemetry made tamper-evident and verifiable by anyone holding the log, with open code and no account or key; independence from the operator comes from a witnessed head ([LIMITS.md §1](https://github.com/bkuan001/halo-record/blob/main/LIMITS.md)).
 
 ## The forensic layer under the technique matrix
 

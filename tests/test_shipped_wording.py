@@ -68,3 +68,54 @@ class StarterPackCitationsTest(unittest.TestCase):
         owasp = self._read(self.PACKS, "owasp-starter.json")
         self.assertIn("(T1–T17)", owasp)
         self.assertIn("LLM04:2025 Data & Model Poisoning", owasp)
+
+
+ROOT = os.path.join(os.path.dirname(__file__), "..")
+
+
+class MappingDocsMatchClaimsTableTest(unittest.TestCase):
+    """The mapping docs describe the witness the way README's claims table and
+    LIMITS §4/§18 do: it detects written history removed or rewritten relative
+    to its checkpoints, and its payload is the subject id, count, head and chain
+    root. Phrases are assembled at runtime so this file does not match itself."""
+
+    DOCS = ["ATC.md", "AARM.md", "OWASP.md", "AICM.md", "ATLAS.md", "AIUC.md"]
+
+    def _text(self, name):
+        with open(os.path.join(ROOT, name), encoding="utf-8") as fh:
+            return " ".join(fh.read().split())
+
+    def test_no_witness_claim_over_never_written_records(self):
+        for name in self.DOCS:
+            text = self._text(name)
+            self.assertNotIn("decline " + "to write", text, name)
+            self.assertNotIn("a count and a head " + "hash, nothing else", text, name)
+            self.assertNotIn("count and head" + "-hash", text, name)
+
+    def test_witness_payload_names_subject_and_chain_root(self):
+        for name in ("ATC.md", "AARM.md", "OWASP.md"):
+            self.assertIn("chain root", self._text(name), name)
+
+    def test_timestamp_not_listed_as_completeness_independence(self):
+        self.assertNotIn("or an RFC 3161 " + "timestamp) — see", self._text("AIUC.md"))
+
+    def test_registry_summary_is_scoped_to_the_log_holder(self):
+        self.assertIn("verifiable by anyone holding the log", self._text("pyproject.toml"))
+
+
+class ShippedTextVocabularyTest(unittest.TestCase):
+    """Shipped source and the touched tests use neutral vocabulary."""
+
+    WORDS = re.compile(r"(?i)\b(" + "oo" + "ps|" + "sanit" + "ized)\b")
+
+    def test_neutral_vocabulary(self):
+        for rel in (os.path.join("src", "halo_record", "witness.py"),
+                    os.path.join("tests", "test_policy_digest.py"),
+                    os.path.join("tests", "test_tenant.py"),
+                    "SECURITY.md", "CONTRIBUTING.md"):
+            with open(os.path.join(ROOT, rel), encoding="utf-8") as fh:
+                text = fh.read()
+            self.assertIsNone(self.WORDS.search(text), rel)
+            if rel.endswith(".md"):
+                self.assertNotIn("ship a " + "fix", text, rel)
+                self.assertNotIn("bug" + "-fix", text, rel)
