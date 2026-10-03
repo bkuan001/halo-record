@@ -159,7 +159,7 @@ class record_call:
 
     def __enter__(self):
         # Resolved before the block runs: a missing recorder is refused while
-        # nothing has happened yet, so the caller can fix it and run once.
+        # nothing has happened yet, so the caller can adjust it and run once.
         self._active = self.recorder or current_recorder()
         if self._active is None:
             raise RuntimeError(

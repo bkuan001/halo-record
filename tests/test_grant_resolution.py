@@ -34,7 +34,7 @@ class GrantResolutionTest(unittest.TestCase):
         self.assertIn(self.victim_stem, chains)
 
     def test_a_subject_named_like_another_tenants_file_is_refused(self):
-        code, out, err = _run(["grant", self.d, self.victim_stem, "mallory@mallory.com"])
+        code, out, err = _run(["grant", self.d, self.victim_stem, "attacker@evil.example"])
         self.assertEqual(code, 2)
         self.assertIn("ambiguous", err)
         self.assertEqual(access.allowed_for(self.d, "acme/eu"), [])

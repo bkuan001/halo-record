@@ -32,12 +32,12 @@ class RenderTest(unittest.TestCase):
         self.assertEqual(_subject_id(self.records), "acme-corp")
 
     def test_witness_url_embeds_live_config(self):
-        html = render(self.records, witness_url="https://witness.halo.dev")
+        html = render(self.records, witness_url="https://witness.example")
         self.assertIn('id="halo-config"', html)
         self.assertIn("liveCheckpoints", html)
         # config carries the witness URL and the subject the browser fetches by
         cfg = json.loads(_extract(html, "halo-config"))
-        self.assertEqual(cfg["witnessUrl"], "https://witness.halo.dev")
+        self.assertEqual(cfg["witnessUrl"], "https://witness.example")
         self.assertEqual(cfg["subject"], "acme-corp")
 
     def test_no_witness_url_means_null_config(self):
@@ -71,11 +71,11 @@ class WriteReportTest(unittest.TestCase):
         from unittest import mock
         with mock.patch("halo_record.witness.fetch_checkpoints", return_value=[]):
             write_report(os.path.join(d, "c.jsonl"), out,
-                         witness_url="https://witness.halo.dev")
+                         witness_url="https://witness.example")
         with open(out) as fh:
             html = fh.read()
         cfg = json.loads(_extract(html, "halo-config"))
-        self.assertEqual(cfg["witnessUrl"], "https://witness.halo.dev")
+        self.assertEqual(cfg["witnessUrl"], "https://witness.example")
 
 
 def _extract(html, script_id):
