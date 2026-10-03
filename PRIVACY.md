@@ -20,7 +20,7 @@ Nothing, except four opt-in calls — all off unless you invoke them:
 - **RFC 3161 timestamping** (`halo anchor`) sends only a checkpoint's state hash to the Timestamp Authority you choose.
 - **Anchoring to a witness** sends the subject id, a record count, and two chain fingerprints — never record contents.
 - **Reading a witness's checkpoints back** (completeness verification) sends the subject id being checked.
-- **Email verification for gated reports** (`halo serve --verify-email`) sends a one-time code, and the report's subject name, to the address a viewer enters, through the SMTP server you configure (`$HALO_SMTP_HOST`); without one, the code is written to a local outbox instead. No record contents are sent.
+- **Email verification for gated reports** (`halo serve --verify-email`) sends a one-time code, and the report's subject name, to the address a viewer enters, through the SMTP server you configure (`$HALO_SMTP_HOST`). Each code is also logged, with the address, to a local outbox file in the served directory; without an SMTP host, that file and the serve console are its only delivery. No other record contents are sent.
 
 The witness is a server you run or designate (`halo witness-serve`) — there is no vendor-hosted endpoint, and no default endpoint is configured. Record contents never leave your infrastructure.
 

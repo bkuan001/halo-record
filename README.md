@@ -15,7 +15,7 @@ The record format is open and free to implement. This package is the reference i
 You are being asked to put a recorder inside your agent. You should not take that on faith:
 
 - **Zero runtime dependencies.** Standard library only. `pip install halo-record` installs exactly one package.
-- **No network calls**, except four opt-in ones — anchoring to a witness (sends the subject id, a record count, and two chain fingerprints — the head and the chain root), reading a witness's checkpoints back (sends the subject id), the RFC 3161 timestamp (sends only a checkpoint's state hash to a Timestamp Authority), and `halo serve --verify-email` (sends a one-time code, by SMTP through the server you configure in `$HALO_SMTP_HOST`, to the address a report viewer enters). All are off unless you invoke them; record contents never leave your infrastructure.
+- **No network calls**, except four opt-in ones — anchoring to a witness (sends the subject id, a record count, and two chain fingerprints — the head and the chain root), reading a witness's checkpoints back (sends the subject id), the RFC 3161 timestamp (sends only a checkpoint's state hash to a Timestamp Authority), and `halo serve --verify-email` (sends a one-time code and the report's subject name, by SMTP through the server you configure in `$HALO_SMTP_HOST`, to the address a report viewer enters). All are off unless you invoke them; no other record contents leave your infrastructure.
 - **Raw tool arguments are hashed, with a redacted summary alongside.** Arguments are stored as a canonical hash plus a summary: the argument text with known secret and PII patterns masked, capped at 200 characters. A short input that matches no pattern appears in the summary in full; hash-only mode (`summaries=False`) keeps no summary at all. Redaction is best-effort (regex over common secret and PII formats plus an entropy catch-all): treat it as defense-in-depth, not a guarantee. Outcome fields you supply beyond `summary` are scanned and masked with the same patterns, but not cut to 200 characters (LIMITS §13).
 - **Small enough to audit.** ~8,700 lines of Python, including the report page's embedded JavaScript and CSS (code lines, not counting blanks, comments, and docstrings). Read all of it in a day.
 - **Apache-2.0.**
@@ -375,7 +375,7 @@ halo report   render a chain as an HTML Runtime Report that re-verifies its hash
 halo policy   corroborate a chain against a declarative policy pack
               (per-rule pass / violation / evidence-gap; exit 1 violated, 2 refused — invalid
                policy or unexpected subject — or non-attestable — the chain does not verify;
-               the rules are printed under a NON-ATTESTABLE header — 3 nothing in scope;
+               the rules are printed under a NON-ATTESTABLE header when the records can be read — 3 nothing in scope;
                --from/--to/--expect-subject; bundled packs run by name; --help shows the format)
 halo serve    serve per-tenant reports over HTTP, access-scoped per customer
 halo grant    designate a report recipient (email or domain)
