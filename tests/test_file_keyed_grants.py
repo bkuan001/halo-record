@@ -2,7 +2,10 @@
 chain whose file holds several subject ids is keyed by its file name too but
 its report is withheld. ``halo grant`` refuses a name whose report ``halo
 serve`` withholds, and records a grant on a subjectless chain for that file, so
-a later chain whose subject id equals the file name never inherits it."""
+a later chain whose subject id equals the file name never inherits it.
+
+A 0.2.45 grant on a subjectless chain is quarantined at startup like any other
+name whose two readings can differ; the startup line and LIMITS say why."""
 
 import os
 import tempfile
@@ -13,6 +16,8 @@ from halo_record.record import Recorder
 from halo_record.serve import reconcile_grants, token_for
 from tests.test_legacy_grant_quarantine import (_legacy_access, _run, _Server,
                                                 _tenant_write, _write)
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 def _plain(path, tool, n=2):
@@ -153,6 +158,43 @@ class SubjectlessFileGrantTest(_Shut, unittest.TestCase):
         code, out, err = _run(["grant", d, "initech", "initech.com"])
         self.assertEqual(code, 0)
         self.assertNotIn("holds no subject id", err)
+
+
+class LegacySubjectlessGrantTest(unittest.TestCase):
+    """t10 case A: a 0.2.45 grant on ``agent.jsonl``, written by a plain
+    ``Recorder`` with no subject id."""
+
+    def setUp(self):
+        self.d = tempfile.mkdtemp()
+        _plain(os.path.join(self.d, "agent.jsonl"), "AGENT_OWN")
+        _legacy_access(self.d, {"agent": {"allow": ["legit.com"]}})
+
+    def test_startup_line_says_the_chain_holds_no_subject_id(self):
+        text = "\n".join(reconcile_grants(self.d))
+        self.assertIn("quarantined grant 'agent'", text)
+        self.assertIn("agent.jsonl holds no subject id", text)
+        self.assertNotIn("a different chain", text)
+        self.assertIn("keyed by its file name", text)
+        self.assertIn("halo grant %s agent <recipient>" % self.d, text)
+
+    def test_reissued_grant_admits_the_recipient(self):
+        reconcile_grants(self.d)
+        code, out, err = _run(["grant", self.d, "agent", "legit.com"])
+        self.assertEqual(code, 0, out + err)
+        srv = _Server(self.d)
+        try:
+            status, body = srv.post(token_for(srv.secret, "agent"), "a@legit.com")
+            self.assertEqual(status, 200)
+            self.assertIn("AGENT_OWN", body)
+        finally:
+            srv.close()
+
+    def test_limits_lists_holds_no_subject_id_as_a_quarantine_cause(self):
+        with open(os.path.join(ROOT, "LIMITS.md"), encoding="utf-8") as fh:
+            text = " ".join(fh.read().split())
+        start = text.index("If `<name>` is a served subject id but `<name>.jsonl`")
+        bullet = text[start:start + 600]
+        self.assertTrue("holds no subject id" in bullet, bullet)
 
 
 if __name__ == "__main__":

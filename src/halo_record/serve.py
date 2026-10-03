@@ -290,6 +290,16 @@ def _quarantine_line(directory, name, recipients, served, files):
     else:
         held_by = "no file named %s.jsonl remains" % name
     paths = dict(served)
+    if (name in paths and stem_paths and _stem(paths[name]) == name
+            and _subjectless(stem_paths[0])):
+        return ("  quarantined grant %r (recipients: %s): it was keyed by file name before "
+                "0.2.46, and %s. A chain with no subject id is keyed by its file name, and a "
+                "grant keyed by that name would pass to a later chain with subject id %r, so "
+                "it admits no one. If it was for this chain, re-issue it (halo grant %s %s "
+                "<recipient>): a grant issued now is recorded for %s.jsonl and does not pass "
+                "to another chain."
+                % (name, ", ".join(recipients) or "none", held_by, name, directory, name,
+                   name))
     if name in paths:
         now = "subject id %r is served from %s" % (name, os.path.basename(paths[name]))
     else:

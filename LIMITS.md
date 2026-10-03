@@ -722,14 +722,18 @@ them by subject id and marks each grant it writes as keyed by subject id
   working, silently.
 - If `<name>` is a served subject id but `<name>.jsonl` holds a different
   subject id, holds several subject ids (an earlier version could clean two
-  ids to one file name, and such a file is keyed by its file name), or no
-  longer exists, the readings name different chains. The
+  ids to one file name, and such a file is keyed by its file name), holds no
+  subject id (a plain `Recorder` file such as `agent.jsonl`, also keyed by its
+  file name), or no longer exists, the readings can name different chains. The
   grant is quarantined: its recipients move to `quarantined`, it admits no one,
   and every startup until it is re-issued prints `quarantined grant '<name>'
   (recipients: ...)`,
   naming the file and the chain now served under that subject id, with
   `halo grant <dir> <subject id> <recipient>` to re-issue it. It is not
-  carried to either chain.
+  carried to either chain. For a file that holds no subject id and is still
+  the chain served under `<name>`, the line says so and gives
+  `halo grant <dir> <name> <recipient>`; a grant re-issued that way is
+  recorded for that file (see "Granting a chain with no subject id" above).
 - If `<name>` is not a served subject id, and `<name>.jsonl` is served under a
   subject id that file name matches (`Acme_Corp.jsonl` for `Acme Corp`), the
   grant is carried to that subject id and printed as `carried grant`, and the
