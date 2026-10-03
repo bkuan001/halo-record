@@ -5,6 +5,7 @@ variation marks and Hangul fillers, is dropped when it sits between token
 characters, so the token is scanned and masked as if it were not there.
 """
 
+import json
 import sys
 import unicodedata
 import unittest
@@ -168,3 +169,27 @@ class BesideASeparatorTest(unittest.TestCase):
                         out = redact.redact_text(text)
                         self.assertNotIn("1488", out)
                         self.assertIn("credit_card", [f["type"] for f in redact.scan(text)])
+
+
+class PasswordValueBesideAnInvisibleTest(unittest.TestCase):
+    """An invisible run between a password's separator, its quote, and its
+    value does not stand in for the value: the value itself is masked."""
+
+    CASES = (
+        '{"password":​"hunter2xyz"}',
+        '{"password": ​"hunter2xyz"}',
+        '{"password":"​hunter2xyz"}',
+        '{"password":⁠​"hunter2xyz"}',
+        "password=​hunter2xyz",
+        "DB_PASSWORD:‮ hunter2xyz",
+        "pwd=\U000e0041'hunter2xyz'",
+    )
+
+    def test_value_is_masked_and_reported(self):
+        for text in self.CASES:
+            with self.subTest(text=ascii(text)):
+                self.assertNotIn("hunter2xyz", redact.redact_text(text))
+                self.assertNotIn("hunter2xyz", redact.redact_text(text, entropy=False))
+                self.assertNotIn("hunter2xyz", redact.mask_known_secrets(text))
+                self.assertIn("password", [f["type"] for f in redact.scan(text)])
+                self.assertNotIn("hunter2xyz", json.dumps(redact.scan(text)))

@@ -25,6 +25,31 @@ from collections import Counter
 
 from .canon import int_text, sort_key
 
+# Invisible characters spliced between the characters of a token would
+# otherwise split a known key format so no pattern sees it. The set is every
+# Unicode format character (category Cf) and every Default_Ignorable_Code_Point
+# (both as of Unicode 15.1: soft hyphen, combining grapheme joiner, Hangul
+# fillers, Khmer inherent vowels, variation selectors, tags, ...), plus two
+# characters that render blank: U+2800 BRAILLE PATTERN BLANK and U+1D159
+# MUSICAL SYMBOL NULL NOTEHEAD. They are dropped when they sit between token
+# characters, or between a token character and a group separator (see
+# _SEP_CLASS); elsewhere (an emoji ZWJ sequence, a bidi mark between two
+# spaces) they are kept. The ranges are listed here, not read from ``unicodedata``, so every
+# Python version and the TypeScript port strip the same set.
+_INVISIBLE_RANGES = (
+    (0x00AD, 0x00AD), (0x034F, 0x034F), (0x0600, 0x0605), (0x061C, 0x061C),
+    (0x06DD, 0x06DD), (0x070F, 0x070F), (0x0890, 0x0891), (0x08E2, 0x08E2),
+    (0x115F, 0x1160), (0x17B4, 0x17B5), (0x180B, 0x180F), (0x200B, 0x200F),
+    (0x202A, 0x202E), (0x2060, 0x206F), (0x2800, 0x2800), (0x3164, 0x3164),
+    (0xFE00, 0xFE0F), (0xFEFF, 0xFEFF), (0xFFA0, 0xFFA0), (0xFFF0, 0xFFFB),
+    (0x110BD, 0x110BD), (0x110CD, 0x110CD), (0x13430, 0x1343F), (0x1BCA0, 0x1BCA3),
+    (0x1D159, 0x1D159), (0x1D173, 0x1D17A), (0xE0000, 0xE0FFF),
+)
+INVISIBLE_CHARS = frozenset(chr(c) for a, b in _INVISIBLE_RANGES for c in range(a, b + 1))
+_INVISIBLE_CLASS = "".join(
+    re.escape(chr(a)) if a == b else "%s-%s" % (re.escape(chr(a)), re.escape(chr(b)))
+    for a, b in _INVISIBLE_RANGES)
+
 PATTERNS = [
     ("api_key",      "CRITICAL", re.compile(r'(?:sk-[A-Za-z0-9_\-]{20,}|AKIA[0-9A-Z]{16}|xox[baprs]-[a-zA-Z0-9\-]{10,})')),
     ("gcp_api_key",  "CRITICAL", re.compile(r'AIza[0-9A-Za-z_\-]{35,}')),
@@ -47,7 +72,13 @@ PATTERNS = [
     ("db_conn",      "CRITICAL", re.compile(r'(?:postgres(?:ql)?|mysql|mariadb|mongodb(?:\+srv)?|rediss?|amqps?|mssql|sqlserver)://[^\s"\'<>]+')),
     # A password assigned in text ("password=...", "DB_PASSWORD: ...", a JSON
     # "password": "..." pair). Bounded value length keeps it linear.
-    ("password",     "CRITICAL", re.compile(r'(?i)(?<![A-Za-z0-9])(?:password|passwd|passphrase|pwd)["\']?[ \t]{0,3}[=:][ \t]{0,3}["\']?[^\s"\',;<>]{1,256}')),
+    # An invisible run beside the separator or the quote is part of the gap,
+    # never the value: the value class leaves invisible characters out, so a
+    # zero-width space after "password": cannot be masked in place of it.
+    ("password",     "CRITICAL", re.compile(
+        r'(?i)(?<![A-Za-z0-9])(?:password|passwd|passphrase|pwd)["\']?[ \t]{0,3}[=:]'
+        r'(?:[ \t' + _INVISIBLE_CLASS + r']{0,8})["\']?[' + _INVISIBLE_CLASS + r']{0,8}'
+        r'[^\s"\',;<>' + _INVISIBLE_CLASS + r']{1,256}')),
     # A JWT starts a token (the lookbehind), so a run like "eyJeyJeyJ..." is
     # tried once rather than from every "eyJ" in it, and each segment is
     # bounded: matching stays linear on hostile text.
@@ -289,30 +320,6 @@ def _validated_span(name, match_text):
 _VALIDATORS = {"credit_card": _luhn_ok, "iban": _iban_ok}
 
 
-# Invisible characters spliced between the characters of a token would
-# otherwise split a known key format so no pattern sees it. The set is every
-# Unicode format character (category Cf) and every Default_Ignorable_Code_Point
-# (both as of Unicode 15.1: soft hyphen, combining grapheme joiner, Hangul
-# fillers, Khmer inherent vowels, variation selectors, tags, ...), plus two
-# characters that render blank: U+2800 BRAILLE PATTERN BLANK and U+1D159
-# MUSICAL SYMBOL NULL NOTEHEAD. They are dropped when they sit between token
-# characters, or between a token character and a group separator (see
-# _SEP_CLASS); elsewhere (an emoji ZWJ sequence, a bidi mark between two
-# spaces) they are kept. The ranges are listed here, not read from ``unicodedata``, so every
-# Python version and the TypeScript port strip the same set.
-_INVISIBLE_RANGES = (
-    (0x00AD, 0x00AD), (0x034F, 0x034F), (0x0600, 0x0605), (0x061C, 0x061C),
-    (0x06DD, 0x06DD), (0x070F, 0x070F), (0x0890, 0x0891), (0x08E2, 0x08E2),
-    (0x115F, 0x1160), (0x17B4, 0x17B5), (0x180B, 0x180F), (0x200B, 0x200F),
-    (0x202A, 0x202E), (0x2060, 0x206F), (0x2800, 0x2800), (0x3164, 0x3164),
-    (0xFE00, 0xFE0F), (0xFEFF, 0xFEFF), (0xFFA0, 0xFFA0), (0xFFF0, 0xFFFB),
-    (0x110BD, 0x110BD), (0x110CD, 0x110CD), (0x13430, 0x1343F), (0x1BCA0, 0x1BCA3),
-    (0x1D159, 0x1D159), (0x1D173, 0x1D17A), (0xE0000, 0xE0FFF),
-)
-INVISIBLE_CHARS = frozenset(chr(c) for a, b in _INVISIBLE_RANGES for c in range(a, b + 1))
-_INVISIBLE_CLASS = "".join(
-    re.escape(chr(a)) if a == b else "%s-%s" % (re.escape(chr(a)), re.escape(chr(b)))
-    for a, b in _INVISIBLE_RANGES)
 # Group separators a grouped number or a PEM header may use (every character
 # Python's str.isspace() accepts, listed so the TypeScript port uses the same
 # set). An invisible run between a separator and a token character, or
