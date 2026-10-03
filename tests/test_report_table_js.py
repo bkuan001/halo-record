@@ -101,12 +101,18 @@ function settle(){ return new Promise(r => setTimeout(r, 300)); }
   await settle();
   const log = [];
   const snap = () => ({rowcount: ELS["rowcount"].innerHTML,
-                       order: ELS["activity-body"].children.map(r => r.getAttribute("data-tool"))});
+                       order: ELS["activity-body"].children.map(r => r.getAttribute("data-tool")),
+                       toolOptions: ELS["f-tool"].options.slice(1).map(o => ({value: o.value, text: o.textContent})),
+                       detail: ELS["detail-body"] ? ELS["detail-body"].innerHTML : null});
   log.push(snap());
   for (const a of ACTIONS){
     if (a === "observe") OBSERVERS.forEach(cb => cb([{isIntersecting: true}]));
     else if (a === "filter"){ ELS["f-tool"].value = ""; ELS["f-tool"].fire("change"); }
     else if (a === "search"){ ELS["f-q"].value = "a"; ELS["f-q"].fire("input"); }
+    else if (a.startsWith("open:")){
+      const row = ELS["activity-body"].children[+a.slice(5)];
+      (ELS["activity-body"].listeners.click || []).forEach(f => f({target: {closest: () => row}, preventDefault(){}}));
+    }
     await settle();
     log.push(snap());
   }
@@ -190,6 +196,37 @@ class NewestFirstToTheMicrosecondTest(unittest.TestCase):
                         ("third", "2026-06-01T10:00:01Z")])
         out = _run(html, ["filter"])
         self.assertEqual(out["log"][-1]["order"], ["third", "second", "first"])
+
+
+@unittest.skipUnless(NODE, "node not installed")
+class InvisibleIdentifiersShownTest(unittest.TestCase):
+    """An identifier with an invisible character in it is shown with a visible
+    marker wherever the page displays it: the Tool filter, and the record
+    drawer's approver, principal and scope fields."""
+
+    def setUp(self):
+        d = tempfile.mkdtemp()
+        log = os.path.join(d, "c.jsonl")
+        Recorder(log).append(build(
+            "tool_call", "security", tool="\u202egnp.exe", subject="acme",
+            decision="human_approved", approver="alice\u202e", scope="fs.wr\u200bite",
+            principal={"human_id": "bob\u200b", "service_account": "svc\u2060-1"}))
+        self.html, _ = write_report(log, os.path.join(d, "r.html"))
+
+    def test_tool_filter_marks_the_character_and_keeps_the_value(self):
+        out = _run(self.html, ["filter"])
+        opts = out["log"][-1]["toolOptions"]
+        self.assertEqual([o["value"] for o in opts], ["\u202egnp.exe"])
+        self.assertEqual([o["text"] for o in opts], ["\u27e8U+202E\u27e9gnp.exe"])
+
+    def test_drawer_marks_approver_principal_and_scope(self):
+        out = _run(self.html, ["open:0"])
+        detail = out["log"][-1]["detail"]
+        for shown in ("alice\u27e8U+202E\u27e9", "fs.wr\u27e8U+200B\u27e9ite",
+                      "bob\u27e8U+200B\u27e9", "svc\u27e8U+2060\u27e9-1"):
+            self.assertIn(shown, detail)
+        for raw in ("\u202e", "\u200b", "\u2060"):
+            self.assertNotIn(raw, detail)
 
 
 if __name__ == "__main__":

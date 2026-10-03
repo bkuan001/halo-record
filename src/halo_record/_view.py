@@ -29,7 +29,10 @@ def esc(x):
 # (a zero-width space, a bidi control, a tag character) stays in the record. The
 # page shows each as a visible marker so a lookalike id never reads identically.
 ID_FIELDS = (("agent", "id"), ("agent", "name"), ("action", "tool"), ("session_id",),
-             ("subject", "id"), ("subject", "name"))
+             ("subject", "id"), ("subject", "name"),
+             ("action", "authorization", "approver"), ("action", "authorization", "scope"),
+             ("principal", "human_id"), ("principal", "creator_id"),
+             ("principal", "service_account"), ("principal", "role_scope"))
 
 
 def show_id(s):
@@ -651,7 +654,7 @@ def row(r, show_agent=False):
         len(findings) + len(threats), esc(_str(r.get("record_id") or "")),
         esc(haystack + " " + text.lower()),
         esc(fmt_ts(r.get("ts"))), agent_cell, esc(show_id(_str(action.get("tool") or "—"))),
-        esc(_str(action.get("type") or "—")), source_cell, esc(_str(auth.get("scope") or "—")),
+        esc(_str(action.get("type") or "—")), source_cell, esc(show_id(_str(auth.get("scope") or "—"))),
         # No decision = no gate reported: a statement, not an alarm. Green is
         # reserved for a supplied allow/approval; amber for a supplied denial.
         ("neutral" if not decision else "ok" if decision in ("allowed", "human_approved")
@@ -682,7 +685,7 @@ def cards(records, policy_result=None):
 
 
 def scopes(records):
-    return "".join('<span class="pill">%s</span>' % esc(s) for s in stats(records)["scopes"]) \
+    return "".join('<span class="pill">%s</span>' % esc(show_id(s)) for s in stats(records)["scopes"]) \
         or '<span class="dim">none</span>'
 
 
@@ -1167,7 +1170,7 @@ var HaloView = (function(){
       '" tabindex="0" class="rowclick" title="Click for the full record">' +
       '<td class="mono dim ts-cell">' + esc(fmtTs(r.ts)) + "</td>" + agentCell +
       '<td class="mono">' + esc(showId(str(or(action.tool, "\u2014")))) + "</td><td>" + esc(str(or(action.type, "\u2014"))) +
-      "</td><td>" + sourceCell + '</td><td class="mono">' + esc(str(or(auth.scope, "\u2014"))) +
+      "</td><td>" + sourceCell + '</td><td class="mono">' + esc(showId(str(or(auth.scope, "\u2014")))) +
       '</td><td><span class="pill ' + (!truthy(decision) ? "neutral" : (decision === "allowed" || decision === "human_approved") ? "ok" : "warn") +
       '">' + esc(str(or(decision, "\u2014"))) + '</span></td><td><span class="pill ' +
       (status === "ok" ? "ok" : (status === "error" || status === "denied") ? "warn" : "neutral") + '">' + esc(status) +
@@ -1636,7 +1639,7 @@ var HaloView = (function(){
       period: '<span class="period-l">Records span</span> <b>' + esc(st.start) + "</b> &ndash; <b>" + esc(st.end) +
               '</b> <span class="period-tz">UTC</span>',
       cards: cards(records, res),
-      scopes: st.scopes.map(function(s){ return '<span class="pill">' + esc(s) + "</span>"; }).join("") ||
+      scopes: st.scopes.map(function(s){ return '<span class="pill">' + esc(showId(s)) + "</span>"; }).join("") ||
               '<span class="dim">none</span>',
       provenance: provenance(records),
       rows: rows,

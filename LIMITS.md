@@ -208,9 +208,14 @@ characters included. Because identifiers keep them, two ids can differ only by
 an invisible character (`payments\u200b-bot` and `payments-bot`). The policy engine
 compares strings with invisible characters removed, so a rule on `agent.id`,
 `action.tool` or `session_id` matches the lookalike too (§7); the report shows
-each invisible character in an agent, tool or session id as a visible marker
-(`⟨U+200B⟩`); and `halo policy` and `halo report` print a warning naming each
-record whose agent, tool, session or subject id carries one. A lookalike built
+each invisible character in an agent, tool or session id, a scope, an approver
+or a principal as a visible marker (`⟨U+200B⟩`), in the table, the Tool filter
+and the record drawer; and `halo policy`, `halo report` and `halo export` print
+a warning naming each record whose agent, tool, session or subject id, scope,
+approver or principal carries one. The export's CSV keeps those cells exactly
+as recorded, so it ties out to the records byte for byte; its manifest lists
+them under `invisible_identifiers`. Matching `halo export --tool` is exact, so a
+lookalike tool is not selected by the visible name. A lookalike built
 from visible characters (a Cyrillic `а` for a Latin `a`) is not detected.
 
 The credential coverage, by finding type:

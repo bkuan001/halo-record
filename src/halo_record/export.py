@@ -29,6 +29,7 @@ import datetime
 import hashlib
 import json
 import os
+import sys
 
 from .verify import parse_record_line, read_log_lines, verify_log
 
@@ -335,6 +336,9 @@ TS_SOURCE = ("declared: each record's ts is the recording host's clock, sealed i
              "it with openssl ts -verify).")
 
 
+_INVISIBLE_LIST_MAX = 100  # manifest entries; "count" gives the total
+
+
 def build_manifest(records, window_records, *, source_log, start=None, end=None,
                    verified=None, csv_sha256=None, tools=None, source_log_sha256=None,
                    subject=None, witness=None, completeness=None):
@@ -393,6 +397,21 @@ def build_manifest(records, window_records, *, source_log, start=None, end=None,
             "note": "no witness was named; records removed and the chain re-sealed "
                     "would not be visible here (export --witness / --witness-url)"},
     }
+    # Identifier cells keep their characters as recorded, so the CSV ties out
+    # to the records; one that carries an invisible character (which a
+    # spreadsheet does not show) is listed here, as the report marks it.
+    from ._view import invisible_identifiers
+    hits = invisible_identifiers(window_records)
+    if hits:
+        manifest["invisible_identifiers"] = {
+            "note": "these identifier fields contain invisible characters; the CSV keeps "
+                    "them as recorded, so cells that look alike can differ. Policy rules "
+                    "match such ids with the characters removed; the report marks each "
+                    "one as \u27e8U+XXXX\u27e9.",
+            "count": len(hits),
+            "fields": [{"record_id": rid, "field": path, "shown": shown}
+                       for rid, path, shown in hits[:_INVISIBLE_LIST_MAX]],
+        }
     if window_records:
         manifest["window"]["first_ts"] = window_records[0].get("ts")
         manifest["window"]["last_ts"] = window_records[-1].get("ts")
@@ -556,6 +575,12 @@ def export(log_path, out_path, *, start=None, end=None, tools=None,
         f"exported {len(window)} of {len(records)} records -> {out_path} "
         f"(manifest: {m_path}; chain head {manifest['chain']['head_hash'][:16]}...)"
     )
+    from ._view import invisible_identifiers_warning
+    note = invisible_identifiers_warning(window)
+    if note:
+        # Advisory, as in report and policy: the exit code is unchanged.
+        print(note + "\n  (the CSV keeps these cells as recorded; the manifest lists them "
+              "under invisible_identifiers)", file=sys.stderr)
     if completeness is None:
         out("NOTE: completeness NOT CHECKED — no witness named; the manifest attests "
             "integrity relative to the head only.")

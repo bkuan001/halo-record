@@ -589,7 +589,9 @@ _PAGINATE_JS = r"""
     vals.sort();
     for (var j = 0; j < vals.length; j++){
       var o = document.createElement("option");
-      o.value = vals[j]; o.textContent = vals[j];
+      // The value stays as recorded (rows are matched on it); the label
+      // marks an invisible character, as the row cells do.
+      o.value = vals[j]; o.textContent = shownId(vals[j]);
       sel.appendChild(o);
     }
   }
@@ -800,18 +802,18 @@ _PAGINATE_JS = r"""
     h += field("Parent action", r.parent_id, true);
     var pr = r.principal || {};
     if (pr && typeof pr === "object"){
-      h += field("On behalf of (human)", pr.human_id);
-      h += field("Creator", pr.creator_id);
-      h += field("Service account", pr.service_account);
-      h += field("Role scope", pr.role_scope);
+      h += field("On behalf of (human)", shownId(pr.human_id));
+      h += field("Creator", shownId(pr.creator_id));
+      h += field("Service account", shownId(pr.service_account));
+      h += field("Role scope", shownId(pr.role_scope));
     }
     h += '<div class="d-sec">Arguments (as recorded)</div>';
     h += '<pre class="d-pre">' + esc(inp.summary || "(none recorded)") + "</pre>";
     h += field("Argument hash", inp.hash, true);
     h += '<div class="d-sec">Permission</div>';
-    h += field("Scope", auth.scope);
+    h += field("Scope", shownId(auth.scope));
     h += field("Decision", auth.decision);
-    h += field("Approver", auth.approver);
+    h += field("Approver", shownId(auth.approver));
     var ver = (r.verification && typeof r.verification === "object") ? r.verification : null;
     h += '<div class="d-sec">Verification gate</div>';
     if (ver){

@@ -124,6 +124,10 @@ def _cases():
                          ("pay\U000E0041ments-bot", "Wr\u200bite", {"file_path": "/a"}))])
     cases.append({"name": "lookalike-ids", "records": lookalike, "rules": [
         {"id": "no-email", "when": {"agent.id": "payments-bot"}, "forbid": {"action.tool": "send_email"}}]})
+    marked = _records([(("tool_call", "security"), dict(
+        tool="\u202egnp.exe", subject="acme", decision="human_approved", approver="alice\u202e",
+        scope="fs.wr\u200bite", principal={"human_id": "bob\u200b"}))])
+    cases.append({"name": "invisible-scope-approver", "records": marked})
     return cases
 
 
