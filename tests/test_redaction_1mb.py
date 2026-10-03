@@ -207,3 +207,33 @@ class CanonStringTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def _best(fn, runs=3):
+    """Fastest of ``runs`` timings of ``fn``, in seconds."""
+    out = None
+    for _ in range(runs):
+        t = time.perf_counter()
+        fn()
+        took = time.perf_counter() - t
+        out = took if out is None else min(out, took)
+    return out
+
+
+class AdjacentShortMatchesAtTheCapTest(unittest.TestCase):
+    """Short matches packed edge to edge past the cap (no whitespace) keep the
+    cut search linear: each long field costs about as much as scanning it."""
+
+    def test_redact_text_of_adjacent_short_matches_is_fast(self):
+        for unit in ("%@b.cd", "a.b@c.de", "(415).555.0132"):
+            text = unit * (1_020_000 // len(unit))
+            with self.subTest(unit=unit):
+                self.assertLess(_best(lambda: redact.redact_text(text)), 0.1)
+
+    def test_build_with_many_long_fields_is_fast(self):
+        field = ("%@b.cd" * 12000)[:70000]
+        outcome = {"status": "ok", "summary": "s"}
+        for i in range(20):
+            outcome["f%d" % i] = field
+        took = _best(lambda: build("tool_call", "security", tool="t", outcome=outcome))
+        self.assertLess(took, 1.5)

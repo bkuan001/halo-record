@@ -399,14 +399,22 @@ def _capped(text):
     import bisect
     spans = _match_spans(text[:REDACT_MAX + SCAN_OVERLAP])
     starts = [a for a, _b in spans]
-    c = REDACT_MAX
+    half = REDACT_MAX // 2
+    # Two scan pointers that only move backward, so the retries below cost
+    # one pass over the kept text in total: ``w`` for the last whitespace at
+    # or after the half mark, ``t`` for the last non-token character.
+    c = w = t = REDACT_MAX
     while True:
-        i = max(text.rfind(" ", 0, c), text.rfind("\n", 0, c), text.rfind("\t", 0, c))
-        if i < REDACT_MAX // 2:
-            i = c - 1
-            while i >= 0 and text[i] in _TOKEN_CHARS:
-                i -= 1
-        cut = i + 1 if i >= 0 else 0
+        w = min(w, c)
+        while w > half and text[w - 1] not in " \n\t":
+            w -= 1
+        if w > half:
+            cut = w
+        else:
+            t = min(t, c)
+            while t > 0 and text[t - 1] in _TOKEN_CHARS:
+                t -= 1
+            cut = t
         k = bisect.bisect_right(starts, cut - 1) - 1
         if k >= 0 and spans[k][0] < cut < spans[k][1]:
             c = spans[k][0]  # inside a match: retry from its start
