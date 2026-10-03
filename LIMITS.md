@@ -50,10 +50,11 @@ timestamp to a checkpoint: a Timestamp Authority the operator does not control
 signs the checkpoint's state hash, proving the chain reached that state **no
 later than** the attested time. This bounds the *checkpoint*, not each record —
 per-record `ts` fields stay self-asserted — and it proves time, not completeness
-(the witness is still what proves nothing was dropped). The tool's own `--check`
-confirms the token binds this chain state and reads its claimed time, but it does
-**not** validate the TSA's signature; the token is a standard artifact, so trust
-the time by verifying that signature yourself against a TSA you trust:
+(the witness is still what detects records removed after a checkpoint it
+holds). The tool's own `--check` confirms the token binds this chain state and
+reads its claimed time, but it does **not** validate the TSA's signature; the
+token is a standard artifact, so trust the time by verifying that signature
+yourself against a TSA you trust:
 `openssl ts -verify -digest <tsa.digest> -in <token> -CAfile <tsa-ca>`
 (base64-decode `tsa.token_b64` into `<token>` first; use a commercial TSA in
 production).
