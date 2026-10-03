@@ -318,6 +318,122 @@ class UnambiguousLegacyGrantTest(unittest.TestCase):
             srv.close()
 
 
+class MixedFileShapeTest(unittest.TestCase):
+    """SEC-801. 0.2.45 cleaned the attacker-chosen subject ids ``initech.`` and
+    ``initech..`` to one file name, so ``initech.jsonl`` holds both; the
+    operator granted that stem. A file holding several subjects is keyed by its
+    stem, so the name ``initech`` reads as that file and also as the real
+    subject ``initech``, which 0.2.46 writes to ``initech~<digest>.jsonl``.
+    The grant names a different chain under each reading: quarantined."""
+
+    def _layout(self, victim=True):
+        d = tempfile.mkdtemp()
+        path = os.path.join(d, "initech.jsonl")
+        _write(path, "initech.", "EVIL_OWN")
+        _write(path, "initech..", "EVIL_OWN2")
+        _legacy_access(d, {"initech": {"allow": ["evil.com"]}})
+        if victim:
+            self._victim(d)
+        return d
+
+    def _victim(self, d):
+        _tenant_write(d, "initech", "REAL_INITECH")
+        files = sorted(f for f in os.listdir(d) if f.endswith(".jsonl"))
+        self.assertTrue(any(f.startswith("initech~") for f in files), files)
+
+    def _assert_evil_shut_out(self, d):
+        srv = _Server(d)
+        try:
+            status, body = srv.post(token_for(srv.secret, "initech"), "bob@evil.com")
+            self.assertNotIn("REAL_INITECH", body)
+            self.assertIn(status, (403, 404))
+            status, body = srv.get_with_session(token_for(srv.secret, "initech"),
+                                                "initech", "bob@evil.com")
+            self.assertNotIn("REAL_INITECH", body)
+        finally:
+            srv.close()
+
+    def test_victim_before_first_start(self):
+        d = self._layout()
+        self._assert_evil_shut_out(d)
+        text = "\n".join(reconcile_grants(d))
+        self.assertIn("quarantined grant 'initech'", text)
+        self.assertIn("evil.com", text)
+        entry = access.load_access(d)["initech"]
+        self.assertNotIn("by", entry)
+        self.assertEqual(entry.get("allow", []), [])
+        for _ in range(2):   # restarts
+            self._assert_evil_shut_out(d)
+            self.assertIn("quarantined grant 'initech'", "\n".join(reconcile_grants(d)))
+
+    def test_victim_after_first_start(self):
+        d = self._layout(victim=False)
+        text = "\n".join(reconcile_grants(d))
+        self.assertIn("quarantined grant 'initech'", text)
+        self.assertNotIn("by", access.load_access(d)["initech"])
+        self._victim(d)
+        self._assert_evil_shut_out(d)
+        reconcile_grants(d)
+        self._assert_evil_shut_out(d)
+
+    def test_quarantine_line_names_the_mixed_file(self):
+        d = self._layout()
+        text = "\n".join(reconcile_grants(d))
+        self.assertIn("initech.jsonl holds several subject ids", text)
+        self.assertIn("initech~", text)
+
+    def test_open_mode_withholds_the_earlier_link(self):
+        d = self._layout()
+        srv = _Server(d, gated=False)
+        try:
+            status, body, _ = srv._req("GET", token_for(srv.secret, "initech"))
+            self.assertNotIn("REAL_INITECH", body)
+            self.assertEqual(status, 404)
+        finally:
+            srv.close()
+        text = "\n".join(ambiguous_link_lines(d))
+        self.assertIn("link withheld: subject id 'initech'", text)
+        self.assertIn("initech.jsonl", text)
+
+    def test_open_mode_without_the_victim_withholds_nothing(self):
+        # Only the mixed file: no other chain has subject id ``initech``.
+        d = self._layout(victim=False)
+        self.assertEqual(ambiguous_link_lines(d), [])
+
+
+class OrdinaryUpgradeTest(unittest.TestCase):
+    """0.2.45 grants on ordinary tenants keep working after the upgrade, with
+    records continuing in 0.2.46."""
+
+    def test_stem_grants_keep_working(self):
+        for subject in ["acme", "Acme Corp", "acme.io", "tenant-42", "user@x.com", "ACME",
+                        "café", "acme_corp"]:
+            with self.subTest(subject=subject):
+                d = tempfile.mkdtemp()
+                stem = TenantRecorder._safe(subject)
+                _write(os.path.join(d, stem + ".jsonl"), subject, "OLD")
+                _write(os.path.join(d, "other.jsonl"), "other", "OTHER")
+                _legacy_access(d, {stem: {"allow": ["cust.com"]},
+                                   "other": {"allow": ["other.com"]}})
+                text = "\n".join(reconcile_grants(d))
+                self.assertNotIn("quarantined", text)
+                _tenant_write(d, subject, "NEW")
+                self.assertNotIn("quarantined", "\n".join(reconcile_grants(d)))
+                self.assertEqual(ambiguous_link_lines(d), [])
+                srv = _Server(d)
+                try:
+                    for tok in {token_for(srv.secret, subject), token_for(srv.secret, stem)}:
+                        status, body = srv.post(tok, "a@cust.com")
+                        self.assertEqual(status, 200)
+                        self.assertNotIn("OTHER", body)
+                        status, body = srv.post(tok, "a@other.com")
+                        self.assertEqual(status, 403)
+                    status, body = srv.post(token_for(srv.secret, "other"), "a@cust.com")
+                    self.assertEqual(status, 403)
+                finally:
+                    srv.close()
+
+
 class GrantForAbsentChainTest(unittest.TestCase):
     """SEC-703: a grant for a name that matches no chain pre-grants a subject id
     that may appear later; ``halo grant`` says so."""

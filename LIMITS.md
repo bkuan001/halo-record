@@ -699,10 +699,13 @@ them by subject id and marks each grant it writes as keyed by subject id
 (`"by": "subject"` in `.halo_access.json`). At startup, `halo serve` (and
 `halo grant`, before it adds a recipient) reads each unmarked grant both ways:
 
-- If `<name>.jsonl` holds subject id `<name>` and that subject is served, both
-  readings name one chain: the grant is marked and keeps working, silently.
+- If `<name>.jsonl` holds exactly one subject id, `<name>`, and that subject
+  is served, both readings name one chain: the grant is marked and keeps
+  working, silently.
 - If `<name>` is a served subject id but `<name>.jsonl` holds a different
-  subject id, or no longer exists, the readings name different chains. The
+  subject id, holds several subject ids (an earlier version could clean two
+  ids to one file name, and such a file is keyed by its file name), or no
+  longer exists, the readings name different chains. The
   grant is quarantined: its recipients move to `quarantined`, it admits no one,
   and every startup until it is re-issued prints `quarantined grant '<name>'
   (recipients: ...)`,
@@ -729,7 +732,9 @@ token opens only the sign-in page of the chain served as `initech`, and only
 that chain's recipients get past it. With gating off (`--open`), the link is
 the only check, so a served subject id that is also another chain's file name
 opens nothing by its link, and `halo serve --open` prints `link withheld:` for
-it at startup.
+it at startup. That covers a `<name>.jsonl` holding a different subject id or
+several subject ids; a `<name>.jsonl` holding only subject id `<name>` is the
+same chain, and its link keeps working.
 
 ---
 

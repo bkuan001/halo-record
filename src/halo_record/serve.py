@@ -186,17 +186,19 @@ def _file_name_reading(name, keys, files, legacy):
     """How a grant keyed by ``name`` before 0.2.46 (when the key was a file
     name) reads now that grants are keyed by subject id. Returns one of:
 
-    ``("same", name)``: ``<name>.jsonl`` holds subject id ``name``, which is
-    served, so both readings name one chain.
+    ``("same", name)``: ``<name>.jsonl`` holds exactly one subject id,
+    ``name``, which is served, so both readings name one chain.
     ``("ambiguous", None)``: ``name`` is a served subject id, but
-    ``<name>.jsonl`` holds a different subject id or no longer exists, so the
-    file-name reading and the subject-id reading name different chains.
+    ``<name>.jsonl`` holds a different subject id, several subject ids, or no
+    longer exists, so the file-name reading and the subject-id reading name
+    different chains. (A file holding several subject ids is keyed by its file
+    name, so its key equaling ``name`` says nothing about the subject.)
     ``("carry", key)``: ``name`` is not a served subject id, and
     ``<name>.jsonl`` names the served subject ``key``.
     ``("orphan", None)``: neither reading names a served chain."""
-    stem_keys = [key for key, stem, _p, _n in files if stem == name]
+    stem_paths = [path for _key, stem, path, _n in files if stem == name]
     if name in keys:
-        if stem_keys == [name]:
+        if len(stem_paths) == 1 and _file_subject(stem_paths[0]) == name:
             return "same", name
         return "ambiguous", None
     if name in legacy:
@@ -223,10 +225,24 @@ def honored_recipients(directory, key):
     return allow if reading == "same" else []
 
 
+def _held_by(name, path):
+    """How ``<name>.jsonl`` reads in a startup line: the subject id it holds, or
+    that it holds several (or none)."""
+    from .record import TenantRecorder
+    sid = _file_subject(path)
+    if sid is not None:
+        return "%s.jsonl holds subject id %r" % (name, sid)
+    found = sorted(repr(s) for s in TenantRecorder._file_subjects(path))
+    if len(found) > 1:
+        shown = ", ".join(found[:3]) + (", ..." if len(found) > 3 else "")
+        return "%s.jsonl holds several subject ids (%s)" % (name, shown)
+    return "%s.jsonl holds no subject id" % name
+
+
 def _quarantine_line(directory, name, recipients, served, files):
-    stem_keys = [key for key, stem, _p, _n in files if stem == name]
-    if stem_keys:
-        held_by = "%s.jsonl holds subject id %r" % (name, stem_keys[0])
+    stem_paths = [path for _key, stem, path, _n in files if stem == name]
+    if stem_paths:
+        held_by = _held_by(name, stem_paths[0])
     else:
         held_by = "no file named %s.jsonl remains" % name
     paths = dict(served)
@@ -317,16 +333,19 @@ def reconcile_grants(directory):
 
 
 def _ambiguous_link_keys(directory):
-    """{key: (other subject id, served file)} for each served subject id that is
-    also the file name of a different chain. A 0.2.45 share link for that file
-    is the same token as the subject id's link, so with gating off (where the
-    link is the only check) neither is served by that token."""
+    """{key: (how <key>.jsonl reads, served file)} for each served subject id
+    that is also the file name of a different chain: ``<key>.jsonl`` exists, is
+    not the file served under ``key``, and does not hold exactly the one subject
+    id ``key`` (it holds another subject id, or several). A 0.2.45 share link
+    for that file is the same token as the subject id's link, so with gating
+    off (where the link is the only check) neither is served by that token."""
     served, _withheld, files = _chain_index(directory)
     out = {}
     for key, path in served:
-        for other, stem, _p, _n in files:
-            if stem == key and other != key:
-                out[key] = (other, os.path.basename(path))
+        for _other, stem, p, _n in files:
+            if (stem == key and os.path.abspath(p) != os.path.abspath(path)
+                    and _file_subject(p) != key):
+                out[key] = (_held_by(stem, p), os.path.basename(path))
                 break
     return out
 
@@ -334,11 +353,11 @@ def _ambiguous_link_keys(directory):
 def ambiguous_link_lines(directory):
     """Startup lines for ``halo serve --open``; see ``_ambiguous_link_keys``."""
     return ["  link withheld: subject id %r (served from %s) is also the file name of "
-            "%s.jsonl, which holds subject id %r, so its link was that file's link "
-            "before 0.2.46. With gating off the link is the only check, so it opens "
-            "nothing; serve with gating on and grant recipients by subject id."
-            % (key, served_from, key, other)
-            for key, (other, served_from) in sorted(_ambiguous_link_keys(directory).items())]
+            "%s.jsonl, so its link was that file's link before 0.2.46 (%s). With "
+            "gating off the link is the only check, so it opens nothing; serve with "
+            "gating on and grant recipients by subject id."
+            % (key, served_from, key, held_by)
+            for key, (held_by, served_from) in sorted(_ambiguous_link_keys(directory).items())]
 
 
 def load_secret(directory):
