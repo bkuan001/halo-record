@@ -782,3 +782,41 @@ action's outcome is unchanged; only the stderr log reveals a single missing
 record (a reviewer watching the witness cadence sees a chain that stopped). Strict mode turns that
 into an error, raised to the caller wherever the framework lets it through, at
 the cost of a possible repeated action."
+
+---
+
+## 19. A vendor-supplied report page can be restyled to mislead
+
+The HTML Runtime Report is a convenience view, not evidence. A vendor-supplied
+report page can be restyled to mislead: page CSS or added markup can hide,
+cover or imitate what the page's scripts wrote, and an edited page can also
+change the scripts themselves (the page has no Content-Security-Policy). The
+JSONL and `halo verify` are the evidence.
+
+What the page does: its scripts verify the embedded records, re-render the
+heading, period, counts and table from them, and say so in the badge
+("This page's scripts re-rendered the table and summary from the verified
+records; the page's styling and any added content are not checked"). They
+withhold the verdict when an element id they write to is repeated, or when
+computed layout shows one of the regions they write to (the verdict,
+completeness, heading, metadata, period, counts, table, table body and row
+count) or an ancestor of it is not displayed, invisible, without area, off the
+page, clipped to nothing (`overflow`, `clip-path`), masked, filtered,
+collapsed by a transform such as `scale(0)`, or skipped by
+`content-visibility`. They check at load, after verification, when late
+stylesheets load, on animation and transition events, before printing, and
+once a second.
+
+What it does not catch, among others: text made unreadable while its box
+stays (`font-size:0`, transparent color), a region placed under the page
+background (`z-index`), an element laid over a region, text added with
+`::before`/`::after`, fabricated content placed beside the verified table,
+content inside, or slotted through, a shadow root, print-only CSS
+(`@media print`), and any edit to the scripts. A green badge on a page you
+did not generate yourself therefore says only that its scripts verified the
+records they carry.
+
+**What you say to a reviewer:** "The report page is a view the vendor hands
+you, and a page can be restyled. Run `halo verify` on the JSONL (and
+`halo anchor --check` against a witness you trust) for evidence; read the page
+for convenience."

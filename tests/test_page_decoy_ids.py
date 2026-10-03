@@ -62,8 +62,9 @@ class BadgeSentenceTest(unittest.TestCase):
     def test_badge_names_what_the_scripts_rerendered_and_points_at_the_jsonl(self):
         html = _report()
         self.assertNotIn("counts and table below were re-rendered from these verified records.", html)
-        self.assertIn("re-rendered from these verified records by this page's scripts", html)
-        self.assertIn("verify the JSONL yourself", html)
+        self.assertIn("This page's scripts re-rendered the table and summary from the verified ", html)
+        self.assertIn("the page's styling and any added content are not checked", html)
+        self.assertIn("halo verify</span> on the JSONL for evidence.", html)
 
     def test_generated_pages_carry_unique_ids(self):
         for html in (_report(), _report(n=0), _report(n=150)):

@@ -316,18 +316,63 @@ function haloLayoutProblem(){
             dups.map(function(d){ return JSON.stringify(d); }).join(", ") +
             ", so what it shows cannot be tied to the verified records."};
   if (typeof window.getComputedStyle !== "function") return null;
-  const watched = ["verdict", "completeness", "r-h1", "r-cards", "tablewrap", "rowcount"];
+  // Every region whose content the badge or the scripts vouch for.
+  const watched = ["verdict", "completeness", "r-h1", "r-meta", "r-period", "r-cards",
+                   "tablewrap", "activity-body", "rowcount"];
   for (let i = 0; i < watched.length; i++){
     const n = document.getElementById(watched[i]);
     if (!n || typeof n.getClientRects !== "function") continue;
-    let hidden = n.getClientRects().length === 0 || getComputedStyle(n).visibility !== "visible";
-    for (let p = n; !hidden && p && p.nodeType === 1; p = p.parentElement)
-      if (parseFloat(getComputedStyle(p).opacity) === 0) hidden = true;
-    if (hidden)
+    if (haloHidden(n))
       return {ids: [watched[i]], why: "this page hides the region (#" + watched[i] + ") the verifier " +
               "writes to, so what it shows cannot be tied to the verified records."};
   }
   return null;
+}
+function haloFlat(transform){
+  // A transform that collapses the box (scale(0) and the like).
+  const m = /^matrix(3d)?\(([^)]*)\)$/.exec(String(transform).trim());
+  if (!m) return false;
+  const v = m[2].split(",").map(parseFloat);
+  const det = m[1] ? v[0] * v[5] - v[1] * v[4] : v[0] * v[3] - v[1] * v[2];
+  return !(Math.abs(det) >= 0.01);
+}
+function haloHidden(n){
+  // Not displayed, invisible, without area, off the page, or under an
+  // ancestor that clips, masks, filters, flattens or skips it. Page CSS can
+  // still mislead in ways computed layout does not show (see LIMITS.md).
+  if (n.getClientRects().length === 0) return true;
+  const own = getComputedStyle(n);
+  if (own.visibility !== "visible") return true;
+  const sized = /\S/.test(n.textContent || "") && typeof n.getBoundingClientRect === "function";
+  const r = sized ? n.getBoundingClientRect() : null;
+  if (r){
+    if (!(r.width >= 1 && r.height >= 1)) return true;
+    const sx = window.scrollX || window.pageXOffset || 0;
+    const sy = window.scrollY || window.pageYOffset || 0;
+    const vw = (document.documentElement && document.documentElement.clientWidth) || window.innerWidth || 0;
+    if (r.right + sx <= 0 || r.bottom + sy <= 0 || (vw > 0 && r.left + sx >= vw)) return true;
+  }
+  for (let p = n; p && p.nodeType === 1; p = p.parentElement){
+    const cs = p === n ? own : getComputedStyle(p);
+    if (r && p !== document.documentElement && p !== document.body &&
+        (cs.overflowX !== "visible" || cs.overflowY !== "visible")){
+      // A clipping box with no room inside, or (when it does not scroll)
+      // one the region lies wholly outside of.
+      if (!(p.clientWidth >= 1 && p.clientHeight >= 1)) return true;
+      if (/^(hidden|clip)$/.test(cs.overflowX) && /^(hidden|clip)$/.test(cs.overflowY) && p !== n){
+        const b = p.getBoundingClientRect();
+        if (r.right <= b.left || r.left >= b.right || r.bottom <= b.top || r.top >= b.bottom) return true;
+      }
+    }
+    if (parseFloat(cs.opacity) === 0) return true;
+    if (cs.clipPath && cs.clipPath !== "none") return true;
+    const mask = cs.maskImage || cs.webkitMaskImage;
+    if (mask && mask !== "none") return true;
+    if (cs.filter && cs.filter !== "none") return true;
+    if (cs.contentVisibility && cs.contentVisibility !== "visible") return true;
+    if (cs.transform && cs.transform !== "none" && haloFlat(cs.transform)) return true;
+  }
+  return false;
 }
 async function haloBind(records, cfg){
   // Re-render everything the page derives from its records, from the records
@@ -515,10 +560,9 @@ async function haloCompleteness(records, embedded, cfg, pinned){
     const bound = await haloBind(records, cfg);
     let shown = "";
     if (bound){
-      shown = " The heading, period, counts and table below were " +
-              "re-rendered from these verified records by this page's scripts; " +
-              "other text on the page is not checked, so verify the JSONL yourself " +
-              "(<span class='mono'>halo verify</span>) for evidence.";
+      shown = " This page's scripts re-rendered the table and summary from the verified " +
+              "records; the page's styling and any added content are not checked &mdash; " +
+              "run <span class='mono'>halo verify</span> on the JSONL for evidence.";
       if (bound.policy === "ok")
         shown += " The policy verdict was re-computed from them under the policy embedded in this page " +
                  "by whoever generated it (sha256 <span class='mono'>" + bound.digest.slice(0, 16) +
@@ -544,12 +588,29 @@ async function haloCompleteness(records, embedded, cfg, pinned){
     haloWithhold("the records could not be verified.");
     return;
   }
-  // Stylesheets that finish loading later can still hide what was written.
-  const recheck = function(){ const p = haloLayoutProblem(); if (p) haloRefuseLayout(p); };
+  // Stylesheets that finish loading later, animations and transitions, and
+  // print can still hide what was written, so check again on each, and once
+  // a second for changes that fire no event.
+  const recheck = function(){
+    if (window.__haloLayoutRefused) return;
+    const p = haloLayoutProblem(); if (p) haloRefuseLayout(p);
+  };
   recheck();
   if (window.__haloLayoutRefused) return;
-  if (document.readyState !== "complete" && typeof window.addEventListener === "function")
-    window.addEventListener("load", recheck);
+  if (typeof window.addEventListener === "function"){
+    if (document.readyState !== "complete") window.addEventListener("load", recheck);
+    window.addEventListener("beforeprint", recheck);
+    ["animationstart", "animationiteration", "animationend", "transitionend"].forEach(function(t){
+      document.addEventListener(t, recheck, true);
+    });
+  }
+  if (typeof window.setInterval === "function" && typeof window.getComputedStyle === "function"){
+    const timer = window.setInterval(function(){
+      recheck();
+      if (window.__haloLayoutRefused && typeof window.clearInterval === "function")
+        window.clearInterval(timer);
+    }, 1000);
+  }
   let pinned = cfg.expectedSubject || null;
   try {
     const m = /(?:^#|&)expect=([^&]*)/.exec(String((window.location && window.location.hash) || ""));
