@@ -4,7 +4,7 @@ The [OWASP GenAI Security Project](https://genai.owasp.org) publishes the **OWAS
 
 halo-record sits in the **Operate → Monitor → Govern** stages. It is **record-only by design** — it does not intercept, guard, or enforce — so it is not a control that *prevents* any of these threats. It is the **evidence layer underneath them**: a tamper-evident record of what the agent actually did, which is the forensic basis the ASI threat list assumes but does not itself provide. Traceability is the cross-cutting mitigation; halo-record is where it comes from.
 
-> **Two distinct things a record does per threat.** Every threat below leaves a forensic trace in the record (that is universal — a record documents what was recorded under the declared capture surface). Separately, some threats admit a **deterministic policy check** over that record (a rule that flags when the evidence is missing or the wrong shape). The record is always present; the rule exists only where a deterministic check is warranted — a record records what an agent *did* under the declared capture surface, never what a control *prevented*.
+> **Two distinct things a record does per threat.** Every threat below that plays out through a captured action leaves a forensic trace in the record (a record documents what was recorded under the declared capture surface). Separately, some threats admit a **deterministic policy check** over that record (a rule that flags when the evidence is missing or the wrong shape). The record is present wherever capture is; the rule exists only where a deterministic check is warranted — a record records what an agent *did* under the declared capture surface, never what a control *prevented*.
 
 ## Top 10 for Agentic Applications (2026) → halo-record
 

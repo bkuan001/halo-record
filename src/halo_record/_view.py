@@ -575,7 +575,7 @@ def provenance(records):
                 "not “I watched it happen.” Source-capture would strengthen them to the "
                 "<b>captured</b> tier.")
     else:
-        note = ("Every action is <b>declared captured</b> at the boundary: each record's own "
+        note = ("Every recorded action is <b>declared captured</b> at the boundary: each record's own "
                 "source tag says the integration recorded the call as it ran, rather than "
                 "rebuilding it later from other telemetry. That is what the tag asserts; it is "
                 "set by the integration and not independently verified.")

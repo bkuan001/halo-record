@@ -88,8 +88,10 @@ class LimitsSyncTest(unittest.TestCase):
         # Both docs enumerate the opt-in network calls; they must agree.
         readme = _read("README.md")
         privacy = _read("PRIVACY.md")
-        self.assertIn("three opt-in", readme.lower())
-        self.assertIn("three opt-in", privacy.lower())
+        security = _read("SECURITY.md")
+        for doc in (readme, privacy, security):
+            self.assertIn("four opt-in", doc.lower())
+            self.assertIn("--verify-email", doc)  # the SMTP one-time code
 
 
 if __name__ == "__main__":

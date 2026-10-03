@@ -7,7 +7,7 @@ halo-record is local-first by design. This page consolidates, in one place, what
 - Each record describes one agent action: the agent and model identifiers you configure, the action type and tool name, authorization fields, the subject (tenant/customer) id you assign, timestamps, and the integrity hashes that chain records together.
 - Tool inputs are stored as a canonical hash plus a redacted summary capped at 200 characters — the summary is the argument text with known secret and PII patterns masked, so a short input that matches no pattern appears in full and longer values are truncated; redaction is best-effort (see the next section), and hash-only mode keeps no summary. The hash itself is an unsalted SHA-256 of the raw arguments, so anyone holding the chain can confirm a guessed value by hashing it; a record of a low-entropy input (an SSN, a phone number, an account id) does not protect that value, and there is no salted or keyed option today (LIMITS §13). Outcome summaries pass through the same redaction.
 - Scanner findings carry a type, a severity, and a short redacted excerpt (for example, a card's last four digits or a masked email); the `data.pii_types` field lists the detected *types* only. Passing `summaries=False` drops summaries, finding excerpts, and any custom outcome fields, leaving hash-only records — finding types and severities plus the schema's non-text outcome fields — and, in id fields (`session_id`, `parent_id`, agent ids, refs), masks a token in a known secret format as in summaries and replaces any other secret-shaped token with `sha256:` plus 16 hex digits of its digest (deterministic); a masked id keeps only a prefix or its last characters, so two secrets can mask alike. `subject.id` is kept as given because it routes the record to its tenant's chain (LIMITS §6). Fields you supply yourself still seal (the authority block and custom `data.*` keys, with known secret and personal-data patterns masked) — keep them payload-free if the record must stay hash-only (LIMITS §13). On findings you supply, only `type`, `severity` and `sample` are kept (the sample masked like a summary, and dropped in hash-only mode); any other key is dropped.
-- Authority snapshots (`HALO_AUTHORITY_FILE`) get known secret formats masked at seal time, but hashes and refs pass through untouched and free-form text is not detected — keep them to hashes and refs, not raw prompts or private policy text (LIMITS §6).
+- Authority snapshots (`HALO_AUTHORITY_FILE`) get known secret and personal-data formats masked at seal time, but hashes and refs pass through untouched and free-form text is not detected — keep them to hashes and refs, not raw prompts or private policy text (LIMITS §6).
 
 ## Redaction is best-effort
 
@@ -15,18 +15,19 @@ Detection is deterministic pattern matching plus a high-entropy catch-all (long 
 
 ## What leaves your machine
 
-Nothing, except three opt-in calls — all off unless you invoke them:
+Nothing, except four opt-in calls — all off unless you invoke them:
 
 - **RFC 3161 timestamping** (`halo anchor`) sends only a checkpoint's state hash to the Timestamp Authority you choose.
 - **Anchoring to a witness** sends the subject id, a record count, and two chain fingerprints — never record contents.
 - **Reading a witness's checkpoints back** (completeness verification) sends the subject id being checked.
+- **Email verification for gated reports** (`halo serve --verify-email`) sends a one-time code, and the report's subject name, to the address a viewer enters, through the SMTP server you configure (`$HALO_SMTP_HOST`); without one, the code is written to a local outbox instead. No record contents are sent.
 
 The witness is a server you run or designate (`halo witness-serve`) — there is no vendor-hosted endpoint, and no default endpoint is configured. Record contents never leave your infrastructure.
 
 ## What halo does not do
 
 - No telemetry, no analytics, no accounts, no sign-in. Installing and running halo tells the maintainers nothing.
-- No third-party services are contacted except the three opt-in calls above.
+- No third-party services are contacted except the four opt-in calls above.
 
 ## Demo and sample data
 

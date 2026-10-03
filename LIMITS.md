@@ -33,7 +33,9 @@ consistent with checkpoints the vendor anchored under the new id, while the
 customer's own checkpoints are never consulted. `halo anchor --check
 --expect-subject <id>`, `halo report --expect-subject`, `halo export
 --expect-subject` and the report page's subject field look up the id you
-expect and refuse a chain carrying any other. Without one, a completeness
+expect; a chain carrying any other is refused (`report`, `export`), reported
+INCOMPLETE (`anchor --check`; exit 1 in all three) or shown as SUBJECT MISMATCH
+(the page). Without one, a completeness
 verdict is about the id the vendor chose.
 
 **A damaged witness is refused.** A witness file with a torn or garbled line,
@@ -181,7 +183,8 @@ or a token: every pattern is matched first over the text up to 4,096
 characters past the cap, and the cut moves back to the start of any match it
 would split, so a grouped card number, SSN, IBAN or phone number is either kept
 whole (and masked) or withheld whole. Within that rule the cut lands after
-whitespace, else after a character that cannot be part of a token. A single
+whitespace, else after a character that cannot be part of a token; a value
+with no such break point (one unbroken token) is withheld whole. A single
 match longer than 4,096 characters that runs past that window is seen only as
 far as the window reaches. Findings still cover the whole text, scanned in
 overlapping windows. Invisible characters spliced inside a token are dropped before
@@ -251,8 +254,9 @@ high-entropy catch-all (it would mangle legitimate opaque ids) and get named
 formats masked only, so a random-looking secret used as an id is stored as
 written.
 
-The `authority` block gets a narrower pass than summaries: known secret formats
-(API keys, tokens, private-key blocks, connection strings) are masked at seal
+The `authority` block gets a narrower pass than summaries: known secret and
+personal-data formats (API keys, tokens, private-key blocks, connection
+strings, emails, SSNs) are masked at seal
 time, but the high-entropy catch-all is deliberately not applied — legitimate
 authority values are hashes and refs, which look exactly like entropy — and
 free-form text is not detected. Beyond those named formats, the hashes-and-refs
@@ -472,12 +476,12 @@ can carry personal data, and only the summaries and caller-defined `outcome` and
 |---|---|
 | `principal.human_id` / `creator_id` / `role_scope` | names the person the action ran on behalf of — teams put a work login here, which is usually an email address |
 | `action.authorization.approver` / `scope` / `decision` | the approving person's name or login, and values built from one |
-| `outcome.*` (keys other than `summary`) | scanned and masked like a summary — a detected secret or personal-data pattern produces a finding (and `data.pii_types`) — but a name or postal address has no pattern, so a result field like `customer` or `address` seals a person's details permanently |
+| `outcome.*` (keys other than `summary`) | scanned with the summary patterns and masked (not cut to 200 characters; text past 65,536 characters is withheld) — a detected secret or personal-data pattern produces a finding (and `data.pii_types`) — but a name or postal address has no pattern, so a result field like `customer` or `address` seals a person's details permanently |
 | `session_id`, `parent_id` | free-form; often built by joining a user identifier to a date |
 | `agent.*`, `source.*`, `authority.*` | free-form labels — a laptop, an assistant, or a runbook named after a customer |
 | `action.tool` | a tool name built from the thing it acts on |
 | `threats[].type` / `.ref` | ticket references and notes copied from an upstream detector |
-| `data.*` | any key you add beyond `region` / `purpose` / `cross_region` — scanned and masked like `outcome.*`, with the same gap for names and addresses |
+| `data.*` | any key you add beyond `region` / `purpose` / `cross_region` — scanned and masked like `outcome.*` (not cut to 200 characters), with the same gap for names and addresses |
 | `action.input.summary`, `outcome.summary` | redacted best-effort only — and per section 6 a **name or postal address has no reliable pattern, is not detected, and is not masked** |
 | `findings[].type` / `.sample` | masked fragments *when the scanner produced them* — a masked email keeps its full domain and an SSN keeps its last four. Findings you supply yourself keep only `type`, `severity` and `sample`: the `sample` is masked like a summary, and any other key is dropped |
 
@@ -691,8 +695,8 @@ same line is logged on the `halo_record` logger instead, and the action's
 result still passes through.
 
 The chain itself cannot show a record that was never written: the remaining
-records still verify. A witness checkpoint cadence reveals a chain that has
-*stalled* (an expected checkpoint that never arrives, section 1), but no
+records still verify. A reviewer watching the witness checkpoint cadence sees
+a chain that has *stalled* (an expected checkpoint that never arrives, section 1), but no
 witness can reveal a single record that was never written while later records
 were: the stderr line is the only signal for that.
 
@@ -715,6 +719,6 @@ log) is the only signal in either mode.
 
 **What you say to a reviewer:** "A failed write is reported on stderr and the
 action's outcome is unchanged; only the stderr log reveals a single missing
-record (a witness cadence shows a chain that stopped). Strict mode turns that
+record (a reviewer watching the witness cadence sees a chain that stopped). Strict mode turns that
 into an error, raised to the caller wherever the framework lets it through, at
 the cost of a possible repeated action."
