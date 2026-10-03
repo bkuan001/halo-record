@@ -210,6 +210,11 @@ def chain_key(directory, name):
     if found:
         path = dict(served)[found[0]]
         why = _withheld_reason(_load(path))
+        if why == "does not verify":
+            raise ValueError(
+                "%s %s, so halo serve withholds its report and a grant would admit no "
+                "one to it. Run halo verify on it, restore the chain, then grant."
+                % (os.path.basename(path), why))
         if why:
             raise ValueError(
                 "%s %s, so halo serve withholds its report and a grant would admit no "
@@ -283,6 +288,22 @@ def _held_by(name, path):
     return "%s.jsonl holds no subject id" % name
 
 
+def _colliding_reissue(directory, key, served):
+    """When subject id ``key`` is served and is also the file name of another
+    served chain, ``halo grant`` refuses ``key`` as ambiguous; return the
+    sentence naming the chain by its file name (the grant is still stored
+    under ``key``). Otherwise return an empty string."""
+    paths = dict(served)
+    if key not in paths:
+        return ""
+    others = sorted(os.path.basename(p) for k, p in served if k != key and _stem(p) == key)
+    if not others:
+        return ""
+    return (" For subject id %r, name the chain by its file name, since %r is also the "
+            "file name of %s: halo grant %s %s <recipient>."
+            % (key, key, ", ".join(others), directory, _stem(paths[key])))
+
+
 def _quarantine_line(directory, name, recipients, served, files):
     stem_paths = [path for _key, stem, path, _n in files if stem == name]
     if stem_paths:
@@ -308,8 +329,9 @@ def _quarantine_line(directory, name, recipients, served, files):
             "0.2.46, and that name now also reads as a subject id of a different chain "
             "(%s; %s), so it admits no one. If it was for a customer, re-issue it by "
             "subject id (halo grant %s <subject id> <recipient>) and send the link shown "
-            "in the operator console."
-            % (name, ", ".join(recipients) or "none", held_by, now, directory))
+            "in the operator console.%s"
+            % (name, ", ".join(recipients) or "none", held_by, now, directory,
+               _colliding_reissue(directory, name, served)))
 
 
 def reconcile_grants(directory):
@@ -352,8 +374,9 @@ def reconcile_grants(directory):
                 lines.append("  grant %r (recipients: %s) was issued for %s.jsonl, a chain "
                              "with no subject id keyed by its file name; %s, so the grant "
                              "admits no one. Re-issue it by subject id (halo grant %s "
-                             "<subject id> <recipient>) if it is meant for that chain."
-                             % (name, ", ".join(allow), bound, now, directory))
+                             "<subject id> <recipient>) if it is meant for that chain.%s"
+                             % (name, ", ".join(allow), bound, now, directory,
+                                _colliding_reissue(directory, name, served)))
             continue
         allow = list(record.get("allow") or [])
         held = list(record.get("quarantined") or [])
@@ -375,14 +398,22 @@ def reconcile_grants(directory):
         if reading == "carry":
             carries.append((name, target, allow))
             continue
-        lines.append("  grant %r (recipients: %s) matches no served chain, so it admits no "
-                     "one now. It can become active later: if a chain file %s.jsonl "
-                     "appears holding only subject id %r (or one subject id whose cleaned "
-                     "file name is %r), the grant admits these recipients to it. If it "
-                     "was for a customer, re-issue it by subject id (halo grant %s "
-                     "<subject id> <recipient>) and send the link shown in the operator "
-                     "console; otherwise remove it from %s."
-                     % (name, ", ".join(allow) or "none", name, name, name, directory,
+        stem_paths = [path for _key, stem, path, _n in files if stem == name]
+        if stem_paths:
+            later = ("%s, so this grant matches no served chain and admits no one now. It "
+                     "can become active later: if %s.jsonl comes to hold only subject id "
+                     "%r (or one subject id whose cleaned file name is %r), the grant "
+                     "admits these recipients to it."
+                     % (_held_by(name, stem_paths[0]), name, name, name))
+        else:
+            later = ("matches no served chain, so it admits no one now. It can become "
+                     "active later: if a chain file %s.jsonl appears holding only subject "
+                     "id %r (or one subject id whose cleaned file name is %r), the grant "
+                     "admits these recipients to it." % (name, name, name))
+        lines.append("  grant %r (recipients: %s) %s If it was for a customer, re-issue it "
+                     "by subject id (halo grant %s <subject id> <recipient>) and send the "
+                     "link shown in the operator console; otherwise remove it from %s."
+                     % (name, ", ".join(allow) or "none", later, directory,
                         _access.ACCESS_FILE))
     for name, target, allow in carries:
         dest = data.setdefault(target, {})
@@ -862,7 +893,7 @@ def serve(directory, *, host="127.0.0.1", port=DEFAULT_PORT, witness=None,
         mode = "  (email-ownership verification on)"
     if gated and not verify:
         print("  note: recipients are admitted by link plus an allow-listed address, without "
-              "proof they own the mailbox; use --verify for one-time-code ownership proof.")
+              "proof they own the mailbox; use --verify-email for one-time-code ownership proof.")
     print("Halo Runtime Reports serving %s chain(s) from %s%s"
           % (len(_chains(directory)), directory, mode))
     for line in reconcile_grants(directory):
