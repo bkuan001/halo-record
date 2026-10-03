@@ -497,7 +497,9 @@ _PAGINATE_JS = r"""
      Records are sealed in UTC. A reader investigating "what happened at 3pm"
      means their own 3pm, so the displayed time follows the viewer's clock by
      default, with UTC one click away. The underlying record is untouched. */
-  var localMode = true;
+  // UTC first: the frame of the period line and the static rows. Local time
+  // is a toggle, labeled with the viewer's zone while shown.
+  var localMode = false;
   var TZ = "";
   try {
     TZ = Intl.DateTimeFormat().resolvedOptions().timeZone || "";
@@ -1181,7 +1183,7 @@ def render(records, checkpoints=None, *, witness_url=None, policy=None, window=N
   <label class="f-lab">From <input type="datetime-local" id="f-from" step="1" aria-label="From time"></label>
   <label class="f-lab">To <input type="datetime-local" id="f-to" step="1" aria-label="To time"></label>
   <label class="f-check"><input type="checkbox" id="f-flags"> Flagged only</label>
-  <button type="button" id="tz-toggle" class="f-btn">Show UTC</button>
+  <button type="button" id="tz-toggle" class="f-btn">Show local time</button>
   <button type="button" id="f-reset" class="f-btn">Reset</button>
 </div>
 %(rowcount)s
