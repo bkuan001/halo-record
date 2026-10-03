@@ -172,7 +172,7 @@
         "region": { "type": "string" },
         "cross_region": { "type": "number" },
         "purpose": { "type": "string" },
-        "zdr": { "type": "boolean", "description": "Declared zero-data-retention terms for a model call (record_model_call)." },
+        "zdr": { "type": "boolean", "description": "Declared zero-data-retention terms for a model call (record_model_call / recordModelCall)." },
         "pii_types": { "type": "array", "items": { "type": "string" } }
       }
     },
