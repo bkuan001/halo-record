@@ -474,7 +474,8 @@ def main(argv=None):
                                "different id is INCOMPLETE")
     p_anchor.add_argument("--timestamp", action="store_true",
                           help="attach an RFC 3161 third-party time proof to the checkpoint "
-                               "(binds the chain state to a time the operator can't set)")
+                               "(binds the chain state to the Timestamp Authority's time rather than "
+                               "the operator's clock)")
     p_anchor.add_argument("--tsa",
                           help="Timestamp Authority URL for --timestamp "
                                "(default: a public RFC 3161 TSA; use a commercial one in production)")

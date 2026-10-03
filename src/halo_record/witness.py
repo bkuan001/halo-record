@@ -142,7 +142,7 @@ def _in_scope(subject, scopes):
 
 
 def _clean_checkpoint(payload):
-    """Validate and normalize a posted checkpoint. Returns a sanitized dict or
+    """Validate and normalize a posted checkpoint. Returns a normalized dict or
     raises ValueError. Only the four attesting fields are accepted; the server
     stamps its own ``ts`` (a vendor cannot backdate a witness)."""
     if not isinstance(payload, dict):

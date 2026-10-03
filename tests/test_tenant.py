@@ -38,12 +38,12 @@ class TenantTest(unittest.TestCase):
         tr.append(build("tool_call", "security", tool="x"))
         self.assertTrue(os.path.exists(tr.path_for("_local")))
 
-    def test_unsafe_names_sanitized(self):
+    def test_unsafe_names_normalized(self):
         safe = TenantRecorder._safe("../../etc/passwd")
         self.assertNotIn("/", safe)
         self.assertFalse(safe.startswith("."))
         self.assertEqual(TenantRecorder._safe(""), "tenant")
-        # a sanitized path can never escape the directory
+        # a normalized path can never escape the directory
         p = TenantRecorder(self.dir).path_for("../evil")
         self.assertEqual(os.path.dirname(os.path.abspath(p)),
                          os.path.abspath(self.dir))

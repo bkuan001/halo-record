@@ -257,7 +257,7 @@ halo anchor audit.jsonl witness.jsonl           # anchor a checkpoint to a local
 halo anchor audit.jsonl witness.jsonl --check   # completeness verdict against it
 ```
 
-For *time* specifically, an external RFC 3161 timestamp replaces the checkpoint's self-asserted clock with a proof from a Timestamp Authority the operator does not control — "this chain reached this head no later than T", verifiable by a third party with no hosted infrastructure. The default TSA is the free freetsa.org (fine for evaluation); point at a commercial TSA (DigiCert / Sectigo / your own) with `--tsa` for production:
+For *time* specifically, an external RFC 3161 timestamp replaces the checkpoint's self-asserted clock with a proof from a Timestamp Authority outside the operator's control — "this chain reached this head no later than T", verifiable by a third party with no hosted infrastructure. The default TSA is the free freetsa.org (fine for evaluation); for production, point `--tsa` at a TSA outside the operator's control (e.g. DigiCert / Sectigo, or one a relying party designates):
 
 ```
 halo anchor audit.jsonl witness.jsonl --timestamp          # attach a TSA time proof to the checkpoint

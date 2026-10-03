@@ -141,7 +141,7 @@ class ValidationParityTest(unittest.TestCase):
                   [{"id": "r", "forbid": {"ts": {"exist": True}}}],
                   [{"id": "a", "forbid": {"severity": "HIGH"}}, {"id": "a", "forbid": {"severity": "LOW"}}],
                   [{"id": "r", "severity": "BAD", "forbid": {"severity": "HIGH"}}],
-                  [{"id": "r", "oops": 1, "forbid": {"severity": "HIGH"}}]]
+                  [{"id": "r", "unknown_field": 1, "forbid": {"severity": "HIGH"}}]]
         for name in ("owasp-starter.json", "aiuc-1-starter.json"):
             with open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                                    "examples", "policies", name), encoding="utf-8") as fh:
