@@ -131,29 +131,29 @@ footer a{color:var(--gold);text-decoration:none}
 </style>
 </head><body><div class="wrap">
 <div class="eyebrow">Halo Runtime Report</div>
-<h1>Acme Corp</h1>
-<div class="meta">Agent <b>Globex Support Agent</b> &middot; <b>6</b> recorded actions</div>
-<div class="period"><span class="period-l">Period covered</span>
-<b>2026-08-31 19:37:53</b> &ndash; <b>2026-09-02 20:25:53</b> <span class="period-tz">UTC</span></div>
-<div id="verdict" class="verdict neutral">Verifying hash chain&hellip;</div>
+<h1 id="r-h1">Acme Corp<!--/r-h1--></h1>
+<div class="meta" id="r-meta">Agent <b>Globex Support Agent</b> &middot; <b>6</b> recorded actions</div><div id="r-subject-note"><div class="meta">Subject id: <span class="mono">acme-corp</span></div></div>
+<div class="period" id="r-period"><span class="period-l">Records span</span> <b>2026-10-01 00:32:10</b> &ndash; <b>2026-10-03 01:20:10</b> <span class="period-tz">UTC</span><!--/r-period--></div>
+<div id="verdict" class="verdict neutral">Not verified yet &mdash; this page verifies its records in your browser with JavaScript.</div>
 <div id="completeness" class="verdict neutral">Checking completeness against the witness checkpoints&hellip;</div>
+<form id="pin" class="filters" autocomplete="off">
+  <label class="f-lab" for="pin-subject">Expected customer id</label>
+  <input type="search" id="pin-subject" class="f-grow" value="acme-corp" placeholder="the id you expect, e.g. from your contract" aria-label="Expected customer id">
+  <button type="submit" class="f-btn">Check against witness</button>
+</form>
+<div class="note">Pin the id you expect: the page then requires every record to carry it and looks the witness up under it, rather than under the id the records carry (which the vendor writes).</div>
 
-<div class="note">This report re-computes its own SHA-256 / RFC 8785 hash chain in your browser (integrity) and checks it against the witness checkpoints it was anchored to (completeness). Whether completeness counts as independently verified depends on who operates the witness — confirm that before relying on it.</div>
+<div class="note">This page re-computes the SHA-256 / RFC 8785 hash chain of the records it embeds, in your browser (integrity), re-renders what it displays from those records, and checks them against the witness checkpoints for the pinned customer id (completeness). Whether completeness counts as independently verified depends on who operates the witness — confirm that before relying on it. This page runs code supplied with the report; for a check that does not depend on it, run <span class="mono">halo verify</span> on the JSONL yourself (see REVIEWERS.md).</div>
 
-<div class="cards">
-  <div class="card"><div class="n">6</div><div class="l">Actions</div></div>
-  <div class="card"><div class="n">6</div><div class="l">Tools</div></div>
-  <div class="card"><div class="n">6</div><div class="l">Scopes</div></div>
-  <div class="card"><div class="n">0</div><div class="l">Flagged</div></div>
-</div>
+<div class="cards" id="r-cards"><div class="card"><div class="n">6</div><div class="l">Actions</div></div><div class="card"><div class="n">6</div><div class="l">Tools</div></div><div class="card"><div class="n">6</div><div class="l">Scopes</div></div><div class="card" title="records whose redaction-scanner severity is MEDIUM or higher"><div class="n">0</div><div class="l">Flagged (MEDIUM+)</div></div><div class="card"><div class="n">0</div><div class="l">Low notes</div></div><!--/r-cards--></div>
 <h2>Authorized scopes</h2>
-<div class="scopes"><span class="pill">billing.write</span><span class="pill">mcp:crm</span><span class="pill">mcp:jira</span><span class="pill">mcp:zendesk</span><span class="pill">model:anthropic</span><span class="pill">network</span></div>
-<h2>Captured via</h2>
-<div class="provgrid"><div class="prov" title="Declared captured at the boundary — per this record&#x27;s own source tag, Halo observed the call directly. The tag is set by the integration, not independently verified."><span class="pill cap">Captured</span><span class="prov-via">Halo recorder (native)</span><span class="prov-n">2 actions</span></div><div class="prov" title="Declared captured at the boundary — per this record&#x27;s own source tag, Halo observed the call directly. The tag is set by the integration, not independently verified."><span class="pill cap">Captured</span><span class="prov-via">MCP interceptor</span><span class="prov-n">1 action</span></div><div class="prov" title="Ingested from telemetry the vendor already emits — the witness attests &quot;this is the stream you sent me&quot;, not &quot;I watched it happen&quot;."><span class="pill ing">Ingested</span><span class="prov-via">LiteLLM gateway</span><span class="prov-n">1 action</span></div><div class="prov" title="Ingested from telemetry the vendor already emits — the witness attests &quot;this is the stream you sent me&quot;, not &quot;I watched it happen&quot;."><span class="pill ing">Ingested</span><span class="prov-via">OpenTelemetry GenAI spans</span><span class="prov-n">1 action</span></div><div class="prov" title="Ingested from telemetry the vendor already emits — the witness attests &quot;this is the stream you sent me&quot;, not &quot;I watched it happen&quot;."><span class="pill ing">Ingested</span><span class="prov-via">Langfuse traces</span><span class="prov-n">1 action</span></div></div>
-<div class="note prov-note">Each action is tagged with how Halo observed it. <b>Captured</b> means the record's source tag declares Halo observed the call at the boundary as it happened — the tag comes from the integration that wrote the record. <b>Ingested</b> means the record was built from telemetry the vendor already emits (a gateway, tracing store, or OTel span) — real and anchorable, but the witness attests “this is the stream you sent me,” not “I watched it happen.” The tier is disclosed, never flattened.</div>
+<div class="scopes" id="r-scopes"><span class="pill">billing.write</span><span class="pill">mcp:crm</span><span class="pill">mcp:jira</span><span class="pill">mcp:zendesk</span><span class="pill">model:anthropic</span><span class="pill">network</span></div>
+<div id="r-provenance"><h2>Captured via</h2>
+<div class="provgrid"><div class="prov" title="Declared captured at the boundary — per this record&#x27;s own source tag, the integration observed the call directly. The tag is set by the integration, not independently verified."><span class="pill cap">Captured</span><span class="prov-via">Halo recorder (native)</span><span class="prov-n">2 actions</span></div><div class="prov" title="Declared captured at the boundary — per this record&#x27;s own source tag, the integration observed the call directly. The tag is set by the integration, not independently verified."><span class="pill cap">Captured</span><span class="prov-via">MCP interceptor</span><span class="prov-n">1 action</span></div><div class="prov" title="Ingested from telemetry the vendor already emits — the witness attests &quot;this is the stream you sent me&quot;, not &quot;I watched it happen&quot;."><span class="pill ing">Ingested</span><span class="prov-via">LiteLLM gateway</span><span class="prov-n">1 action</span></div><div class="prov" title="Ingested from telemetry the vendor already emits — the witness attests &quot;this is the stream you sent me&quot;, not &quot;I watched it happen&quot;."><span class="pill ing">Ingested</span><span class="prov-via">OpenTelemetry GenAI spans</span><span class="prov-n">1 action</span></div><div class="prov" title="Ingested from telemetry the vendor already emits — the witness attests &quot;this is the stream you sent me&quot;, not &quot;I watched it happen&quot;."><span class="pill ing">Ingested</span><span class="prov-via">Langfuse traces</span><span class="prov-n">1 action</span></div></div>
+<div class="note prov-note">Each action is tagged with how it was observed. <b>Captured</b> means the record's source tag declares the integration observed the call at the boundary as it happened — the tag comes from the integration that wrote the record. <b>Ingested</b> means the record was built from telemetry the vendor already emits (a gateway, tracing store, or OTel span) — real and anchorable, but the witness attests “this is the stream you sent me,” not “I watched it happen.” The tier is disclosed, never flattened.</div></div>
 <h2>Activity</h2>
 <div class="filters" id="filters">
-  <input type="search" id="f-q" class="f-grow" placeholder="Search time, tool, scope, summary, hash&hellip;" aria-label="Search actions">
+  <input type="search" id="f-q" class="f-grow" placeholder="Search time, tool, scope, summary, record id, hash&hellip;" aria-label="Search actions">
   <select id="f-tool" aria-label="Filter by tool"><option value="">All tools</option></select>
   <select id="f-type" aria-label="Filter by action type"><option value="">All types</option></select>
   <select id="f-sev" aria-label="Filter by severity">
@@ -165,21 +165,21 @@ footer a{color:var(--gold);text-decoration:none}
   <label class="f-lab">From <input type="datetime-local" id="f-from" step="1" aria-label="From time"></label>
   <label class="f-lab">To <input type="datetime-local" id="f-to" step="1" aria-label="To time"></label>
   <label class="f-check"><input type="checkbox" id="f-flags"> Flagged only</label>
-  <button type="button" id="tz-toggle" class="f-btn">Show UTC</button>
+  <button type="button" id="tz-toggle" class="f-btn">Show local time</button>
   <button type="button" id="f-reset" class="f-btn">Reset</button>
 </div>
 <div class="rowcount" id="rowcount">Showing 6 of 6 actions, newest first</div>
-
+<noscript><div class="note">JavaScript is off — nothing on this page has been verified, and only the newest 100 recorded actions are shown. Run <span class="mono">halo verify</span> on the JSONL to check the records.</div></noscript>
 <div class="tablewrap" id="tablewrap">
 <table>
 <thead><tr><th id="th-time" data-sort="data-ts" data-active="desc">Time (UTC)</th><th data-sort="data-tool">Tool</th><th data-sort="data-type">Type</th><th>Source</th><th>Scope</th><th>Decision</th><th data-sort="data-status">Outcome</th><th data-sort="data-flags">Findings</th><th>Summary</th><th>Hash</th></tr></thead>
 <tbody id="activity-body">
-<tr data-ts="2026-09-02T20:25:53+00:00" data-tool="mcp__jira__create_ticket" data-type="tool_call" data-sev="INFO" data-status="ok" data-flags="0" data-rid="34b07113-b238-4f92-abe2-0b6ebe9784f5" data-text="2026-09-02t20:25:53+00:00 mcp__jira__create_ticket tool_call mcp:jira allowed ok info {&#x27;tenant&#x27;: &#x27;acme-corp&#x27;, &#x27;issue&#x27;: &#x27;recurring billing bug behind zd-30412&#x27;} escalation glx-218 created globex support agent 66116b45108a escalation glx-218 created" tabindex="0" class="rowclick" title="Click for the full record"><td class="mono dim ts-cell">2026-09-02 20:25:53</td><td class="mono">mcp__jira__create_ticket</td><td>tool_call</td><td><span class="pill ing" title="Ingested from telemetry the vendor already emits — the witness attests &quot;this is the stream you sent me&quot;, not &quot;I watched it happen&quot;.">langfuse</span></td><td class="mono">mcp:jira</td><td><span class="pill ok">allowed</span></td><td><span class="pill ok">ok</span></td><td><span class="pill ok" title="no redaction pattern matched; not a guarantee no sensitive data is present">no flags</span></td><td class="trunc dim">escalation GLX-218 created</td><td class="mono dim">66116b45108a</td></tr>
-<tr data-ts="2026-09-02T17:49:53+00:00" data-tool="email.send" data-type="network" data-sev="INFO" data-status="ok" data-flags="0" data-rid="6d54684a-bd93-4c04-ac50-2f9afe6c7a3d" data-text="2026-09-02t17:49:53+00:00 email.send network network allowed ok info {&#x27;tenant&#x27;: &#x27;acme-corp&#x27;, &#x27;to_domain&#x27;: &#x27;acme-corp.com&#x27;, &#x27;ticket&#x27;: &#x27;zd-30412&#x27;} reply sent to customer globex support agent d75d8c252ecf reply sent to customer" tabindex="0" class="rowclick" title="Click for the full record"><td class="mono dim ts-cell">2026-09-02 17:49:53</td><td class="mono">email.send</td><td>network</td><td><span class="pill ing" title="Ingested from telemetry the vendor already emits — the witness attests &quot;this is the stream you sent me&quot;, not &quot;I watched it happen&quot;.">otel</span></td><td class="mono">network</td><td><span class="pill ok">allowed</span></td><td><span class="pill ok">ok</span></td><td><span class="pill ok" title="no redaction pattern matched; not a guarantee no sensitive data is present">no flags</span></td><td class="trunc dim">reply sent to customer</td><td class="mono dim">d75d8c252ecf</td></tr>
-<tr data-ts="2026-09-01T23:07:53+00:00" data-tool="refund.issue" data-type="write" data-sev="INFO" data-status="ok" data-flags="0" data-rid="60e01653-4774-4cbc-aae5-21895e4e5451" data-text="2026-09-01t23:07:53+00:00 refund.issue write billing.write human_approved ok info {&#x27;tenant&#x27;: &#x27;acme-corp&#x27;, &#x27;order&#x27;: &#x27;ord_2291&#x27;, &#x27;amount_usd&#x27;: 48} $48 refund issued after human approval globex support agent 54fa95323b0a $48 refund issued after human approval" tabindex="0" class="rowclick" title="Click for the full record"><td class="mono dim ts-cell">2026-09-01 23:07:53</td><td class="mono">refund.issue</td><td>write</td><td><span class="pill cap" title="Declared captured at the boundary — per this record&#x27;s own source tag, Halo observed the call directly. The tag is set by the integration, not independently verified.">recorder</span></td><td class="mono">billing.write</td><td><span class="pill warn">human_approved</span></td><td><span class="pill ok">ok</span></td><td><span class="pill ok" title="no redaction pattern matched; not a guarantee no sensitive data is present">no flags</span></td><td class="trunc dim">$48 refund issued after human approval</td><td class="mono dim">54fa95323b0a</td></tr>
-<tr data-ts="2026-09-01T17:19:53+00:00" data-tool="model.generate" data-type="tool_call" data-sev="INFO" data-status="ok" data-flags="0" data-rid="755bbc07-4b02-4eb3-9d52-b07abd9be98b" data-text="2026-09-01t17:19:53+00:00 model.generate tool_call model:anthropic allowed ok info {&#x27;provider&#x27;: &#x27;anthropic&#x27;, &#x27;model&#x27;: &#x27;claude-opus-4-8&#x27;, &#x27;zdr&#x27;: true, &#x27;purpose&#x27;: &#x27;draft reply to ticket zd-30412&#x27;, &#x27;messages&#x27;: 6} reply drafted (zero-data-retention) globex support agent d51067acd20b reply drafted (zero-data-retention)" tabindex="0" class="rowclick" title="Click for the full record"><td class="mono dim ts-cell">2026-09-01 17:19:53</td><td class="mono">model.generate</td><td>tool_call</td><td><span class="pill ing" title="Ingested from telemetry the vendor already emits — the witness attests &quot;this is the stream you sent me&quot;, not &quot;I watched it happen&quot;.">litellm</span></td><td class="mono">model:anthropic</td><td><span class="pill ok">allowed</span></td><td><span class="pill ok">ok</span></td><td><span class="pill ok" title="no redaction pattern matched; not a guarantee no sensitive data is present">no flags</span></td><td class="trunc dim">reply drafted (zero-data-retention)</td><td class="mono dim">d51067acd20b</td></tr>
-<tr data-ts="2026-08-31T19:43:53+00:00" data-tool="mcp__zendesk__get_ticket" data-type="read" data-sev="INFO" data-status="ok" data-flags="0" data-rid="c3f93bb2-518d-4c25-b825-b5d7e96e96f9" data-text="2026-08-31t19:43:53+00:00 mcp__zendesk__get_ticket read mcp:zendesk allowed ok info {&#x27;tenant&#x27;: &#x27;acme-corp&#x27;, &#x27;ticket&#x27;: &#x27;zd-30412&#x27;} read ticket thread (4 messages) globex support agent 5c2a52df8bcc read ticket thread (4 messages)" tabindex="0" class="rowclick" title="Click for the full record"><td class="mono dim ts-cell">2026-08-31 19:43:53</td><td class="mono">mcp__zendesk__get_ticket</td><td>read</td><td><span class="pill cap" title="Declared captured at the boundary — per this record&#x27;s own source tag, Halo observed the call directly. The tag is set by the integration, not independently verified.">recorder</span></td><td class="mono">mcp:zendesk</td><td><span class="pill ok">allowed</span></td><td><span class="pill ok">ok</span></td><td><span class="pill ok" title="no redaction pattern matched; not a guarantee no sensitive data is present">no flags</span></td><td class="trunc dim">read ticket thread (4 messages)</td><td class="mono dim">5c2a52df8bcc</td></tr>
-<tr data-ts="2026-08-31T19:37:53+00:00" data-tool="mcp__crm__get_customer" data-type="read" data-sev="INFO" data-status="ok" data-flags="0" data-rid="0c5a5d3d-c496-4eb9-be4f-e77fb3da5e46" data-text="2026-08-31t19:37:53+00:00 mcp__crm__get_customer read mcp:crm allowed ok info {&#x27;tenant&#x27;: &#x27;acme-corp&#x27;, &#x27;customer&#x27;: &#x27;cust_8841&#x27;, &#x27;region&#x27;: &#x27;us-east-1&#x27;} looked up account + order history, tenant-scoped globex support agent c195a58a508c looked up account + order history, tenant-scoped" tabindex="0" class="rowclick" title="Click for the full record"><td class="mono dim ts-cell">2026-08-31 19:37:53</td><td class="mono">mcp__crm__get_customer</td><td>read</td><td><span class="pill cap" title="Declared captured at the boundary — per this record&#x27;s own source tag, Halo observed the call directly. The tag is set by the integration, not independently verified.">mcp</span></td><td class="mono">mcp:crm</td><td><span class="pill ok">allowed</span></td><td><span class="pill ok">ok</span></td><td><span class="pill ok" title="no redaction pattern matched; not a guarantee no sensitive data is present">no flags</span></td><td class="trunc dim">looked up account + order history, tenant-scoped</td><td class="mono dim">c195a58a508c</td></tr>
+<tr data-ts="2026-10-03T01:20:10+00:00" data-tool="mcp__jira__create_ticket" data-type="tool_call" data-sev="INFO" data-status="ok" data-flags="0" data-rid="ecb21103-b1de-4293-bafd-dd231f7bcdc5" data-text="2026-10-03t01:20:10+00:00 mcp__jira__create_ticket tool_call mcp:jira allowed ok info {&#x27;tenant&#x27;: &#x27;acme-corp&#x27;, &#x27;issue&#x27;: &#x27;recurring billing bug behind zd-30412&#x27;} escalation glx-218 created globex support agent 3b0ba05f288c ecb21103-b1de-4293-bafd-dd231f7bcdc5 ran mcp__jira__create_ticket — result: escalation glx-218 created" tabindex="0" class="rowclick" title="Click for the full record"><td class="mono dim ts-cell">2026-10-03 01:20:10</td><td class="mono">mcp__jira__create_ticket</td><td>tool_call</td><td><span class="pill ing" title="Ingested from telemetry the vendor already emits — the witness attests &quot;this is the stream you sent me&quot;, not &quot;I watched it happen&quot;.">langfuse</span></td><td class="mono">mcp:jira</td><td><span class="pill ok">allowed</span></td><td><span class="pill ok">ok</span></td><td><span class="pill ok" title="no redaction pattern matched and no threat flag supplied; not a guarantee no sensitive data is present">no flags</span></td><td class="trunc dim">Ran mcp__jira__create_ticket — result: escalation GLX-218 created</td><td class="mono dim">3b0ba05f288c</td></tr>
+<tr data-ts="2026-10-02T22:44:10+00:00" data-tool="email.send" data-type="network" data-sev="INFO" data-status="ok" data-flags="0" data-rid="0a98d55f-9929-4259-b34b-7dc97b79084a" data-text="2026-10-02t22:44:10+00:00 email.send network network allowed ok info {&#x27;tenant&#x27;: &#x27;acme-corp&#x27;, &#x27;to_domain&#x27;: &#x27;acme-corp.com&#x27;, &#x27;ticket&#x27;: &#x27;zd-30412&#x27;} reply sent to customer globex support agent 6c53f772e60a 0a98d55f-9929-4259-b34b-7dc97b79084a ran email.send — result: reply sent to customer" tabindex="0" class="rowclick" title="Click for the full record"><td class="mono dim ts-cell">2026-10-02 22:44:10</td><td class="mono">email.send</td><td>network</td><td><span class="pill ing" title="Ingested from telemetry the vendor already emits — the witness attests &quot;this is the stream you sent me&quot;, not &quot;I watched it happen&quot;.">otel</span></td><td class="mono">network</td><td><span class="pill ok">allowed</span></td><td><span class="pill ok">ok</span></td><td><span class="pill ok" title="no redaction pattern matched and no threat flag supplied; not a guarantee no sensitive data is present">no flags</span></td><td class="trunc dim">Ran email.send — result: reply sent to customer</td><td class="mono dim">6c53f772e60a</td></tr>
+<tr data-ts="2026-10-02T04:02:10+00:00" data-tool="refund.issue" data-type="write" data-sev="INFO" data-status="ok" data-flags="0" data-rid="9e39d035-1b91-4c70-b444-0cfb8bb68161" data-text="2026-10-02t04:02:10+00:00 refund.issue write billing.write human_approved ok info {&#x27;tenant&#x27;: &#x27;acme-corp&#x27;, &#x27;order&#x27;: &#x27;ord_2291&#x27;, &#x27;amount_usd&#x27;: 48} $48 refund issued after human approval globex support agent 05c040406079 9e39d035-1b91-4c70-b444-0cfb8bb68161 ran refund.issue — result: $48 refund issued after human approval" tabindex="0" class="rowclick" title="Click for the full record"><td class="mono dim ts-cell">2026-10-02 04:02:10</td><td class="mono">refund.issue</td><td>write</td><td><span class="pill cap" title="Declared captured at the boundary — per this record&#x27;s own source tag, the integration observed the call directly. The tag is set by the integration, not independently verified.">recorder</span></td><td class="mono">billing.write</td><td><span class="pill ok">human_approved</span></td><td><span class="pill ok">ok</span></td><td><span class="pill ok" title="no redaction pattern matched and no threat flag supplied; not a guarantee no sensitive data is present">no flags</span></td><td class="trunc dim">Ran refund.issue — result: $48 refund issued after human approval</td><td class="mono dim">05c040406079</td></tr>
+<tr data-ts="2026-10-01T22:14:10+00:00" data-tool="model.generate" data-type="tool_call" data-sev="INFO" data-status="ok" data-flags="0" data-rid="972acb1a-6733-4850-a54a-cce4d238989a" data-text="2026-10-01t22:14:10+00:00 model.generate tool_call model:anthropic allowed ok info {&#x27;provider&#x27;: &#x27;anthropic&#x27;, &#x27;model&#x27;: &#x27;claude-opus-4-8&#x27;, &#x27;zdr&#x27;: true, &#x27;purpose&#x27;: &#x27;draft reply to ticket zd-30412&#x27;, &#x27;messages&#x27;: 6} reply drafted (zero-data-retention) globex support agent 00e5a1d93c53 972acb1a-6733-4850-a54a-cce4d238989a ran model.generate — result: reply drafted (zero-data-retention)" tabindex="0" class="rowclick" title="Click for the full record"><td class="mono dim ts-cell">2026-10-01 22:14:10</td><td class="mono">model.generate</td><td>tool_call</td><td><span class="pill ing" title="Ingested from telemetry the vendor already emits — the witness attests &quot;this is the stream you sent me&quot;, not &quot;I watched it happen&quot;.">litellm</span></td><td class="mono">model:anthropic</td><td><span class="pill ok">allowed</span></td><td><span class="pill ok">ok</span></td><td><span class="pill ok" title="no redaction pattern matched and no threat flag supplied; not a guarantee no sensitive data is present">no flags</span></td><td class="trunc dim">Ran model.generate — result: reply drafted (zero-data-retention)</td><td class="mono dim">00e5a1d93c53</td></tr>
+<tr data-ts="2026-10-01T00:38:10+00:00" data-tool="mcp__zendesk__get_ticket" data-type="read" data-sev="INFO" data-status="ok" data-flags="0" data-rid="eecb90c5-4acc-479f-b8c4-a8358ea009b7" data-text="2026-10-01t00:38:10+00:00 mcp__zendesk__get_ticket read mcp:zendesk allowed ok info {&#x27;tenant&#x27;: &#x27;acme-corp&#x27;, &#x27;ticket&#x27;: &#x27;zd-30412&#x27;} read ticket thread (4 messages) globex support agent 869fd6f27f9e eecb90c5-4acc-479f-b8c4-a8358ea009b7 ran mcp__zendesk__get_ticket — result: read ticket thread (4 messages)" tabindex="0" class="rowclick" title="Click for the full record"><td class="mono dim ts-cell">2026-10-01 00:38:10</td><td class="mono">mcp__zendesk__get_ticket</td><td>read</td><td><span class="pill cap" title="Declared captured at the boundary — per this record&#x27;s own source tag, the integration observed the call directly. The tag is set by the integration, not independently verified.">recorder</span></td><td class="mono">mcp:zendesk</td><td><span class="pill ok">allowed</span></td><td><span class="pill ok">ok</span></td><td><span class="pill ok" title="no redaction pattern matched and no threat flag supplied; not a guarantee no sensitive data is present">no flags</span></td><td class="trunc dim">Ran mcp__zendesk__get_ticket — result: read ticket thread (4 messages)</td><td class="mono dim">869fd6f27f9e</td></tr>
+<tr data-ts="2026-10-01T00:32:10+00:00" data-tool="mcp__crm__get_customer" data-type="read" data-sev="INFO" data-status="ok" data-flags="0" data-rid="7bfde1b4-76f4-4d7c-b5ab-b64f5e133096" data-text="2026-10-01t00:32:10+00:00 mcp__crm__get_customer read mcp:crm allowed ok info {&#x27;tenant&#x27;: &#x27;acme-corp&#x27;, &#x27;customer&#x27;: &#x27;cust_8841&#x27;, &#x27;region&#x27;: &#x27;us-east-1&#x27;} looked up account + order history, tenant-scoped globex support agent 7ed3143ef45f 7bfde1b4-76f4-4d7c-b5ab-b64f5e133096 ran mcp__crm__get_customer — result: looked up account + order history, tenant-scoped" tabindex="0" class="rowclick" title="Click for the full record"><td class="mono dim ts-cell">2026-10-01 00:32:10</td><td class="mono">mcp__crm__get_customer</td><td>read</td><td><span class="pill cap" title="Declared captured at the boundary — per this record&#x27;s own source tag, the integration observed the call directly. The tag is set by the integration, not independently verified.">mcp</span></td><td class="mono">mcp:crm</td><td><span class="pill ok">allowed</span></td><td><span class="pill ok">ok</span></td><td><span class="pill ok" title="no redaction pattern matched and no threat flag supplied; not a guarantee no sensitive data is present">no flags</span></td><td class="trunc dim">Ran mcp__crm__get_customer — result: looked up account + order history, tenant-scoped</td><td class="mono dim">7ed3143ef45f</td></tr>
 </tbody></table>
 <div id="more-sentinel"></div>
 </div>
@@ -193,23 +193,514 @@ footer a{color:var(--gold);text-decoration:none}
 </aside>
 <footer>Generated by <a href="https://github.com/bkuan001/halo-record">halo-record</a> &middot; format <a href="https://github.com/bkuan001/halo-record/blob/main/src/halo_record/halo-record.schema.json">Halo Runtime Record v0.1</a></footer>
 </div>
-<script id="records" type="application/json">[{"schema_version":"0.1","record_id":"0c5a5d3d-c496-4eb9-be4f-e77fb3da5e46","session_id":"demo-acme-corp","ts":"2026-08-31T19:37:53+00:00","agent":{"id":"globex-agent","name":"Globex Support Agent","version":"2.4.1","model":"claude-opus-4-8"},"action":{"type":"read","category":"privacy","tool":"mcp__crm__get_customer","authorization":{"decision":"allowed","scope":"mcp:crm"},"input":{"hash":"sha256:9fa798f0ebf933885b5ff5d95e9a3974dcbb30e60003ebeb003e4bb527d2b5c9","summary":"{'tenant': 'acme-corp', 'customer': 'cust_8841', 'region': 'us-east-1'}"}},"severity":"INFO","findings":[],"integrity":{"alg":"sha-256","canon":"rfc8785","prev_hash":"0000000000000000000000000000000000000000000000000000000000000000","hash":"c195a58a508c6bc71edcbd289ca9759239d482554dc5cd79ad37e4f6f8c06a2d"},"subject":{"id":"acme-corp","name":"Acme Corp"},"source":{"adapter":"mcp","via":"MCP interceptor","capture":"captured"},"outcome":{"status":"ok","summary":"looked up account + order history, tenant-scoped"}},{"schema_version":"0.1","record_id":"c3f93bb2-518d-4c25-b825-b5d7e96e96f9","session_id":"demo-acme-corp","ts":"2026-08-31T19:43:53+00:00","agent":{"id":"globex-agent","name":"Globex Support Agent","version":"2.4.1","model":"claude-opus-4-8"},"action":{"type":"read","category":"privacy","tool":"mcp__zendesk__get_ticket","authorization":{"decision":"allowed","scope":"mcp:zendesk"},"input":{"hash":"sha256:c4c8e6f6a33435a47345dbbc9df63be3d08e70660eadea20e0e4636953db6432","summary":"{'tenant': 'acme-corp', 'ticket': 'ZD-30412'}"}},"severity":"INFO","findings":[],"integrity":{"alg":"sha-256","canon":"rfc8785","prev_hash":"c195a58a508c6bc71edcbd289ca9759239d482554dc5cd79ad37e4f6f8c06a2d","hash":"5c2a52df8bcc923a371a4cc3afcf2e5783b211eaa435845a698264276ce214bc"},"subject":{"id":"acme-corp","name":"Acme Corp"},"source":{"adapter":"recorder","via":"Halo recorder (native)","capture":"captured"},"outcome":{"status":"ok","summary":"read ticket thread (4 messages)"}},{"schema_version":"0.1","record_id":"755bbc07-4b02-4eb3-9d52-b07abd9be98b","session_id":"demo-acme-corp","ts":"2026-09-01T17:19:53+00:00","agent":{"id":"globex-agent","name":"Globex Support Agent","version":"2.4.1","model":"claude-opus-4-8"},"action":{"type":"tool_call","category":"privacy","tool":"model.generate","authorization":{"decision":"allowed","scope":"model:anthropic"},"input":{"hash":"sha256:1a99bd61816e0f8db733ac54158dc5a01eaa6c502cc6a99ea3c97e24849baf0f","summary":"{'provider': 'anthropic', 'model': 'claude-opus-4-8', 'zdr': True, 'purpose': 'draft reply to ticket ZD-30412', 'messages': 6}"}},"severity":"INFO","findings":[],"integrity":{"alg":"sha-256","canon":"rfc8785","prev_hash":"5c2a52df8bcc923a371a4cc3afcf2e5783b211eaa435845a698264276ce214bc","hash":"d51067acd20b02da2e90216ad0529178557850da82208db56f7bcc16fe04a2f3"},"subject":{"id":"acme-corp","name":"Acme Corp"},"source":{"adapter":"litellm","via":"LiteLLM gateway","capture":"ingested"},"outcome":{"status":"ok","summary":"reply drafted (zero-data-retention)"}},{"schema_version":"0.1","record_id":"60e01653-4774-4cbc-aae5-21895e4e5451","session_id":"demo-acme-corp","ts":"2026-09-01T23:07:53+00:00","agent":{"id":"globex-agent","name":"Globex Support Agent","version":"2.4.1","model":"claude-opus-4-8"},"action":{"type":"write","category":"safety","tool":"refund.issue","authorization":{"decision":"human_approved","scope":"billing.write","approver":"casey.lead@support.example"},"input":{"hash":"sha256:ccc488ec5fd0159f9a79c8dee3a99b62f10b3985e3c820b7fa9c9361598b2cd0","summary":"{'tenant': 'acme-corp', 'order': 'ord_2291', 'amount_usd': 48}"}},"severity":"INFO","findings":[],"integrity":{"alg":"sha-256","canon":"rfc8785","prev_hash":"d51067acd20b02da2e90216ad0529178557850da82208db56f7bcc16fe04a2f3","hash":"54fa95323b0a7ac5a1d322d7f03650575c6ea5e7fe982422ab44b9e34c89d8f3"},"subject":{"id":"acme-corp","name":"Acme Corp"},"source":{"adapter":"recorder","via":"Halo recorder (native)","capture":"captured"},"outcome":{"status":"ok","summary":"$48 refund issued after human approval"}},{"schema_version":"0.1","record_id":"6d54684a-bd93-4c04-ac50-2f9afe6c7a3d","session_id":"demo-acme-corp","ts":"2026-09-02T17:49:53+00:00","agent":{"id":"globex-agent","name":"Globex Support Agent","version":"2.4.1","model":"claude-opus-4-8"},"action":{"type":"network","category":"security","tool":"email.send","authorization":{"decision":"allowed","scope":"network"},"input":{"hash":"sha256:b4a4eee4fa43f06f2d13d02fd9c973ddb7dc657f4b34b9b1055759d7357a73e0","summary":"{'tenant': 'acme-corp', 'to_domain': 'acme-corp.com', 'ticket': 'ZD-30412'}"}},"severity":"INFO","findings":[],"integrity":{"alg":"sha-256","canon":"rfc8785","prev_hash":"54fa95323b0a7ac5a1d322d7f03650575c6ea5e7fe982422ab44b9e34c89d8f3","hash":"d75d8c252ecf639c2189e8fc08abce512d3a52c0298b646097a931ff58fb2396"},"subject":{"id":"acme-corp","name":"Acme Corp"},"source":{"adapter":"otel","via":"OpenTelemetry GenAI spans","capture":"ingested"},"outcome":{"status":"ok","summary":"reply sent to customer"}},{"schema_version":"0.1","record_id":"34b07113-b238-4f92-abe2-0b6ebe9784f5","session_id":"demo-acme-corp","ts":"2026-09-02T20:25:53+00:00","agent":{"id":"globex-agent","name":"Globex Support Agent","version":"2.4.1","model":"claude-opus-4-8"},"action":{"type":"tool_call","category":"reliability","tool":"mcp__jira__create_ticket","authorization":{"decision":"allowed","scope":"mcp:jira"},"input":{"hash":"sha256:13daee84ed723a1eb6e74c616b0cf4a982404a516ebd694bda89e1ea48b87ebd","summary":"{'tenant': 'acme-corp', 'issue': 'recurring billing bug behind ZD-30412'}"}},"severity":"INFO","findings":[],"integrity":{"alg":"sha-256","canon":"rfc8785","prev_hash":"d75d8c252ecf639c2189e8fc08abce512d3a52c0298b646097a931ff58fb2396","hash":"66116b45108afd73c7e2b423b7353c94fefb991adc1257c290b35983ee58a689"},"subject":{"id":"acme-corp","name":"Acme Corp"},"source":{"adapter":"langfuse","via":"Langfuse traces","capture":"ingested"},"outcome":{"status":"ok","summary":"escalation GLX-218 created"}}]</script>
-<script id="checkpoints" type="application/json">[{"chain_root":"c195a58a508c6bc71edcbd289ca9759239d482554dc5cd79ad37e4f6f8c06a2d","subject":"acme-corp","count":6,"head":"66116b45108afd73c7e2b423b7353c94fefb991adc1257c290b35983ee58a689","ts":"2026-09-02T22:01:53.146023Z"}]</script>
-<script id="halo-config" type="application/json">{"witnessUrl":null,"subject":"acme-corp"}</script>
+<script id="records" type="application/json">[{"schema_version":"0.1","record_id":"7bfde1b4-76f4-4d7c-b5ab-b64f5e133096","session_id":"demo-acme-corp","ts":"2026-10-01T00:32:10+00:00","agent":{"id":"globex-agent","name":"Globex Support Agent","version":"2.4.1","model":"claude-opus-4-8"},"action":{"type":"read","category":"privacy","tool":"mcp__crm__get_customer","authorization":{"decision":"allowed","scope":"mcp:crm"},"input":{"hash":"sha256:9fa798f0ebf933885b5ff5d95e9a3974dcbb30e60003ebeb003e4bb527d2b5c9","summary":"{'tenant': 'acme-corp', 'customer': 'cust_8841', 'region': 'us-east-1'}"}},"severity":"INFO","findings":[],"integrity":{"alg":"sha-256","canon":"rfc8785","prev_hash":"0000000000000000000000000000000000000000000000000000000000000000","hash":"7ed3143ef45f37b5bffe9b2098750efd8661ef3d6d764a2384598eb3f9b10781"},"subject":{"id":"acme-corp","name":"Acme Corp"},"source":{"adapter":"mcp","via":"MCP interceptor","capture":"captured"},"data":{"region":"us-east-1"},"outcome":{"status":"ok","summary":"looked up account + order history, tenant-scoped"}},{"schema_version":"0.1","record_id":"eecb90c5-4acc-479f-b8c4-a8358ea009b7","session_id":"demo-acme-corp","ts":"2026-10-01T00:38:10+00:00","agent":{"id":"globex-agent","name":"Globex Support Agent","version":"2.4.1","model":"claude-opus-4-8"},"action":{"type":"read","category":"privacy","tool":"mcp__zendesk__get_ticket","authorization":{"decision":"allowed","scope":"mcp:zendesk"},"input":{"hash":"sha256:c4c8e6f6a33435a47345dbbc9df63be3d08e70660eadea20e0e4636953db6432","summary":"{'tenant': 'acme-corp', 'ticket': 'ZD-30412'}"}},"severity":"INFO","findings":[],"integrity":{"alg":"sha-256","canon":"rfc8785","prev_hash":"7ed3143ef45f37b5bffe9b2098750efd8661ef3d6d764a2384598eb3f9b10781","hash":"869fd6f27f9ea73d16b5da9292f2735d4573f7cdba501e4164225dea9f40a242"},"subject":{"id":"acme-corp","name":"Acme Corp"},"source":{"adapter":"recorder","via":"Halo recorder (native)","capture":"captured"},"outcome":{"status":"ok","summary":"read ticket thread (4 messages)"}},{"schema_version":"0.1","record_id":"972acb1a-6733-4850-a54a-cce4d238989a","session_id":"demo-acme-corp","ts":"2026-10-01T22:14:10+00:00","agent":{"id":"globex-agent","name":"Globex Support Agent","version":"2.4.1","model":"claude-opus-4-8"},"action":{"type":"tool_call","category":"privacy","tool":"model.generate","authorization":{"decision":"allowed","scope":"model:anthropic"},"input":{"hash":"sha256:1a99bd61816e0f8db733ac54158dc5a01eaa6c502cc6a99ea3c97e24849baf0f","summary":"{'provider': 'anthropic', 'model': 'claude-opus-4-8', 'zdr': True, 'purpose': 'draft reply to ticket ZD-30412', 'messages': 6}"}},"severity":"INFO","findings":[],"integrity":{"alg":"sha-256","canon":"rfc8785","prev_hash":"869fd6f27f9ea73d16b5da9292f2735d4573f7cdba501e4164225dea9f40a242","hash":"00e5a1d93c53d3125a4ede065d725c2bfcc85d5035b16d43258ecf35bd2c4ee5"},"subject":{"id":"acme-corp","name":"Acme Corp"},"source":{"adapter":"litellm","via":"LiteLLM gateway","capture":"ingested"},"data":{"purpose":"draft reply to ticket ZD-30412"},"outcome":{"status":"ok","summary":"reply drafted (zero-data-retention)"}},{"schema_version":"0.1","record_id":"9e39d035-1b91-4c70-b444-0cfb8bb68161","session_id":"demo-acme-corp","ts":"2026-10-02T04:02:10+00:00","agent":{"id":"globex-agent","name":"Globex Support Agent","version":"2.4.1","model":"claude-opus-4-8"},"action":{"type":"write","category":"safety","tool":"refund.issue","authorization":{"decision":"human_approved","scope":"billing.write","approver":"casey.lead@support.example"},"input":{"hash":"sha256:ccc488ec5fd0159f9a79c8dee3a99b62f10b3985e3c820b7fa9c9361598b2cd0","summary":"{'tenant': 'acme-corp', 'order': 'ord_2291', 'amount_usd': 48}"}},"severity":"INFO","findings":[],"integrity":{"alg":"sha-256","canon":"rfc8785","prev_hash":"00e5a1d93c53d3125a4ede065d725c2bfcc85d5035b16d43258ecf35bd2c4ee5","hash":"05c040406079fd29f5bc34d76b02a6e4045fe5f1c554a26d35934769c8398de5"},"subject":{"id":"acme-corp","name":"Acme Corp"},"source":{"adapter":"recorder","via":"Halo recorder (native)","capture":"captured"},"outcome":{"status":"ok","summary":"$48 refund issued after human approval"}},{"schema_version":"0.1","record_id":"0a98d55f-9929-4259-b34b-7dc97b79084a","session_id":"demo-acme-corp","ts":"2026-10-02T22:44:10+00:00","agent":{"id":"globex-agent","name":"Globex Support Agent","version":"2.4.1","model":"claude-opus-4-8"},"action":{"type":"network","category":"security","tool":"email.send","authorization":{"decision":"allowed","scope":"network"},"input":{"hash":"sha256:b4a4eee4fa43f06f2d13d02fd9c973ddb7dc657f4b34b9b1055759d7357a73e0","summary":"{'tenant': 'acme-corp', 'to_domain': 'acme-corp.com', 'ticket': 'ZD-30412'}"}},"severity":"INFO","findings":[],"integrity":{"alg":"sha-256","canon":"rfc8785","prev_hash":"05c040406079fd29f5bc34d76b02a6e4045fe5f1c554a26d35934769c8398de5","hash":"6c53f772e60a44155978e01b8d51ac6bd4f9b0a1b2cb21fa57e16da03f2ed4fe"},"subject":{"id":"acme-corp","name":"Acme Corp"},"source":{"adapter":"otel","via":"OpenTelemetry GenAI spans","capture":"ingested"},"outcome":{"status":"ok","summary":"reply sent to customer"}},{"schema_version":"0.1","record_id":"ecb21103-b1de-4293-bafd-dd231f7bcdc5","session_id":"demo-acme-corp","ts":"2026-10-03T01:20:10+00:00","agent":{"id":"globex-agent","name":"Globex Support Agent","version":"2.4.1","model":"claude-opus-4-8"},"action":{"type":"tool_call","category":"reliability","tool":"mcp__jira__create_ticket","authorization":{"decision":"allowed","scope":"mcp:jira"},"input":{"hash":"sha256:13daee84ed723a1eb6e74c616b0cf4a982404a516ebd694bda89e1ea48b87ebd","summary":"{'tenant': 'acme-corp', 'issue': 'recurring billing bug behind ZD-30412'}"}},"severity":"INFO","findings":[],"integrity":{"alg":"sha-256","canon":"rfc8785","prev_hash":"6c53f772e60a44155978e01b8d51ac6bd4f9b0a1b2cb21fa57e16da03f2ed4fe","hash":"3b0ba05f288c1fb4fafe10178872b07e06c64f4fce2257e82e8dff50a7a01969"},"subject":{"id":"acme-corp","name":"Acme Corp"},"source":{"adapter":"langfuse","via":"Langfuse traces","capture":"ingested"},"outcome":{"status":"ok","summary":"escalation GLX-218 created"}}]</script>
+<script id="checkpoints" type="application/json">[{"chain_root":"7ed3143ef45f37b5bffe9b2098750efd8661ef3d6d764a2384598eb3f9b10781","subject":"acme-corp","count":6,"head":"3b0ba05f288c1fb4fafe10178872b07e06c64f4fce2257e82e8dff50a7a01969","ts":"2026-10-03T02:56:10.772768Z"}]</script>
+<script id="halo-config" type="application/json">{"witnessUrl":null,"subject":"acme-corp","chainRoot":null,"expectedSubject":"acme-corp","chainVerified":true}</script>
+<script id="halo-policy" type="application/json">null</script>
+<script>
+var HaloView = (function(){
+  "use strict";
+  var HTML_META = {violated:["FAIL","#B23A48","#F7E4E6"], no_evidence:["GAP","#9A6A00","#F6ECCF"],
+                   pass:["PASS","#3E7C5A","#E2EFE5"], no_match:["NONE","#6B6354","#EFEDE7"]};
+  var CAP_TITLE = {"captured": "Declared captured at the boundary \u2014 per this record's own source tag, the integration observed the call directly. The tag is set by the integration, not independently verified.", "ingested": "Ingested from telemetry the vendor already emits \u2014 the witness attests \"this is the stream you sent me\", not \"I watched it happen\"."};
+  var PLAIN_KEYS = ["command", "file_path", "url", "query", "description", "path", "pattern", "prompt", "to", "summary", "task_id"];
+  var PLAIN_VERB = {"tool_call": "Ran", "network": "Fetched", "read": "Read", "write": "Wrote", "agent_message": "Messaged"};
+  var FOOT_PAGE = "Each verdict is computed by deterministic rules over the record fields; this page re-computes it in your browser from the records it verifies. The rules are the policy embedded in this page by whoever generated it: compare the policy sha256 above with the policy file you hold.";
+  var DIGEST_NOTE = "Policy sha256 %s\u2026 (compare with `shasum -a 256` of the policy file you hold).";
+  var SCHEMA = {"type": "object", "properties": {"schema_version": {"type": "string"}, "record_id": {"type": "string"}, "session_id": {"type": "string"}, "parent_id": {"type": "string"}, "ts": {"type": "string"}, "subject": {"type": "object", "properties": {"id": {"type": "string"}, "name": {"type": "string"}}}, "principal": {"type": "object", "properties": {"human_id": {"type": "string"}, "creator_id": {"type": "string"}, "service_account": {"type": "string"}, "role_scope": {"type": "string"}}}, "agent": {"type": "object", "properties": {"id": {"type": "string"}, "name": {"type": "string"}, "version": {"type": "string"}, "model": {"type": "string"}, "model_version": {"type": "string"}}}, "authority": {"type": "object", "properties": {"snapshot_id": {"type": "string"}, "same_as_previous": {"type": "boolean"}, "captured_at": {"type": "string"}, "scope": {"type": "string"}, "workspace": {"type": "object", "properties": {"path_hash": {"type": "string"}, "git_remote_hash": {"type": "string"}, "git_commit": {"type": "string"}, "worktree_hash": {"type": "string"}}}, "refs": {"type": "array", "items": {"type": "object", "properties": {"kind": {"type": "string"}, "id": {"type": "string"}, "uri": {"type": "string"}, "hash": {"type": "string"}, "version": {"type": "string"}, "loaded": {"type": "boolean"}, "truncated": {"type": "boolean"}, "shadowed_by": {"type": "string"}}}}, "omissions": {"type": "array", "items": {"type": "object", "properties": {"kind": {"type": "string"}, "reason": {"type": "string"}, "hash": {"type": "string"}}}}, "capture_limits": {"type": "array", "items": {"type": "string"}}, "stale_if": {"type": "array", "items": {"type": "string"}}}}, "mcp": {"type": "object", "properties": {"host": {"type": "string"}, "client": {"type": "string"}, "server": {"type": "string"}, "server_version": {"type": "string"}}}, "action": {"type": "object", "properties": {"type": {"type": "string", "enum": ["tool_call", "agent_message", "read", "write", "network"]}, "category": {"type": "string", "enum": ["security", "safety", "reliability", "privacy"]}, "tool": {"type": "string"}, "authorization": {"type": "object", "properties": {"decision": {"type": "string", "enum": ["allowed", "denied", "human_approved"]}, "scope": {"type": "string"}, "approver": {"type": "string"}}}, "input": {"type": "object", "properties": {"summary": {"type": "string"}, "hash": {"type": "string"}}}}}, "outcome": {"type": "object", "properties": {"status": {"type": "string", "enum": ["ok", "error", "denied"]}, "summary": {"type": "string"}, "hash": {"type": "string"}}}, "findings": {"type": "array", "items": {"type": "object", "properties": {"type": {"type": "string", "enum": ["api_key", "aws_secret_key", "bearer_token", "bot_token", "credential_field", "credit_card", "db_conn", "email", "gcp_api_key", "github_token", "high_entropy_path_value", "high_entropy_secret", "iban", "ip_internal", "jwt", "password", "phone", "private_key", "ssn", "stripe_key", "webhook_url"]}, "severity": {"type": "string", "enum": ["CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"]}, "sample": {"type": "string"}}}}, "severity": {"type": "string", "enum": ["CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"]}, "threats": {"type": "array", "items": {"type": "object", "properties": {"type": {"type": "string", "enum": ["policy_violation", "prompt_injection_direct", "prompt_injection_indirect", "tool_misuse"]}, "ref": {"type": "string"}}}}, "verification": {"type": "object", "properties": {"status": {"type": "string", "enum": ["allowed", "blocked", "modified", "unverified"]}, "verifier": {"type": "string"}, "policy_ref": {"type": "string"}, "checked_at": {"type": "string"}}}, "data": {"type": "object", "properties": {"region": {"type": "string"}, "cross_region": {"type": "number"}, "purpose": {"type": "string"}, "zdr": {"type": "boolean"}, "pii_types": {"type": "array", "items": {"type": "string"}}}}, "retention": {"type": "object", "properties": {"policy": {"type": "string"}, "expires": {"type": "string"}}}, "jurisdiction": {"type": "string"}, "source": {"type": "object", "properties": {"adapter": {"type": "string"}, "via": {"type": "string"}, "capture": {"type": "string", "enum": ["captured", "ingested"]}}}, "framework_tags": {"type": "array", "items": {"type": "string"}}, "integrity": {"type": "object", "properties": {"alg": {"type": "string", "enum": ["sha-256"]}, "canon": {"type": "string", "enum": ["rfc8785"]}, "prev_hash": {"type": "string"}, "hash": {"type": "string"}}}, "signature": {"type": "object", "properties": {"alg": {"type": "string", "enum": ["ecdsa-p256", "ed25519"]}, "sig": {"type": "string"}, "key_id": {"type": "string"}}}}};
+  var RULE_KEYS = ["id", "description", "severity", "source", "when", "forbid", "require", "expect_evidence"];
+  var POLICY_KEYS = ["name", "version", "note", "description", "rules", "$schema"];
+  var SEVERITIES = ["INFO", "LOW", "MEDIUM", "HIGH", "CRITICAL"];
+  var PY_WS = /[\t\n\x0b\x0c\r\x1c-\x1f \x85\xa0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]+/;
+  var TS_RE = /^([0-9]{4})-([0-9]{2})-([0-9]{2})[Tt ]([0-9]{2}):([0-9]{2}):([0-9]{2})(?:\.([0-9]{1,9}))?(Z|z|[+-][0-9]{2}:[0-9]{2})?$/;
+  var NUM_RE = /-?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?/y;
+  var ALNUM = /[\p{L}\p{N}]/u;
+
+  function has(o, k){ return o !== null && typeof o === "object" && Object.prototype.hasOwnProperty.call(o, k); }
+  function get(o, k, d){ return has(o, k) ? o[k] : d; }
+  function isDict(x){ return x !== null && typeof x === "object" && !Array.isArray(x); }
+  function dict(x){ return isDict(x) ? x : {}; }
+  function list(x){ return Array.isArray(x) ? x : []; }
+  function truthy(x){
+    if (x === null || x === undefined || x === false || x === 0 || x === "") return false;
+    if (Array.isArray(x)) return x.length > 0;
+    if (typeof x === "object") return Object.keys(x).length > 0;
+    return true;
+  }
+  function or(){ for (var i = 0; i < arguments.length - 1; i++) if (truthy(arguments[i])) return arguments[i];
+                 return arguments[arguments.length - 1]; }
+  function str(x){
+    if (x === null || x === undefined) return "";
+    if (x === true) return "True";
+    if (x === false) return "False";
+    return typeof x === "string" ? x : JSON.stringify(x);
+  }
+  function esc(x){
+    return String(x).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+                    .replace(/"/g, "&quot;").replace(/'/g, "&#x27;");
+  }
+  /* Invisible characters (mirror redact.INVISIBLE_CHARS): identifiers keep
+     them, the page shows each as a marker, policy matching ignores them. */
+  var INVISIBLE = [[173, 173], [847, 847], [1536, 1541], [1564, 1564], [1757, 1757], [1807, 1807], [2192, 2193], [2274, 2274], [4447, 4448], [6068, 6069], [6155, 6159], [8203, 8207], [8234, 8238], [8288, 8303], [10240, 10240], [12644, 12644], [65024, 65039], [65279, 65279], [65440, 65440], [65520, 65531], [69821, 69821], [69837, 69837], [78896, 78911], [113824, 113827], [119129, 119129], [119155, 119162], [917504, 921599]];
+  function isInvisible(cp){
+    for (var i = 0; i < INVISIBLE.length; i++) if (cp >= INVISIBLE[i][0] && cp <= INVISIBLE[i][1]) return true;
+    return false;
+  }
+  function showId(s){
+    s = String(s);
+    if (!/[^\x00-\x7f]/.test(s)) return s;
+    return Array.from(s).map(function(c){
+      var cp = c.codePointAt(0);
+      if (!isInvisible(cp)) return c;
+      var h = cp.toString(16).toUpperCase();
+      while (h.length < 4) h = "0" + h;
+      return "\u27e8U+" + h + "\u27e9";
+    }).join("");
+  }
+  function cut(s, n){ return Array.from(s).slice(0, n).join(""); }
+  function cpLen(s){ return Array.from(s).length; }
+  function cmpCp(a, b){
+    var A = Array.from(a), B = Array.from(b);
+    for (var i = 0; i < Math.min(A.length, B.length); i++){
+      var x = A[i].codePointAt(0), y = B[i].codePointAt(0);
+      if (x !== y) return x < y ? -1 : 1;
+    }
+    return A.length - B.length;
+  }
+  function squash(s){ return s.split(PY_WS).filter(function(p){ return p; }).join(" "); }
+  function pyStrip(s){ return s.replace(new RegExp("^" + PY_WS.source), "").replace(new RegExp(PY_WS.source + "$"), ""); }
+  function pad(n, w){ n = String(n); while (n.length < w) n = "0" + n; return n; }
+
+  /* --- timestamps (mirror _view.ts_utc / fmt_ts) --- */
+  function tsUtc(ts){
+    if (typeof ts !== "string") return null;
+    var m = TS_RE.exec(ts);
+    if (!m) return null;
+    var y = +m[1], mo = +m[2], d = +m[3], h = +m[4], mi = +m[5], s = +m[6];
+    if (y < 1 || mo < 1 || mo > 12 || d < 1 || h > 23 || mi > 59 || s > 59) return null;
+    var leap = (y % 4 === 0 && (y % 100 !== 0 || y % 400 === 0));
+    if (d > [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][mo - 1]) return null;
+    var t = new Date(0);
+    t.setUTCFullYear(y, mo - 1, d);
+    t.setUTCHours(h, mi, s, 0);
+    var ms = t.getTime();
+    var off = m[8];
+    if (off && off !== "Z" && off !== "z"){
+      var oh = +off.slice(1, 3), om = +off.slice(4, 6);
+      if (oh > 23 || om > 59) return null;
+      var delta = (oh * 60 + om) * 60000;
+      ms = off[0] === "+" ? ms - delta : ms + delta;
+    }
+    var o = new Date(ms), yy = o.getUTCFullYear();
+    if (yy < 1 || yy > 9999) return null;
+    return {ms: ms, us: +((m[7] || "").slice(0, 6) + "000000").slice(0, 6), y: yy,
+            mo: o.getUTCMonth() + 1, d: o.getUTCDate(), h: o.getUTCHours(),
+            mi: o.getUTCMinutes(), s: o.getUTCSeconds()};
+  }
+  function fmtTs(ts){
+    var t = tsUtc(ts);
+    if (!t) return cut(typeof ts === "string" ? ts : "", 19);
+    return pad(t.y, 4) + "-" + pad(t.mo, 2) + "-" + pad(t.d, 2) + " " +
+           pad(t.h, 2) + ":" + pad(t.mi, 2) + ":" + pad(t.s, 2);
+  }
+  function cmpTs(a, b){ return a.ms !== b.ms ? (a.ms < b.ms ? -1 : 1) : (a.us - b.us); }
+
+  /* --- the summary literal reader (mirror _view._Lit) --- */
+  var SIMPLE_ESC = {"\\":"\\", "'":"'", '"':'"', a:"\x07", b:"\b", f:"\f", n:"\n", r:"\r", t:"\t", v:"\x0b", "\n":""};
+  function Fail(){}
+  function readDict(text){
+    var i = 0, s = text;
+    function ws(){ while (i < s.length && " \t\n\r\f".indexOf(s[i]) >= 0) i++; }
+    function peek(c){ return i < s.length && s[i] === c; }
+    function expect(c){ if (!peek(c)) throw new Fail(); i++; }
+    function alnumAt(j){ if (j >= s.length) return false; var c = String.fromCodePoint(s.codePointAt(j)); return ALNUM.test(c); }
+    function string(){
+      var q = s[i]; i++;
+      if (s.substr(i, 2) === q + q) throw new Fail();
+      var out = "";
+      for (;;){
+        if (i >= s.length) throw new Fail();
+        var c = s[i];
+        if (c === q){ i++; break; }
+        if (c === "\n") throw new Fail();
+        if (c !== "\\"){ out += c; i++; continue; }
+        if (i + 1 >= s.length) throw new Fail();
+        var e = s[i + 1]; i += 2;
+        if (has(SIMPLE_ESC, e)) out += SIMPLE_ESC[e];
+        else if ("01234567".indexOf(e) >= 0){
+          var j = i;
+          while (j < s.length && j < i + 2 && "01234567".indexOf(s[j]) >= 0) j++;
+          out += String.fromCodePoint(parseInt(e + s.slice(i, j), 8)); i = j;
+        } else if (e === "x" || e === "u" || e === "U"){
+          var n = e === "x" ? 2 : (e === "u" ? 4 : 8), h = s.substr(i, n);
+          if (h.length !== n || !/^[0-9a-fA-F]+$/.test(h)) throw new Fail();
+          var cp = parseInt(h, 16);
+          if (cp > 0x10FFFF) throw new Fail();
+          out += String.fromCodePoint(cp); i += n;
+        } else if (e === "N") throw new Fail();
+        else out += "\\" + e;
+      }
+      ws();
+      if (peek("'") || peek('"')) throw new Fail();
+      return out;
+    }
+    var depth = 0;
+    function value(){
+      depth++;
+      try { return value1(); } finally { depth--; }
+    }
+    function value1(){
+      if (depth > 64) throw new Fail();
+      ws();
+      if (i >= s.length) throw new Fail();
+      var c = s[i], start = i;
+      if (c === "{"){
+        i++; var entries = []; ws();
+        if (peek("}")){ i++; return {k: "dict", v: entries, a: start, b: i}; }
+        for (;;){
+          var k = value(); ws(); expect(":"); var v = value();
+          entries.push([k, v]); ws();
+          if (peek(",")){ i++; ws(); if (peek("}")){ i++; break; } continue; }
+          expect("}"); break;
+        }
+        return {k: "dict", v: entries, a: start, b: i};
+      }
+      if (c === "[" || c === "("){
+        var close = c === "[" ? "]" : ")", items = [], comma = false;
+        i++; ws();
+        if (peek(close)){ i++; return {k: "seq", v: items, a: start, b: i}; }
+        for (;;){
+          items.push(value()); ws();
+          if (peek(",")){ comma = true; i++; ws(); if (peek(close)){ i++; break; } continue; }
+          expect(close); break;
+        }
+        if (c === "(" && !comma) return {k: items[0].k, v: items[0].v, a: start, b: i};
+        return {k: "seq", v: items, a: start, b: i};
+      }
+      if (c === "'" || c === '"') return {k: "str", v: string(), a: start, b: i};
+      NUM_RE.lastIndex = i;
+      var m = NUM_RE.exec(s);
+      if (m && m[0].length){
+        i += m[0].length;
+        if (i < s.length && (alnumAt(i) || s[i] === "_" || s[i] === ".")) throw new Fail();
+        return {k: "num", v: parseFloat(m[0]) !== 0, a: start, b: i};
+      }
+      var words = [["True", true], ["False", false], ["None", false]];
+      for (var w = 0; w < words.length; w++){
+        if (s.substr(i, words[w][0].length) === words[w][0]){
+          var end = i + words[w][0].length;
+          if (end < s.length && (alnumAt(end) || s[end] === "_")) throw new Fail();
+          i = end;
+          return {k: "const", v: words[w][1], a: start, b: end};
+        }
+      }
+      throw new Fail();
+    }
+    try {
+      var node = value(); ws();
+      if (i !== s.length || node.k !== "dict") return null;
+      var out = new Map();
+      for (var e = 0; e < node.v.length; e++)
+        if (node.v[e][0].k === "str") out.set(node.v[e][0].v, node.v[e][1]);
+      return out;
+    } catch (err){
+      if (err instanceof Fail || err instanceof RangeError) return null;
+      throw err;
+    }
+  }
+  function nodeText(node, text){
+    if (node.k === "str") return [node.v, node.v.length > 0];
+    if (node.k === "dict" || node.k === "seq") return [text.slice(node.a, node.b), node.v.length > 0];
+    return [text.slice(node.a, node.b), !!node.v];
+  }
+
+  /* --- plain-language summary (mirror _view.plain) --- */
+  function recorded(out){
+    return (typeof out.status === "string" && out.status) ? "outcome recorded: " + out.status
+                                                          : "outcome not recorded";
+  }
+  function gate(r){
+    var action = dict(r.action), auth = dict(action.authorization),
+        ver = dict(r.verification), out = dict(r.outcome), stopped = out.status === "denied";
+    if (ver.status === "blocked") return stopped ? "Blocked by gate" : "Gate reported blocked; " + recorded(out);
+    if (auth.decision === "denied") return stopped ? "Denied" : "Decision recorded denied; " + recorded(out);
+    return stopped ? "Denied" : null;
+  }
+  function plain(r){
+    var action = dict(r.action);
+    var tool = str(or(action.tool, action.type, "action"));
+    var summary = str(or(dict(action.input).summary, ""));
+    var detail = "";
+    if (summary.slice(0, 1) === "{" && cpLen(summary) <= 4096){
+      var d = readDict(summary);
+      if (d !== null){
+        for (var i = 0; i < PLAIN_KEYS.length; i++){
+          if (d.has(PLAIN_KEYS[i])){
+            var t = nodeText(d.get(PLAIN_KEYS[i]), summary);
+            if (t[1]){ detail = t[0]; break; }
+          }
+        }
+      } else detail = summary;
+    } else detail = summary;
+    detail = squash(detail);
+    var g = gate(r), shown = showId(tool);
+    if (g){
+      var sep = g.indexOf("; outcome") >= 0 ? " \u2014 " : ": ";
+      return detail ? (g + sep + shown + " \u2014 " + detail) : (g + sep + shown);
+    }
+    if (!detail){
+      var o = dict(r.outcome).summary;
+      o = (typeof o === "string" && o.slice(0, 1) !== "{") ? squash(o) : "";
+      return o ? ("Ran " + shown + " \u2014 result: " + o) : ("Ran " + shown);
+    }
+    var verb = has(PLAIN_VERB, action.type) ? PLAIN_VERB[action.type] : "Ran";
+    var tl = tool.toLowerCase();
+    if (action.type === "network" && !(tl.indexOf("http") === 0 || tl.indexOf("web") === 0 || tl.indexOf("fetch") === 0))
+      verb = "Ran";
+    if (tool === "Write" || tool === "Edit" || tool === "NotebookEdit") verb = tool === "Edit" ? "Edited" : "Wrote file";
+    else if (tool === "WebFetch" || tool === "WebSearch") verb = tool === "WebSearch" ? "Searched the web for" : "Fetched";
+    else if (tool === "Bash") verb = "Ran the shell command";
+    else if (tool === "Agent") verb = "Started a helper agent to";
+    else if (tool === "Read") verb = "Read the file";
+    return pyStrip(verb + " " + detail);
+  }
+
+  /* --- regions (mirror _view.regions) --- */
+  function recordSubject(r){
+    var s = r.subject;
+    var sid = isDict(s) ? (truthy(s.id) ? s.id : null) : null;
+    if (sid === null || typeof sid === "string") return sid;
+    return canonJson(sid);
+  }
+  function canonJson(v){
+    if (Array.isArray(v)) return "[" + v.map(canonJson).join(",") + "]";
+    if (isDict(v)) return "{" + Object.keys(v).sort().map(function(k){ return JSON.stringify(k) + ":" + canonJson(v[k]); }).join(",") + "}";
+    return JSON.stringify(v);
+  }
+  function subjectLabel(records){
+    var ids = new Set();
+    records.forEach(function(r){ var x = recordSubject(r); if (x !== null) ids.add(x); });
+    if (ids.size > 1) return ids.size + " subjects";
+    for (var i = 0; i < records.length; i++){
+      var s = records[i].subject;
+      if (isDict(s) && (truthy(s.name) || truthy(s.id))) return str(or(s.name, s.id));
+    }
+    return "Agent runtime";
+  }
+  function subjectId(records){
+    for (var i = 0; i < records.length; i++){
+      var s = records[i].subject;
+      if (isDict(s) && truthy(s.id)) return s.id;
+    }
+    return null;
+  }
+  function pyJsonStr(s){
+    var out = '"';
+    for (var i = 0; i < s.length; i++){
+      var c = s.charCodeAt(i), ch = s[i];
+      if (ch === '"') out += '\\"';
+      else if (ch === "\\") out += "\\\\";
+      else if (ch === "\n") out += "\\n";
+      else if (ch === "\r") out += "\\r";
+      else if (ch === "\t") out += "\\t";
+      else if (ch === "\b") out += "\\b";
+      else if (ch === "\f") out += "\\f";
+      else if (c < 0x20 || c > 0x7e) out += "\\u" + pad(c.toString(16), 4);
+      else out += ch;
+    }
+    return out + '"';
+  }
+  function subjectNote(records){
+    var sid = subjectId(records);
+    if (sid === null) return "";
+    sid = str(sid);
+    var odd = Array.from(sid).some(function(c){
+      return c.codePointAt(0) > 126 || (/[\p{C}\p{Z}]/u.test(c) && c !== " ");
+    });
+    if (sid !== pyStrip(sid) || sid.indexOf("  ") >= 0) odd = true;
+    if (!odd && subjectLabel(records) === sid) return "";
+    var note = 'Subject id: <span class="mono">' + esc(pyJsonStr(sid).slice(1, -1)) + "</span>";
+    if (odd) note += " &mdash; contains invisible or non-ASCII characters; compare it to the id the witness holds.";
+    return '<div class="meta">' + note + "</div>";
+  }
+  function agents(records){
+    var seen = [];
+    records.forEach(function(r){
+      var a = dict(r.agent), label = or(a.name, a.id);
+      if (truthy(label)){ label = str(label); if (seen.indexOf(label) < 0) seen.push(label); }
+    });
+    return seen;
+  }
+  function agentMeta(names){
+    if (!names.length) return "Agent <b>unknown</b>";
+    if (names.length === 1) return "Agent <b>" + esc(showId(names[0])) + "</b>";
+    var shown = names.slice(0, 4).map(function(a){ return "<b>" + esc(showId(a)) + "</b>"; }).join(", ");
+    var more = names.length > 4 ? " (+" + (names.length - 4) + " more)" : "";
+    // the label is assembled here so a single-agent page's source never carries it
+    return names.length + " agents" + ": " + shown + more;
+  }
+  function stats(records){
+    var tools = new Set(), scopes = new Set(), times = [];
+    records.forEach(function(r){
+      var action = dict(r.action);
+      tools.add(str(or(action.tool, action.type, "\u2014")));
+      var scope = dict(action.authorization).scope;
+      if (truthy(scope)) scopes.add(str(scope));
+      var t = tsUtc(r.ts);
+      if (t) times.push([t, r.ts]);
+    });
+    times.sort(function(a, b){ return cmpTs(a[0], b[0]); });
+    return {total: records.length, ntools: tools.size,
+            scopes: Array.from(scopes).sort(cmpCp),
+            start: times.length ? fmtTs(times[0][1]) : "\u2014",
+            end: times.length ? fmtTs(times[times.length - 1][1]) : "\u2014"};
+  }
+  function provenance(records){
+    var buckets = {}, order = [];
+    records.forEach(function(r){
+      var s = r.source;
+      if (!isDict(s)) return;
+      var a = str(or(s.adapter, "unknown"));
+      if (!has(buckets, a)){
+        order.push(a);
+        buckets[a] = {via: str(or(s.via, a)), capture: str(or(s.capture, "ingested")), n: 0};
+      }
+      buckets[a].n++;
+    });
+    if (!order.length) return "";
+    var rank = {captured: 0, ingested: 1};
+    var items = order.map(function(a){ return buckets[a]; });
+    items.sort(function(x, y){
+      var rx = has(rank, x.capture) ? rank[x.capture] : 2, ry = has(rank, y.capture) ? rank[y.capture] : 2;
+      return rx !== ry ? rx - ry : y.n - x.n;
+    });
+    var nCap = 0, nIng = 0;
+    items.forEach(function(b){ if (b.capture === "captured") nCap += b.n; if (b.capture === "ingested") nIng += b.n; });
+    var cells = items.map(function(b){
+      var tier = b.capture === "captured" ? "cap" : "ing", label = b.capture === "captured" ? "Captured" : "Ingested";
+      return '<div class="prov" title="' + esc(has(CAP_TITLE, b.capture) ? CAP_TITLE[b.capture] : "") +
+        '"><span class="pill ' + tier + '">' + label + '</span><span class="prov-via">' + esc(b.via) +
+        '</span><span class="prov-n">' + b.n + " action" + (b.n === 1 ? "" : "s") + "</span></div>";
+    }).join("");
+    var note = (nIng && nCap) ? "Each action is tagged with how it was observed. <b>Captured</b> means the record's source tag declares the integration observed the call at the boundary as it happened \u2014 the tag comes from the integration that wrote the record. <b>Ingested</b> means the record was built from telemetry the vendor already emits (a gateway, tracing store, or OTel span) \u2014 real and anchorable, but the witness attests \u201cthis is the stream you sent me,\u201d not \u201cI watched it happen.\u201d The tier is disclosed, never flattened." : (nIng ? "These records were <b>ingested</b> from telemetry the vendor already emits \u2014 real and anchorable, but the witness attests \u201cthis is the stream you sent me,\u201d not \u201cI watched it happen.\u201d Source-capture would strengthen them to the <b>captured</b> tier." : "Every action is <b>declared captured</b> at the boundary: each record's own source tag says the integration recorded the call as it ran, rather than rebuilding it later from other telemetry. That is what the tag asserts; it is set by the integration and not independently verified.");
+    return '<h2>Captured via</h2>\n<div class="provgrid">' + cells + '</div>\n<div class="note prov-note">' + note + "</div>";
+  }
+  function row(r, showAgent){
+    var action = dict(r.action), auth = dict(action.authorization), outcome = dict(r.outcome),
+        findings = list(r.findings), threats = list(r.threats), ver = dict(r.verification),
+        principal = dict(r.principal), agent = dict(r.agent), src = dict(r.source);
+    var status = str(get(outcome, "status", "\u2014")), sev = str(get(r, "severity", "INFO"));
+    var summary = str(or(dict(action.input).summary, outcome.summary, ""));
+    var shortHash = cut(str(get(dict(r.integrity), "hash", "")), 12);
+    var pills = [];
+    if (sev !== "INFO" && sev !== "")
+      pills.push('<span class="pill ' + (["MEDIUM", "HIGH", "CRITICAL"].indexOf(sev) >= 0 ? "warn" : "neutral") +
+                 '" title="highest redaction-scanner finding">' + esc(sev) + "</span>");
+    if (findings.length) pills.push('<span class="pill warn" title="redaction patterns that matched">' + findings.length + "</span>");
+    if (threats.length)
+      pills.push('<span class="pill warn" title="threat flags supplied with the record: ' +
+        esc(threats.map(function(t){ return str(dict(t).type); }).join(", ")) + '">' +
+        threats.length + " threat" + (threats.length === 1 ? "" : "s") + "</span>");
+    if (!findings.length && !threats.length)
+      pills.push('<span class="pill ok" title="no redaction pattern matched and no threat flag supplied; not a guarantee no sensitive data is present">no flags</span>');
+    var sourceCell;
+    if (src.capture === "captured" || src.capture === "ingested")
+      sourceCell = '<span class="pill ' + (src.capture === "captured" ? "cap" : "ing") + '" title="' +
+        esc(CAP_TITLE[src.capture]) + '">' + esc(str(or(src.adapter, src.capture))) + "</span>";
+    else sourceCell = '<span class="dim">\u2014</span>';
+    var agentCell = showAgent ? '<td class="mono">' + esc(showId(str(or(agent.name, agent.id, "\u2014")))) + "</td>" : "";
+    var text = plain(r);
+    var hay = [r.ts, action.tool, action.type, auth.scope, auth.decision, status, sev, summary,
+               outcome.summary, agent.name, shortHash, r.record_id, r.parent_id, ver.status,
+               principal.human_id, principal.service_account,
+               threats.map(function(t){ return str(dict(t).type); }).join(" ")]
+      .filter(truthy).map(str).join(" ").toLowerCase();
+    var decision = auth.decision;
+    return '<tr data-ts="' + esc(str(or(r.ts, ""))) + '" data-tool="' + esc(str(or(action.tool, "\u2014"))) +
+      '" data-type="' + esc(str(or(action.type, "\u2014"))) + '" data-sev="' + esc(sev) +
+      '" data-status="' + esc(status) + '" data-flags="' + (findings.length + threats.length) +
+      '" data-rid="' + esc(str(or(r.record_id, ""))) + '" data-text="' + esc(hay + " " + text.toLowerCase()) +
+      '" tabindex="0" class="rowclick" title="Click for the full record">' +
+      '<td class="mono dim ts-cell">' + esc(fmtTs(r.ts)) + "</td>" + agentCell +
+      '<td class="mono">' + esc(showId(str(or(action.tool, "\u2014")))) + "</td><td>" + esc(str(or(action.type, "\u2014"))) +
+      "</td><td>" + sourceCell + '</td><td class="mono">' + esc(str(or(auth.scope, "\u2014"))) +
+      '</td><td><span class="pill ' + (!truthy(decision) ? "neutral" : (decision === "allowed" || decision === "human_approved") ? "ok" : "warn") +
+      '">' + esc(str(or(decision, "\u2014"))) + '</span></td><td><span class="pill ' +
+      (status === "ok" ? "ok" : (status === "error" || status === "denied") ? "warn" : "neutral") + '">' + esc(status) +
+      "</span></td><td>" + pills.join(" ") + '</td><td class="trunc dim">' + esc(cut(text, 110)) +
+      '</td><td class="mono dim">' + esc(shortHash) + "</td></tr>";
+  }
+
+  /*POLICY-END*/
+  function cards(records, res){
+    var st = stats(records), nflag = 0, nlow = 0;
+    records.forEach(function(r){
+      if (["MEDIUM", "HIGH", "CRITICAL"].indexOf(r.severity) >= 0) nflag++;
+      if (r.severity === "LOW") nlow++;
+    });
+    var out = '<div class="card"><div class="n">' + st.total + '</div><div class="l">Actions</div></div>' +
+      '<div class="card"><div class="n">' + st.ntools + '</div><div class="l">Tools</div></div>' +
+      '<div class="card"><div class="n">' + st.scopes.length + '</div><div class="l">Scopes</div></div>' +
+      '<div class="card" title="records whose redaction-scanner severity is MEDIUM or higher"><div class="n">' + nflag +
+      '</div><div class="l">Flagged (MEDIUM+)</div></div>' +
+      '<div class="card"><div class="n">' + nlow + '</div><div class="l">Low notes</div></div>';
+    if (res) out += '<div class="card" title="distinct records that violate at least one policy rule"><div class="n">' +
+      res.violating_records + '</div><div class="l">Out of policy</div></div>';
+    return out;
+  }
+  function regions(records, rules, chainVerified, rulesDigest){
+    var names = agents(records), st = stats(records), label = subjectLabel(records);
+    var hasRules = rules !== null && rules !== undefined && !(Array.isArray(rules) && !rules.length);
+    var invalid = hasRules && typeof validatePolicy === "function" ? validatePolicy(rules) : null;
+    var res = (hasRules && !invalid && typeof evaluate === "function")
+      ? evaluate(records, rules, chainVerified, rulesDigest) : null;
+    var rows = [];
+    for (var i = records.length - 1; i >= 0; i--) rows.push(row(records[i], names.length > 1));
+    return {
+      title: label,
+      h1: esc(label),
+      meta: agentMeta(names) + " &middot; <b>" + records.length + "</b> recorded actions",
+      subject_note: subjectNote(records),
+      period: '<span class="period-l">Records span</span> <b>' + esc(st.start) + "</b> &ndash; <b>" + esc(st.end) +
+              '</b> <span class="period-tz">UTC</span>',
+      cards: cards(records, res),
+      scopes: st.scopes.map(function(s){ return '<span class="pill">' + esc(s) + "</span>"; }).join("") ||
+              '<span class="dim">none</span>',
+      provenance: provenance(records),
+      rows: rows,
+      policyEvaluated: res !== null,
+      policy: invalid ? "<div class='verdict fail'>Policy verdict withheld &mdash; the policy embedded in " +
+                        "this page is not a valid policy (" + esc(invalid) + ").</div>"
+                      : res ? panelCard(res, label) : ""
+    };
+  }
+  return {regions: regions, tsUtc: tsUtc, fmtTs: fmtTs, plain: plain, esc: esc, subjectId: subjectId,
+          showId: showId, evaluate: typeof evaluate === "function" ? evaluate : null,
+          validatePolicy: typeof validatePolicy === "function" ? validatePolicy : null,
+          parsePolicyText: typeof parsePolicyText === "function" ? function(text){
+            try { return {rules: parsePolicyText(text), error: null}; }
+            catch (e){ if (e instanceof PolicyError) return {rules: null, error: e.message}; throw e; }
+          } : null};
+})();
+</script>
 <script>
 const GENESIS = "0000000000000000000000000000000000000000000000000000000000000000";
 const WINDOW = null;
+// A lone surrogate is hashed as U+FFFD, as the Python and TypeScript verifiers
+// do; JSON.stringify would otherwise write it as a \\u escape and disagree.
+const LONE_SURROGATE = /[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/g;
+function canonStr(s){ return JSON.stringify(s.replace(LONE_SURROGATE, "\ufffd")); }
 function canon(v){
   if (v === true) return "true";
   if (v === false) return "false";
   if (v === null) return "null";
   const t = typeof v;
-  if (t === "string") return JSON.stringify(v);
+  if (t === "string") return canonStr(v);
   if (t === "number") return String(v);
   if (Array.isArray(v)) return "[" + v.map(canon).join(",") + "]";
   if (t === "object") {
     const keys = Object.keys(v).sort();
-    return "{" + keys.map(k => JSON.stringify(k) + ":" + canon(v[k])).join(",") + "}";
+    return "{" + keys.map(k => canonStr(k) + ":" + canon(v[k])).join(",") + "}";
   }
   throw new Error("cannot canonicalize");
 }
@@ -235,15 +726,41 @@ async function verify(records){
   }
   return {ok:true, head:prev};
 }
+function cleanCheckpoints(list){
+  // Checkpoints arrive from the page or from a witness URL the report names, so
+  // they are untrusted: keep only well-formed {count: positive integer, head:
+  // SHA-256 hex} entries before any of them reaches a verdict.
+  return (Array.isArray(list) ? list : []).filter(function(c){
+    return c && typeof c === "object" && Number.isInteger(c.count) && c.count >= 1 &&
+           typeof c.head === "string" && /^[0-9a-f]{64}$/.test(c.head);
+  });
+}
+function witnessBase(url){
+  // Only an https witness (or http on this machine, for local testing) is fetched.
+  try {
+    const u = new URL(String(url));
+    if (u.username || u.password) return null;  // "https://known.example@other.example" is refused
+    const local = u.hostname === "localhost" || u.hostname === "127.0.0.1" || u.hostname === "[::1]";
+    if (u.protocol === "https:" || (u.protocol === "http:" && local))
+      return u.origin + u.pathname.replace(/\/+$/, "");
+  } catch (e){}
+  return null;
+}
 function completeness(records, cps){
   // Assumes the chain already verified. Mirrors anchor.verify_completeness:
   // every head the notary independently witnessed must still be present here.
   // In a windowed report only the checkpoints that land inside the window can
   // be re-checked in the browser; the ones before/beyond it are disclosed.
   if (!cps.length) return {ok:null};
-  const latest = Math.max.apply(null, cps.map(c => c.count));
+  let latest = 0;
+  for (const c of cps) if (c.count > latest) latest = c.count;
   if (!WINDOW && records.length < latest)
     return {ok:false, why:"truncated below witnessed length", have:records.length, witnessed:latest};
+  // A window is cut from a chain of WINDOW.total records; a witness holding a
+  // longer chain means records exist that this report's source chain lacks.
+  if (WINDOW && latest > WINDOW.total)
+    return {ok:false, why:"the witness holds " + latest + " records but this report was cut from a " +
+            WINDOW.total + "-record chain", have:WINDOW.total, witnessed:latest};
   let inWin = 0, before = 0, beyond = 0;
   for (const c of cps){
     const n = c.count;
@@ -256,11 +773,17 @@ function completeness(records, cps){
     } else {
       if (n < 1 || n > records.length) return {ok:false, why:"witnessed count out of range", at:n};
       const h = (records[n-1].integrity || {}).hash;
-      if (h !== c.head) return {ok:false, why:"record altered or dropped before witnessed point", at:n};
+      if (h !== c.head){
+        const root = (records[0].integrity || {}).hash;
+        const other = (typeof c.chain_root === "string" && c.chain_root !== root);
+        return {ok:false, at:n, why:"record altered or dropped before witnessed point" +
+          (other ? "; the witness holds this checkpoint for a different chain root under the same subject" +
+                   " (a second or restarted chain, or this chain was re-rooted)" : "")};
+      }
     }
   }
   if (WINDOW && !inWin)
-    return {ok:null, windowed:true, before:before, beyond:beyond};
+    return {ok:null, windowed:true, before:before, beyond:beyond, latest:latest};
   return {ok:true, witnessed:cps.length, latest:latest, inWin:inWin, before:before, beyond:beyond};
 }
 async function liveCheckpoints(cfg, embedded){
@@ -269,107 +792,239 @@ async function liveCheckpoints(cfg, embedded){
   // is configured, fetch its checkpoints directly (CORS-open) so the verdict
   // rests on a party the vendor doesn't control. Fall back to the embedded
   // snapshot only if the live witness is unreachable.
-  if (!cfg.witnessUrl) return {cps: embedded, live: false, error: null};
+  if (!cfg.witnessUrl) return {cps: cleanCheckpoints(embedded), live: false, error: null};
+  const base = witnessBase(cfg.witnessUrl);
+  if (!base) return {cps: cleanCheckpoints(embedded), live: false, error: "witness URL must be https"};
   try {
-    const base = cfg.witnessUrl.replace(/\/+$/, "");
-    const u = base + "/v1/checkpoints" + (cfg.subject ? "?subject=" + encodeURIComponent(cfg.subject) : "");
+    const q = cfg.subject ? "subject=" + encodeURIComponent(cfg.subject)
+            : (cfg.chainRoot ? "chain_root=" + encodeURIComponent(cfg.chainRoot) : null);
+    if (!q) return {cps: cleanCheckpoints(embedded), live: false, error: "no subject or chain root to look up"};
+    const u = base + "/v1/checkpoints?" + q;
     const resp = await fetch(u, {mode: "cors"});
     if (!resp.ok) throw new Error("HTTP " + resp.status);
     const data = await resp.json();
-    return {cps: data.checkpoints || [], live: true, error: null};
+    return {cps: cleanCheckpoints(data.checkpoints), live: true, error: null};
   } catch (e){
-    return {cps: embedded, live: false, error: e.message};
+    return {cps: cleanCheckpoints(embedded), live: false, error: e.message};
   }
 }
-(async function(){
-  const el = document.getElementById("verdict");
-  const cel = document.getElementById("completeness");
-  const records = JSON.parse(document.getElementById("records").textContent);
-  const embedded = JSON.parse(document.getElementById("checkpoints").textContent);
-  const cfg = JSON.parse(document.getElementById("halo-config").textContent);
-  if (!(window.crypto && crypto.subtle)){
-    el.className = "verdict neutral";
-    el.innerHTML = "Self-verification needs a secure context — serve this page over https or localhost to re-check the chain in your browser.";
-    return;
-  }
+function haloSet(id, html){
+  const node = document.getElementById(id);
+  if (node) node.innerHTML = html;
+}
+async function haloBind(records, cfg){
+  // Re-render everything the page derives from its records, from the records
+  // this script just verified, so edited static HTML cannot show under the badge.
+  if (typeof HaloView === "undefined") return false;
+  // The page carries the policy file's exact text; its SHA-256 is what
+  // `shasum -a 256 <policy file>` prints, and the rules are parsed from it here.
+  const polEl = document.getElementById("halo-policy");
+  let text = null, rules = null, digest = null, polErr = null;
   try {
-    if (!records.length){
-      el.className = "verdict neutral";
-      el.innerHTML = "0 records — an empty chain; nothing to attest.";
-      if (cel){ cel.className = "verdict neutral"; cel.innerHTML = "No records to check for completeness."; }
-      return;
+    text = polEl ? JSON.parse(polEl.textContent || "null") : null;
+    if (text !== null){
+      if (typeof text !== "string") throw new Error("the embedded policy is not policy text");
+      digest = hex(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text)));
+      // Read exactly as `halo policy` reads the file: a repeated key, a
+      // non-finite number, an unknown top-level key or an invalid rule is
+      // refused here, so the page never shows a verdict the CLI would refuse.
+      if (typeof HaloView.parsePolicyText !== "function") throw new Error("this page cannot read a policy");
+      const read = HaloView.parsePolicyText(text);
+      if (read.error !== null) throw new Error(read.error);
+      rules = read.rules;
     }
-    const res = await verify(records);
-    window.__haloVerify = res;  // the drawer's chain-position note reads this
-    if (res.ok && WINDOW){
-      el.className = "verdict ok";
-      el.innerHTML = "&#10003; Verified in your browser — records " + WINDOW.first +
-        "&ndash;" + WINDOW.last + " of " + WINDOW.total +
-        ", window chain intact relative to its anchor. <span class='dim'>window head " +
-        res.head.slice(0,16) + "&hellip;</span>";
-    } else if (res.ok){
-      el.className = "verdict ok";
-      el.innerHTML = "&#10003; Verified in your browser — " + records.length +
-        " records, hash chain intact. <span class='dim'>chain head " +
-        res.head.slice(0,16) + "&hellip;</span>";
-    } else {
-      el.className = "verdict fail";
-      el.innerHTML = "&#10007; Verification FAILED at record " + res.at + " (" + res.why + ").";
-      return;
-    }
-  } catch (e){
-    el.className = "verdict fail";
-    el.textContent = "Verification error: " + e.message;
-    return;
+  } catch (e){ polErr = e.message; rules = null; }
+  const chainOk = WINDOW ? cfg.chainVerified !== false : true;
+  const R = HaloView.regions(records, rules, chainOk, digest);
+  let policy = "none";
+  if (polErr !== null){
+    R.policy = "<div class='verdict fail'>Policy verdict withheld &mdash; the policy embedded in this page " +
+               "is not a valid policy (" + haloEsc(polErr) + ").</div>";
+    policy = "invalid";
+  } else if (text === null){
+    R.policy = "<div class='verdict neutral'>No policy is embedded in this page; no policy verdict is shown.</div>";
+  } else {
+    policy = R.policyEvaluated ? "ok" : "invalid";
   }
+  haloSet("r-h1", R.h1);
+  haloSet("r-meta", R.meta);
+  haloSet("r-subject-note", R.subject_note);
+  haloSet("r-period", R.period);
+  haloSet("r-cards", R.cards);
+  haloSet("r-scopes", R.scopes);
+  haloSet("r-provenance", R.provenance);
+  haloSet("r-policy", R.policy);
+  try { document.title = R.title + " — Runtime Report"; } catch (e){}
+  if (typeof window.__haloSetRows === "function") window.__haloSetRows(R.rows);
+  else haloSet("activity-body", R.rows.join("\n"));
+  return {policy: policy, digest: digest};
+}
+function haloWithhold(why){
+  // Nothing derived from unverified records is presented as if it verified.
+  const msg = "<div class='verdict fail'>Withheld &mdash; " + why + " The table below is the page's " +
+              "unverified static text.</div>";
+  haloSet("r-policy", document.getElementById("halo-policy") &&
+          document.getElementById("halo-policy").textContent.trim() !== "null"
+          ? "<div class='verdict fail'>Policy verdict withheld &mdash; " + why + "</div>" : "");
+  haloSet("r-cards", "");
+  haloSet("rowcount", msg);
+}
+function haloEsc(s){
+  return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+async function haloCompleteness(records, embedded, cfg, pinned){
+  const cel = document.getElementById("completeness");
   if (!cel) return;
-  const src = await liveCheckpoints(cfg, embedded);
-  const comp = completeness(records, src.cps);
+  const lookup = pinned || cfg.subject;
+  const pinNote = pinned
+    ? ""
+    : (cfg.subject
+        ? " <span class='dim'>Subject not pinned: looked up by the id the records carry (" +
+          haloEsc(JSON.stringify(cfg.subject)) + "), which the vendor writes. Enter the customer id " +
+          "you expect below to check against that id instead.</span>"
+        : "");
+  if (pinned){
+    const ids = new Set(records.map(function(r){
+      const s = r.subject; return (s && typeof s === "object" && s.id) ? s.id : null; }));
+    if (ids.size !== 1 || !ids.has(pinned)){
+      cel.className = "verdict fail";
+      cel.innerHTML = "&#10007; SUBJECT MISMATCH &mdash; you expect " + haloEsc(JSON.stringify(pinned)) +
+        "; the records carry " + haloEsc(JSON.stringify(Array.from(ids))) + ".";
+      return;
+    }
+  }
+  const pinnedEmbedded = (Array.isArray(embedded) ? embedded : []).filter(function(c){
+    return !(c && typeof c === "object" && "subject" in c && c.subject !== null) || c.subject === lookup;
+  });
+  const src = await liveCheckpoints({witnessUrl: cfg.witnessUrl, subject: lookup, chainRoot: cfg.chainRoot},
+                                    pinnedEmbedded);
+  let comp;
+  try {
+    comp = completeness(records, src.cps);
+  } catch (e){
+    comp = {ok:false, why:"completeness could not be checked (" + e.message + ")"};
+  }
   const witness = src.live ? "the live witness log" : "the witness log embedded in this report";
-  const note = src.error
+  const note = (src.error
     ? " <span class='dim'>(couldn't reach the live witness — checked the embedded snapshot instead)</span>"
-    : "";
+    : "") + pinNote;
+  const forWho = pinned ? " for " + haloEsc(JSON.stringify(pinned)) : "";
   if (comp.ok === null && comp.windowed){
     cel.className = "verdict neutral";
-    cel.innerHTML = "No witness checkpoint falls inside this window — window integrity is " +
+    cel.innerHTML = "No witness checkpoint" + forWho + " falls inside this window — window integrity is " +
       "verified against its anchor above" +
-      (comp.beyond ? "; the chain is witnessed beyond this window" : "") +
-      (comp.before ? "; " + comp.before + " checkpoint(s) precede the window" : "") +
+      (comp.beyond ? "; the witness holds " + comp.beyond + " checkpoint(s) beyond this window, up to record " +
+                     comp.latest + " of the " + WINDOW.total + "-record chain" : "") +
+      (comp.before ? "; " + comp.before + " checkpoint(s) precede the window and cannot be checked from this page (run halo anchor --check on the full chain)" : "") +
       "." + note;
   } else if (comp.ok === null){
     cel.className = "verdict open";
-    cel.innerHTML = "<b>Not yet anchored.</b> No independent witness exists for this report — " +
+    cel.innerHTML = "<b>Not yet anchored" + forWho + ".</b> No witness checkpoint was found — " +
       "completeness rests on the vendor alone until the chain is witnessed. " +
       "Integrity is verified above; completeness is not." + note;
   } else if (comp.ok && WINDOW){
     cel.className = "verdict neutral";
     cel.innerHTML = (src.live
-        ? "Consistent within window &mdash; "
-        : "Self-attested &mdash; the checkpoint was supplied with this report by its operator, so treat completeness as self-attested until a witness outside the operator confirms it. Within the window it is consistent: ") +
+        ? "Consistent within window" + forWho + " &mdash; "
+        : "Self-attested" + forWho + " &mdash; the checkpoint was supplied with this report by its operator, so treat completeness as self-attested until a witness outside the operator confirms it. Within the window it is consistent: ") +
       witness + " confirmed " + comp.inWin +
       " checkpoint(s) inside this window" +
       (comp.beyond ? "; chain continues beyond the window (witnessed to record " + comp.latest + ")" : "") +
       (comp.before ? "; " + comp.before + " earlier checkpoint(s) precede it" : "") +
       ". No witnessed record in this window has been dropped or altered." +
       (src.live
-        ? " Whether this counts as independent verification depends on who operates the witness at " + String(cfg.witnessUrl || "the configured URL").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;") + " &mdash; treat it as self-attested unless that party is outside the operator's control."
+        ? " Whether this counts as independent verification depends on who operates the witness at " + haloEsc(String(witnessBase(cfg.witnessUrl) || "the configured URL")) + " &mdash; treat it as self-attested unless that party is outside the operator's control."
         : "") + note;
   } else if (comp.ok){
     cel.className = "verdict neutral";
     cel.innerHTML = (src.live
-        ? "Consistent &mdash; "
-        : "Self-attested &mdash; the checkpoint was supplied with this report by its operator, so treat completeness as self-attested until a witness outside the operator confirms it. Against that checkpoint the chain is consistent: ") +
+        ? "Consistent" + forWho + " &mdash; "
+        : "Self-attested" + forWho + " &mdash; the checkpoint was supplied with this report by its operator, so treat completeness as self-attested until a witness outside the operator confirms it. Against that checkpoint the chain is consistent: ") +
       witness + " confirmed " + comp.witnessed +
       " checkpoint(s) up to record " + comp.latest +
-      ". No record the notary saw has been dropped or altered." +
+      ". No record the witness saw has been dropped or altered." +
       (src.live
-        ? " Whether this counts as independent verification depends on who operates the witness at " + String(cfg.witnessUrl || "the configured URL").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;") + " &mdash; treat it as self-attested unless that party is outside the operator's control."
+        ? " Whether this counts as independent verification depends on who operates the witness at " + haloEsc(String(witnessBase(cfg.witnessUrl) || "the configured URL")) + " &mdash; treat it as self-attested unless that party is outside the operator's control."
         : "") + note;
   } else {
     cel.className = "verdict fail";
-    cel.innerHTML = "&#10007; INCOMPLETE &mdash; conflicts with " + witness + " (" +
-      comp.why + (comp.at ? " at record " + comp.at : "") + ")." + note;
+    cel.innerHTML = "&#10007; INCOMPLETE" + forWho + " &mdash; conflicts with " + witness + " (" +
+      haloEsc(comp.why) + (comp.at ? " at record " + comp.at : "") + ")." + note;
   }
+}
+(async function(){
+  const el = document.getElementById("verdict");
+  const records = JSON.parse(document.getElementById("records").textContent);
+  const embedded = JSON.parse(document.getElementById("checkpoints").textContent);
+  const cfg = JSON.parse(document.getElementById("halo-config").textContent);
+  const cel = document.getElementById("completeness");
+  if (!(window.crypto && crypto.subtle)){
+    el.className = "verdict neutral";
+    el.innerHTML = "Not verified &mdash; self-verification needs a secure context (https or localhost). " +
+      "Nothing on this page has been checked; run halo verify on the JSONL instead.";
+    haloWithhold("this browser could not verify the records.");
+    return;
+  }
+  try {
+    if (!records.length){
+      el.className = "verdict neutral";
+      el.innerHTML = "0 records — an empty chain; nothing to attest.";
+      await haloBind(records, cfg);
+      if (cel){ cel.className = "verdict neutral"; cel.innerHTML = "No records to check for completeness."; }
+      return;
+    }
+    const res = await verify(records);
+    window.__haloVerify = res;  // the drawer's chain-position note reads this
+    if (!res.ok){
+      el.className = "verdict fail";
+      el.innerHTML = "&#10007; Verification FAILED at record " + res.at + " (" + res.why + ").";
+      haloWithhold("the records embedded in this page failed verification.");
+      if (cel){ cel.className = "verdict fail"; cel.innerHTML = "Completeness not checked: the records failed verification."; }
+      return;
+    }
+    const bound = await haloBind(records, cfg);
+    let shown = "";
+    if (bound){
+      shown = " The heading, period, counts and table below were re-rendered from these verified records.";
+      if (bound.policy === "ok")
+        shown += " The policy verdict was re-computed from them under the policy embedded in this page " +
+                 "by whoever generated it (sha256 <span class='mono'>" + bound.digest.slice(0, 16) +
+                 "&hellip;</span>; compare with <span class='mono'>shasum -a 256</span> of the policy file you hold).";
+    }
+    const limit = " <span class='dim'>Integrity relative to this head only: compare it with a head you hold " +
+      "(a witness checkpoint, or <span class='mono'>halo verify</span> on the JSONL). This page runs code " +
+      "supplied with the report.</span>";
+    el.className = "verdict ok";
+    if (WINDOW){
+      el.innerHTML = "&#10003; Verified in your browser — records " + WINDOW.first +
+        "&ndash;" + WINDOW.last + " of " + WINDOW.total +
+        ", window chain intact from its anchor to window head <span class='mono'>" +
+        res.head.slice(0,16) + "&hellip;</span>." + shown + limit;
+    } else {
+      el.innerHTML = "&#10003; Verified in your browser — " + records.length +
+        " records, hash chain intact from the first record to head <span class='mono'>" +
+        res.head.slice(0,16) + "&hellip;</span>." + shown + limit;
+    }
+  } catch (e){
+    el.className = "verdict fail";
+    el.textContent = "Verification error: " + e.message;
+    haloWithhold("the records could not be verified.");
+    return;
+  }
+  let pinned = cfg.expectedSubject || null;
+  try {
+    const m = /(?:^#|&)expect=([^&]*)/.exec(String((window.location && window.location.hash) || ""));
+    if (m) pinned = decodeURIComponent(m[1]) || pinned;
+  } catch (e){}
+  const input = document.getElementById("pin-subject");
+  if (input && pinned) input.value = pinned;
+  await haloCompleteness(records, embedded, cfg, pinned);
+  const form = document.getElementById("pin");
+  if (form && form.addEventListener) form.addEventListener("submit", function(ev){
+    ev.preventDefault();
+    const v = input ? String(input.value).trim() : "";
+    haloCompleteness(records, embedded, cfg, v || null);
+  });
 })();
 </script>
 <script>
@@ -394,18 +1049,32 @@ async function liveCheckpoints(cfg, embedded){
   var view = ALL.slice();     // current filtered+sorted set
   var drawn = 0;              // how many of `view` are in the DOM
 
+  /* The verifier re-renders the rows from the records it verified and hands
+     them over here; from then on the table is that set, not the static one. */
+  window.__haloSetRows = function(rowsHtml){
+    var t = document.createElement("template");
+    t.innerHTML = rowsHtml.join("");
+    ALL = Array.prototype.slice.call(t.content.querySelectorAll("tr"));
+    fillOptions(fTool, "data-tool");
+    fillOptions(fType, "data-type");
+    paintTimes();
+    apply();
+  };
+
   /* --- local time -------------------------------------------------------
      Records are sealed in UTC. A reader investigating "what happened at 3pm"
      means their own 3pm, so the displayed time follows the viewer's clock by
      default, with UTC one click away. The underlying record is untouched. */
-  var localMode = true;
+  // UTC first: the frame of the period line and the static rows. Local time
+  // is a toggle, labeled with the viewer's zone while shown.
+  var localMode = false;
   var TZ = "";
   try {
     TZ = Intl.DateTimeFormat().resolvedOptions().timeZone || "";
   } catch (e) { TZ = ""; }
   function pad(n){ return (n < 10 ? "0" : "") + n; }
   function stamp(iso){
-    if (!localMode) return String(iso).replace("T", " ").replace("+00:00", "Z").slice(0, 19);
+    if (!localMode) return (typeof HaloView !== "undefined") ? HaloView.fmtTs(iso) : String(iso).slice(0, 19);
     var d = new Date(iso);
     if (isNaN(d)) return String(iso).slice(0, 19);
     return d.getFullYear() + "-" + pad(d.getMonth()+1) + "-" + pad(d.getDate()) + " " +
@@ -435,6 +1104,7 @@ async function liveCheckpoints(cfg, embedded){
 
   function fillOptions(sel, attr){
     if (!sel) return;
+    while (sel.options.length > 1) sel.remove(1);
     var seen = {}, vals = [];
     for (var i = 0; i < ALL.length; i++){
       var v = ALL[i].getAttribute(attr);
@@ -483,6 +1153,13 @@ async function liveCheckpoints(cfg, embedded){
   function cmp(a, b){
     var av = a.getAttribute(sortKey) || "", bv = b.getAttribute(sortKey) || "";
     if (sortKey === "data-flags"){ av = +av; bv = +bv; }
+    if (sortKey === "data-ts"){
+      // Sort by instant, not by text: offsets and precision vary across records.
+      var ta = (typeof HaloView !== "undefined") ? HaloView.tsUtc(av) : null,
+          tb = (typeof HaloView !== "undefined") ? HaloView.tsUtc(bv) : null;
+      av = ta ? ta.ms * 1000 + ta.us % 1000 / 1000 : -Infinity;
+      bv = tb ? tb.ms * 1000 + tb.us % 1000 / 1000 : -Infinity;
+    }
     if (sortKey === "data-sev"){
       var rank = {INFO:0, LOW:1, MEDIUM:2, HIGH:3, CRITICAL:4};
       av = rank[av] === undefined ? -1 : rank[av];
@@ -591,10 +1268,10 @@ async function liveCheckpoints(cfg, embedded){
   try {
     RECORDS = JSON.parse(document.getElementById("records").textContent) || [];
   } catch (e) { RECORDS = []; }
-  var byId = {};
+  var byId = new Map();
   for (var ri = 0; ri < RECORDS.length; ri++){
     var rid = RECORDS[ri].record_id;
-    if (rid) byId[rid] = ri;
+    if (rid) byId.set(String(rid), ri);
   }
   var panel = document.getElementById("detail");
   var panelBody = document.getElementById("detail-body");
@@ -604,32 +1281,45 @@ async function liveCheckpoints(cfg, embedded){
     return String(s === undefined || s === null ? "" : s)
       .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   }
+  // An identifier with an invisible character in it is shown with a marker.
+  function shownId(v){
+    return (typeof v === "string" && typeof HaloView !== "undefined" && HaloView.showId) ? HaloView.showId(v) : v;
+  }
   function field(label, value, mono){
     if (value === undefined || value === null || value === "") return "";
     return '<div class="d-row"><div class="d-k">' + esc(label) + '</div>' +
            '<div class="d-v' + (mono ? " mono" : "") + '">' + esc(value) + '</div></div>';
   }
-  function openDetail(rid){
-    var idx = byId[rid];
+  function openDetail(rid, rowEl){
+    var idx = byId.get(String(rid));
     if (idx === undefined || !panel || !panelBody) return;
     var r = RECORDS[idx];
     var a = r.action || {}, auth = a.authorization || {}, o = r.outcome || {},
-        integ = r.integrity || {}, inp = a.input || {}, f = r.findings || [];
+        integ = r.integrity || {}, inp = a.input || {},
+        f = Array.isArray(r.findings) ? r.findings : [];
     var prev = idx > 0 ? RECORDS[idx - 1] : null;
     var linkOk = prev ? ((prev.integrity || {}).hash === integ.prev_hash) : null;
 
     var h = "";
-    h += '<div class="d-plain">' + esc(document.querySelector('tr[data-rid="' +
-         rid.replace(/"/g, "") + '"] td:nth-last-child(2)').textContent) + "</div>";
+    var plainCell = rowEl ? rowEl.querySelector("td:nth-last-child(2)") : null;
+    h += '<div class="d-plain">' + esc(plainCell ? plainCell.textContent : "") + "</div>";
     h += '<div class="d-sec">When</div>';
     h += field("Recorded at", stamp(r.ts) + (localMode ? " (your time)" : " (UTC)"));
     h += field("Sealed timestamp", r.ts, true);
     h += '<div class="d-sec">What ran</div>';
-    h += field("Tool", a.tool);
+    h += field("Tool", shownId(a.tool));
     h += field("Action type", a.type);
     h += field("Category", a.category);
-    h += field("Agent", (r.agent || {}).name || (r.agent || {}).id);
-    h += field("Session", r.session_id, true);
+    h += field("Agent", shownId((r.agent || {}).name || (r.agent || {}).id));
+    h += field("Session", shownId(r.session_id), true);
+    h += field("Parent action", r.parent_id, true);
+    var pr = r.principal || {};
+    if (pr && typeof pr === "object"){
+      h += field("On behalf of (human)", pr.human_id);
+      h += field("Creator", pr.creator_id);
+      h += field("Service account", pr.service_account);
+      h += field("Role scope", pr.role_scope);
+    }
     h += '<div class="d-sec">Arguments (as recorded)</div>';
     h += '<pre class="d-pre">' + esc(inp.summary || "(none recorded)") + "</pre>";
     h += field("Argument hash", inp.hash, true);
@@ -637,20 +1327,44 @@ async function liveCheckpoints(cfg, embedded){
     h += field("Scope", auth.scope);
     h += field("Decision", auth.decision);
     h += field("Approver", auth.approver);
+    var ver = (r.verification && typeof r.verification === "object") ? r.verification : null;
+    h += '<div class="d-sec">Verification gate</div>';
+    if (ver){
+      h += field("Status", ver.status);
+      h += field("Verifier", ver.verifier);
+      h += field("Policy ref", ver.policy_ref, true);
+      h += field("Checked at", ver.checked_at, true);
+      h += '<div class="d-note">As supplied by the reporting gate; not re-checked by the recorder.</div>';
+    } else {
+      h += '<div class="d-note">No verification claim was recorded for this action.</div>';
+    }
     h += '<div class="d-sec">Result</div>';
     h += field("Status", o.status);
     if (o.summary){ h += '<pre class="d-pre">' + esc(o.summary) + "</pre>"; }
     h += field("Result hash", o.hash, true);
-    h += '<div class="d-sec">Flags (' + f.length + ")</div>";
+    var th = Array.isArray(r.threats) ? r.threats : [];
+    h += '<div class="d-sec">Threat flags (' + esc(String(th.length)) + ")</div>";
+    if (!th.length){
+      h += '<div class="d-note">No threat flag was supplied with this record.</div>';
+    } else {
+      for (var ti = 0; ti < th.length; ti++){
+        var tt = (th[ti] && typeof th[ti] === "object") ? th[ti] : {};
+        h += field(tt.type || "?", tt.ref || "(no reference)");
+      }
+      h += '<div class="d-note">Threat flags are ingested from an upstream detector, not judged by the recorder.</div>';
+    }
+    h += '<div class="d-sec">Flags (' + esc(String(f.length)) + ")</div>";
+    h += field("Severity", r.severity);
     if (!f.length){
       h += '<div class="d-note">No redaction pattern matched. That is not a ' +
            "guarantee no sensitive data is present — unstructured personal data " +
            "has no pattern to match.</div>";
     } else {
       for (var i = 0; i < f.length; i++){
-        h += '<div class="d-row"><div class="d-k">' + esc(f[i].type || "?") +
-             '</div><div class="d-v">' + esc(f[i].severity || "") +
-             (f[i].sample ? ' &middot; <span class="mono">' + esc(f[i].sample) + "</span>" : "") +
+        var fi = (f[i] && typeof f[i] === "object") ? f[i] : {};
+        h += '<div class="d-row"><div class="d-k">' + esc(fi.type || "?") +
+             '</div><div class="d-v">' + esc(fi.severity || "") +
+             (fi.sample ? ' &middot; <span class="mono">' + esc(fi.sample) + "</span>" : "") +
              "</div></div>";
       }
       h += '<div class="d-note">A flag marks a pattern the redactor matched and ' +
@@ -693,12 +1407,12 @@ async function liveCheckpoints(cfg, embedded){
   }
   tbody.addEventListener("click", function(ev){
     var tr = ev.target.closest("tr[data-rid]");
-    if (tr) openDetail(tr.getAttribute("data-rid"));
+    if (tr) openDetail(tr.getAttribute("data-rid"), tr);
   });
   tbody.addEventListener("keydown", function(ev){
     if (ev.key !== "Enter" && ev.key !== " ") return;
     var tr = ev.target.closest("tr[data-rid]");
-    if (tr){ ev.preventDefault(); openDetail(tr.getAttribute("data-rid")); }
+    if (tr){ ev.preventDefault(); openDetail(tr.getAttribute("data-rid"), tr); }
   });
   if (panelClose) panelClose.addEventListener("click", closeDetail);
   document.addEventListener("keydown", function(ev){
