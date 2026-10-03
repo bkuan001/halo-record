@@ -295,6 +295,13 @@ def _anchor(args):
 
 def _cmd_serve(args):
     from .serve import serve
+    # Startup notices (quarantined grants, withheld links) must reach a log
+    # file or pipe even if the server is stopped abruptly.
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(line_buffering=True)
+        except (AttributeError, ValueError):
+            pass
     return serve(args.dir, host=args.host, port=args.port, witness=args.witness,
                  gated=not args.open, verify=args.verify_email,
                  witness_url=args.witness_url)

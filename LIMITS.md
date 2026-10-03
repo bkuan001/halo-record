@@ -839,7 +839,7 @@ second. Once the check finds a repeated id, or a hidden region in a viewport
 large enough to show it, the page withholds for the rest of its life:
 showing the region again does not bring the verified view back. While the document is hidden, or the
 viewport is under 100 px wide or tall (a collapsed frame or preview pane),
-the layout check waits instead of refusing: the page keeps the verdict it
+the hidden-region check waits instead of refusing (a repeated id is still refused at any size): the page keeps the verdict it
 last showed, a page first opened that small shows the verified badge until
 the viewport grows and the check runs, and a region that is hidden only
 while the viewport is that small is not refused.
