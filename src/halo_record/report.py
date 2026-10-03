@@ -603,8 +603,8 @@ async function haloCompleteness(records, embedded, cfg, pinned){
     return;
   }
   // Stylesheets that finish loading later, animations and transitions, and
-  // print can still hide what was written, so check again on each, and once
-  // a second for changes that fire no event.
+  // print can still hide what was written, so check again on each, and about
+  // once a second for changes that fire no event.
   // A refusal is kept for the life of the page. While the viewport is too
   // small to show the regions, or the document is hidden, the check waits.
   const recheck = function(){
@@ -623,12 +623,15 @@ async function haloCompleteness(records, embedded, cfg, pinned){
       document.addEventListener(t, recheck, true);
     });
   }
-  if (typeof window.setInterval === "function" && typeof window.getComputedStyle === "function"){
-    const timer = window.setInterval(function(){
+  // The periodic check runs at a random time in each 0.5-1.5 s, so an
+  // animation cannot keep a region visible at every check by matching its
+  // period to the check's.
+  if (typeof window.setTimeout === "function" && typeof window.getComputedStyle === "function"){
+    const tick = function(){
       recheck();
-      if (window.__haloLayoutRefused && typeof window.clearInterval === "function")
-        window.clearInterval(timer);
-    }, 1000);
+      if (!window.__haloLayoutRefused) window.setTimeout(tick, 500 + Math.random() * 1000);
+    };
+    window.setTimeout(tick, 500 + Math.random() * 1000);
   }
   let pinned = cfg.expectedSubject || null;
   try {

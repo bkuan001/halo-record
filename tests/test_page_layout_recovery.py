@@ -216,8 +216,7 @@ _SAMPLER = ("<script>(function(){var n=0,both=0,hid=0;setTimeout(function(){"
 class AnimatedHidingTest(unittest.TestCase):
     """A CSS animation that hides the table for most of each cycle, shown at
     the cycle boundary where animation events fire, ends at "Not verified"
-    and stays there. (A period that divides the once-a-second check can
-    delay the latch; LIMITS §19 states the phase-locked case.)"""
+    and stays there."""
 
     def _run(self, period):
         html = _report().replace("</head>", _blink(period, 5, 95) + "</head>", 1)
@@ -235,6 +234,11 @@ class AnimatedHidingTest(unittest.TestCase):
 
     def test_250ms_blink_latches(self):
         self.assertLatched(self._run(250))
+
+    def test_1s_blink_latches(self):
+        # A period equal to the old fixed one-second check, which could stay
+        # visible at every check; the check now runs at random times.
+        self.assertLatched(self._run(1000))
 
     def test_4s_blink_latches(self):
         s = self._run(4000)
