@@ -2,6 +2,8 @@
 
 You've been handed halo-record output as evidence — in a security review, an audit, or a vendor assessment — or you're reviewing this repository itself. This page is the short path to checking everything independently. You should not have to trust the vendor who produced the records, and you should not have to trust this project either.
 
+**Verify the JSONL yourself; treat the vendor's HTML page as a convenience view.** The evidence is the chain file (`.jsonl`) and the verdicts you compute from it with the commands below. A report page the vendor hands you, green badge included, is a view of that file that the vendor can restyle or edit ([LIMITS.md §19](LIMITS.md)); if you want the page, render your own from the JSONL.
+
 ## Verify a chain in four commands
 
 ```
@@ -40,7 +42,7 @@ A policy verdict names its rules by `Policy sha256 …`: the SHA-256 of the poli
 
 - A verify run performed by the producer, on the producer's machine, with results relayed to you. Run it yourself; that's the point.
 - Checkpoints presented by the operator rather than fetched from the witness.
-- A report page the vendor rendered, as your verification. It runs code supplied with the report; edit that code, or restyle the page's markup in ways the page does not detect, and it can say anything. The page withholds its verdict when an element id repeats or a region it writes to is hidden, but that is a tripwire, not a guarantee. Verify the JSONL yourself with `halo verify` (and `halo anchor … --check`), and render your own report from it if you want the page.
+- A report page the vendor rendered, as your verification. It runs code supplied with the report; edit that code, or restyle the page's markup in ways the page does not detect, and it can say anything. The page withholds its verdict when an element id repeats or a region it writes to is hidden in ways computed layout shows, but that is a tripwire, not a guarantee, and its badge claims only what its scripts did ([LIMITS.md §19](LIMITS.md) lists restyles it does not catch). Verify the JSONL yourself with `halo verify` (and `halo anchor … --check`), and render your own report from it if you want the page.
 - Any claim beyond the claims table at the top of the README. If the words say more than the table, the table wins — and [LIMITS.md](LIMITS.md) wins over both.
 
 ## Citing halo-record evidence
