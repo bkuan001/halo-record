@@ -499,7 +499,7 @@ def main(argv=None):
     p_grant = sub.add_parser(
         "grant", help="designate a recipient (email or domain) for a chain's report")
     p_grant.add_argument("dir", help="the served directory of chains")
-    p_grant.add_argument("chain", help="chain name (the <subject>.jsonl stem)")
+    p_grant.add_argument("chain", help="the chain's subject id, or its chain file name without .jsonl")
     p_grant.add_argument("recipient", help="an email (alice@acme-corp.com) or domain (acme-corp.com)")
     p_grant.set_defaults(func=_cmd_grant)
 

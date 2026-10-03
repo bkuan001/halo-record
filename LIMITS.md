@@ -677,6 +677,21 @@ equal another tenant's digested file name; a name that is one chain's subject
 id and another chain's file name is refused (exit 2) and both files are
 listed. Name the chain by a file name that is unique.
 
+A grant follows the subject id, not the file. A file whose name names one
+tenant while its records carry another tenant's subject id (`globex.jsonl`
+holding subject id `initech`) cannot take a grant: `halo grant` refuses it
+(exit 2), by file name or by subject id, until the file is renamed or moved.
+If such a file sits beside another file for the same subject, `halo serve`
+withholds that subject (its link opens nothing) and names the files at
+startup, rather than guess which file an existing grant was meant for.
+
+**Serving a directory first served by 0.2.45.** 0.2.45 keyed share links and
+grants by file name (`Acme_Corp` for subject id `Acme Corp`). At startup,
+`halo serve` carries each such grant to the subject id its file is served
+under, when the file name matches that id and names exactly one served chain,
+and the earlier share link keeps opening the same report. A grant that cannot
+be carried is left in place and printed with how to re-issue it by subject id.
+
 ---
 
 ## 18. A record that cannot be written is reported, not raised

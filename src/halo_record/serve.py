@@ -60,28 +60,59 @@ def _file_subject(path):
     return None
 
 
-def _served_chains(directory):
-    """(key, path) for each servable chain. A file holding exactly one subject
-    is keyed by that subject id; any other file by its stem. Share links,
-    grants, sessions, and leads all use the key, so they follow a customer's
-    chain when its file name changes (for example a subject whose records
-    continue in a new file after an upgrade) instead of pinning a frozen file.
-    When several files carry one subject, the file the recorder appends to
-    now is served."""
+def _stem(path):
+    return os.path.basename(path)[: -len(".jsonl")]
+
+
+def _stem_names_subject(directory, stem, key):
+    """True when a file named ``<stem>.jsonl`` is one the recorder would write
+    for subject id ``key``: the id itself, its current file name, its digested
+    name, or the cleaning used before 0.2.46. A file whose name names another
+    tenant (``globex.jsonl`` holding subject id ``initech``) does not."""
+    from .record import TenantRecorder
+    tr = TenantRecorder(directory)
+    names = {key, tr._safe(key), tr._safe_ascii(key), tr._digested(key),
+             _stem(tr.path_for(key))}
+    return stem in names
+
+
+def _chain_index(directory):
+    """(served, withheld, files).
+
+    ``served``: (key, path) for each servable chain. A file holding exactly one
+    subject is keyed by that subject id; any other file by its stem. Share
+    links, grants, sessions, and leads all use the key, so they follow a
+    customer's chain when its file name changes (for example a subject whose
+    records continue in a new file after an upgrade) instead of pinning a
+    frozen file. When several files carry one subject, the file the recorder
+    appends to now is served.
+
+    ``withheld``: (key, [mislabeled file names]) for each subject whose files
+    include one named for a different tenant alongside another file. Which file a grant
+    for that subject was meant for cannot be told apart, so none is served.
+
+    ``files``: (key, stem, path, names_key) for every chain file."""
     from .record import TenantRecorder
     groups = {}
+    files = []
     for stem, path in _chains(directory):
         sid = _file_subject(path)
-        groups.setdefault(sid if sid is not None else stem, []).append((sid, path))
-    out = []
+        key = sid if sid is not None else stem
+        names = sid is None or _stem_names_subject(directory, stem, key)
+        groups.setdefault(key, []).append((sid, path, names))
+        files.append((key, stem, path, names))
+    served, withheld = [], []
     tr = TenantRecorder(directory)
     for key, entries in groups.items():
-        single = [p for sid, p in entries if sid is not None]
+        if len(entries) > 1 and not all(names for _sid, _p, names in entries):
+            withheld.append((key, sorted(os.path.basename(p) for _s, p, n in entries if not n)))
+            continue
+        single = [p for sid, p, _n in entries if sid is not None]
         if not single:
-            out.append((key, entries[0][1]))
+            served.append((key, entries[0][1]))
             continue
         if len(single) == 1:
-            out.append((key, single[0]))
+            served.append((key, single[0]))
             continue
         import hashlib
         prefer = [tr.path_for(key),
@@ -93,27 +124,105 @@ def _served_chains(directory):
                       None)
         if chosen is None:
             chosen = max(single, key=lambda p: os.path.getmtime(p))
-        out.append((key, chosen))
-    return sorted(out)
+        served.append((key, chosen))
+    return sorted(served), sorted(withheld), files
+
+
+def _served_chains(directory):
+    """(key, path) for each servable chain; see ``_chain_index``."""
+    return _chain_index(directory)[0]
+
+
+def _legacy_stems(directory):
+    """{stem: key} for file names that 0.2.45 keyed links and grants by and that
+    still name the subject they serve: the file's name matches its subject id,
+    the subject is served, and the name is not itself another chain's key."""
+    served, _withheld, files = _chain_index(directory)
+    keys = {k for k, _p in served}
+    out = {}
+    for key, stem, _path, names in files:
+        if stem != key and names and key in keys and stem not in keys:
+            out[stem] = key
+    return out
 
 
 def chain_key(directory, name):
     """The serving key for a chain named by its subject id (its key) or by its
     file stem. Raises ValueError when the name is ambiguous — one chain's key
     and another chain's file stem (a subject id can be chosen to equal another
-    tenant's file name) — so a grant never lands on a chain by accident."""
-    chains = _served_chains(directory)
-    by_key = [key for key, _path in chains if key == name]
-    by_stem = [key for key, path in chains
-               if os.path.basename(path)[: -len(".jsonl")] == name]
+    tenant's file name) — so a grant never lands on a chain by accident. Also
+    raises when the chain is served from a file named for a different tenant,
+    or is withheld because such a file sits beside it: a grant follows the
+    subject id, so it would admit the recipient to every file recorded under
+    that id, including one that appears later."""
+    served, withheld, files = _chain_index(directory)
+    by_key = [key for key, _path in served if key == name]
+    by_stem = [key for key, path in served if _stem(path) == name]
     found = sorted(set(by_key) | set(by_stem))
     if len(found) > 1:
         raise ValueError(
             "%r is ambiguous: it names the chains for subject ids %s (as a subject id "
             "and as a file name); name the chain by a file name that is unique (%s)"
             % (name, ", ".join(map(repr, found)),
-               ", ".join(os.path.basename(p) for k, p in chains if k in found)))
+               ", ".join(os.path.basename(p) for k, p in served if k in found)))
+    mislabeled = [(key, stem) for key, stem, _p, names in files
+                  if not names and (stem == name or key == name)]
+    if mislabeled:
+        key, stem = mislabeled[0]
+        raise ValueError(
+            "%s.jsonl carries subject id %r, and its file name does not match that id. "
+            "A grant follows the subject id, so it would admit the recipient to every "
+            "chain recorded for %r. Rename or move %s.jsonl so its name matches its "
+            "records, then grant by subject id." % (stem, key, key, stem))
+    for key, names in withheld:
+        if key == name:
+            raise ValueError("subject %r is withheld: %s holds its records but is named "
+                             "for a different tenant; rename or move it, then grant again"
+                             % (key, ", ".join(names)))
     return found[0] if found else name
+
+
+def reconcile_grants(directory):
+    """Carry grants keyed by a 0.2.45 file name to the subject id that file is
+    served under, and describe what cannot be carried. Returns the lines to
+    print at ``halo serve`` startup. A grant is carried only when its name is
+    the file name of exactly one served subject and that name matches the
+    subject id; otherwise it is left in place and listed with how to re-issue
+    it. Share links keyed by the same file names keep opening their chain (see
+    ``_Handler._resolve``)."""
+    served, withheld, _files = _chain_index(directory)
+    keys = {k for k, _p in served}
+    legacy = _legacy_stems(directory)
+    data = _access.load_access(directory)
+    lines = []
+    changed = False
+    for name in sorted(data):
+        if name in keys:
+            continue
+        allow = list((data.get(name) or {}).get("allow") or [])
+        target = legacy.get(name)
+        if target is not None:
+            merged = data.setdefault(target, {}).setdefault("allow", [])
+            for entry in allow:
+                if entry not in merged:
+                    merged.append(entry)
+            del data[name]
+            changed = True
+            lines.append("  carried grant %r (recipients: %s) to subject id %r; its earlier "
+                         "share link (keyed by %s.jsonl) still opens the report."
+                         % (name, ", ".join(allow) or "none", target, name))
+            continue
+        lines.append("  grant %r (recipients: %s) matches no served chain, so it admits no "
+                     "one. If it was for a customer, re-issue it by subject id "
+                     "(halo grant %s <subject id> <recipient>) and send the link shown in "
+                     "the operator console." % (name, ", ".join(allow) or "none", directory))
+    for key, names in withheld:
+        lines.append("  withheld: subject id %r also has records in %s, a file named for "
+                     "a different tenant; its link opens nothing until that file is "
+                     "renamed or moved." % (key, ", ".join(names)))
+    if changed:
+        _access.save_access(directory, data)
+    return lines
 
 
 def load_secret(directory):
@@ -339,9 +448,16 @@ class _Handler(BaseHTTPRequestHandler):
         HMAC of each known chain name, so traversal is impossible."""
         if not token:
             return None, None
-        for key, path in _served_chains(self.config["dir"]):
+        served = _served_chains(self.config["dir"])
+        for key, path in served:
             if hmac.compare_digest(token_for(self.config["secret"], key), token):
                 return key, path
+        # A share link issued by 0.2.45 was keyed by file name; it still opens
+        # the chain that file name names.
+        paths = dict(served)
+        for stem, key in _legacy_stems(self.config["dir"]).items():
+            if hmac.compare_digest(token_for(self.config["secret"], stem), token):
+                return key, paths[key]
         return None, None
 
     def _render_report(self, path):
@@ -540,6 +656,8 @@ def serve(directory, *, host="127.0.0.1", port=DEFAULT_PORT, witness=None,
               "proof they own the mailbox; use --verify for one-time-code ownership proof.")
     print("Halo Runtime Reports serving %s chain(s) from %s%s"
           % (len(_chains(directory)), directory, mode))
+    for line in reconcile_grants(directory):
+        print(line)
     print("  operator console: http://%s:%s/?key=%s" % (host, port, key))
     print("  per-customer link: http://%s:%s/r/<token>  (see console for tokens)" % (host, port))
     print("  Ctrl-C to stop.")
