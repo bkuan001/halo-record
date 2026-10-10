@@ -38,6 +38,40 @@ from .record import build
 SOURCE = {"adapter": "github_audit", "via": "GitHub security log export",
           "capture": "ingested"}
 
+# Kinds of activity an export may or may not carry. A personal security log
+# carries none of them; an organization audit log can carry some. The page names
+# the ones this export is missing, so a reader does not take absence as proof.
+ACTIVITY_KINDS = (
+    ("code pushes", ("git.push",)),
+    ("clones and fetches", ("git.clone", "git.fetch")),
+    ("pull requests", ("pull_request.", "pull_request_review")),
+    ("issues", ("issue.", "issues.", "issue_comment")),
+)
+READS_NOTE = ("Most reads, such as viewing files or calling read-only APIs, are not "
+              "recorded in this kind of log.")
+
+
+def missing_kinds(actions):
+    """Labels from ACTIVITY_KINDS with no matching action in the export."""
+    actions = [str(a or "").replace("github:", "", 1) for a in actions]
+    return [label for label, prefixes in ACTIVITY_KINDS
+            if not any(a.startswith(p) for a in actions for p in prefixes)]
+
+
+def cannot_see(actions):
+    """One plain sentence or two on what this export does not show."""
+    gone = missing_kinds(actions)
+    if not gone:
+        return READS_NOTE
+    listed = gone[0] if len(gone) == 1 else ", ".join(gone[:-1]) + ", or " + gone[-1]
+    return ("This export has no records of %s. That does not mean none happened: the "
+            "log did not include them. %s" % (listed, READS_NOTE))
+
+
+# Automatic, high-volume housekeeping that says nothing about what an agent did.
+# Hidden from the page by default (still sealed in the chain, still counted).
+ROUTINE_ACTIONS = frozenset({"oauth_access.regenerate"})
+
 MATCHED_WITHIN = 10      # seconds: same action family, near-simultaneous
 PROBABLE_WITHIN = 180    # seconds: same action family, plausibly the same act
 
@@ -202,6 +236,25 @@ def isolate(records, key):
                 if (r.get("agent") or {}).get("id") == key
                 or str((r.get("agent") or {}).get("id", "")).endswith(tag)]
     return [r for r in records if (r.get("agent") or {}).get("id") == key]
+
+
+def is_routine(action):
+    """True for automatic housekeeping such as token refreshes."""
+    action = str(action or "")
+    if action.startswith("github:"):
+        action = action[len("github:"):]
+    return action in ROUTINE_ACTIONS
+
+
+def split_routine(records, keep_ids=()):
+    """(shown, hidden): routine records are hidden unless their id is in
+    ``keep_ids`` (for example, because they broke a rule)."""
+    keep = set(keep_ids)
+    shown, hidden = [], []
+    for r in records:
+        tool = (r.get("action") or {}).get("tool")
+        (hidden if is_routine(tool) and r.get("record_id") not in keep else shown).append(r)
+    return shown, hidden
 
 
 # ------------------------------------------------------------------ match ---
@@ -439,7 +492,8 @@ def _as_person_section(hits):
 
 
 def render_page(records, matches, verdict, *, agent, title=None, unusual=(),
-                as_person=(), expected_credentials=None):
+                as_person=(), expected_credentials=None, routine=(),
+                source_actions=None):
     """One self-contained HTML page: what the agent did, what broke a rule,
     and what its own record does not account for. Every value that came from
     the export is escaped."""
@@ -493,6 +547,7 @@ what the platform logged. One week of records is a baseline: what changed since 
 prior period appears from the second week on. "Not in the agent's own record" means no matching
 action was found in the record the agent kept, either because none was kept or because the act
 was not recorded there.</div>
+<div class="note"><b>What this source cannot show.</b> %(cannot)s%(routine)s</div>
 <h2>Rules</h2><div class="wrap"><table><tr><th>Rule</th><th>What it checks</th><th>Result</th><th>Records</th></tr>
 %(rules)s</table></div>
 %(creds)s
@@ -508,7 +563,11 @@ was not recorded there.</div>
         "un": tiers["unmatched"], "ucls": "warn" if tiers["unmatched"] else "ok",
         "mt": tiers["matched"] + tiers["probable"], "head": _e(head[:16] + "..." if len(head) > 16 else head),
         "rules": rule_rows, "rows": "\n".join(rows),
-        "creds": _creds_section(records, expected_credentials),
+        "creds": _creds_section(list(records) + list(routine), expected_credentials),
+        "cannot": _e(cannot_see(source_actions if source_actions is not None else
+                                [(r.get("action") or {}).get("tool") for r in list(records) + list(routine)])),
+        "routine": (" %d automatic token refreshes by this agent are sealed in the chain "
+                    "but not listed below." % len(routine)) if routine else "",
         "asperson": _as_person_section(as_person),
         "unusual": ("<h2>Unusual devices in the account</h2><p class='sub'>A device type seen "
                     "only once or twice in the whole export. Not necessarily the agent; worth a look."

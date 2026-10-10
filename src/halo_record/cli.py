@@ -393,11 +393,14 @@ def _cmd_door(args):
         sys.stderr.write("halo door: %s\n" % e)
         return 2
     if not args.agent:
+        routine = sum(1 for e in events if door.is_routine(e.get("action")))
         counts = Counter(door.agent_key(e) or "(the person, no programmatic client)"
-                         for e in events)
+                         for e in events if not door.is_routine(e.get("action")))
         print("Clients acting in this export (pass one to --agent):")
         for key, n in counts.most_common():
             print("  %6d  %s" % (n, key))
+        if routine:
+            print("  (%d automatic token refreshes not counted)" % routine)
         return 0
     if _os.path.exists(args.chain):
         sys.stderr.write("halo door: %s already exists; pass --chain NEW.jsonl so each "
@@ -422,21 +425,27 @@ def _cmd_door(args):
     except (OSError, ValueError) as e:
         sys.stderr.write("halo door: rules: %s\n" % e)
         return 2
-    matches = door.match(recs, own)
     verdict = door.check(recs, rules)
+    broke = {rid for r in verdict.get("rules", []) for rid in r.get("violators", [])}
+    recs, routine = door.split_routine(recs, keep_ids=broke)
+    matches = door.match(recs, own)
     with open(args.out, "w", encoding="utf-8") as fh:
         as_person = door.done_as_person(all_recs, own, site="github.com") if own else []
         fh.write(door.render_page(recs, matches, verdict, agent=args.agent,
                                   unusual=door.unusual_devices(events), as_person=as_person,
-                                  expected_credentials=args.expect_credential or None))
+                                  expected_credentials=args.expect_credential or None,
+                                  routine=routine,
+                                  source_actions=[e.get("action") for e in events]))
     tiers = Counter(m["tier"] for m in matches)
     print("%d actions by %s | rules broken: %d | matched %d, probable %d, unmatched %d"
           % (len(recs), args.agent, verdict["violations"], tiers["matched"],
              tiers["probable"], tiers["unmatched"]))
+    if routine:
+        print("automatic token refreshes (sealed, not listed): %d" % len(routine))
     if args.own:
         print("likely done by the agent as the person: %d" % len(as_person))
     print("credentials used: %s" % ", ".join("%s (%d)" % kv for kv in
-                                             sorted(door.credentials(recs).items(), key=lambda x: -x[1])))
+                                             sorted(door.credentials(recs + routine).items(), key=lambda x: -x[1])))
     print("sealed chain: %s\npage: %s" % (args.chain, args.out))
     return 0
 

@@ -211,6 +211,44 @@ class TestPage(DoorBase):
         self.assertIn("not the completeness of the export", html)
         self.assertIn("baseline", html)
 
+    def test_names_what_the_export_is_missing(self):
+        settings_only = [{"@timestamp": 1791590400000, "action": "repo.add_topic",
+                          "actor": "dev", "repo": "acme/widgets",
+                          "oauth_application_name": "Example Agent"}]
+        recs = self.ingested(settings_only)
+        html = door.render_page(recs, [], door.check(recs, self.rules()), agent=AGENT,
+                                source_actions=[r["action"] for r in settings_only])
+        self.assertIn("What this source cannot show", html)
+        self.assertIn("no records of code pushes, clones and fetches, pull requests, or issues", html)
+        self.assertIn("does not mean none happened", html)
+
+    def test_full_export_still_notes_reads(self):
+        self.assertEqual(door.missing_kinds(["git.push", "git.clone", "pull_request.create",
+                                             "issues.opened"]), [])
+        self.assertIn("reads", door.cannot_see(["git.push"]))
+        self.assertEqual(door.missing_kinds([r["action"] for r in EXPORT_ROWS]), ["issues"])
+
+
+class TestRoutine(DoorBase):
+    REFRESH = {"@timestamp": 1791590700000, "action": "oauth_access.regenerate",
+               "actor": "dev", "oauth_application_name": "Example Agent"}
+
+    def test_refreshes_are_hidden_unless_kept(self):
+        recs = door.isolate(self.ingested(EXPORT_ROWS + [self.REFRESH]), AGENT)
+        shown, hidden = door.split_routine(recs)
+        self.assertEqual(len(hidden), 1)
+        self.assertEqual(len(shown) + len(hidden), len(recs))
+        shown, hidden = door.split_routine(recs, keep_ids=[hidden[0]["record_id"]])
+        self.assertEqual(hidden, [])
+
+    def test_page_counts_hidden_refreshes(self):
+        recs = door.isolate(self.ingested(EXPORT_ROWS + [self.REFRESH]), AGENT)
+        shown, hidden = door.split_routine(recs)
+        html = door.render_page(shown, [], door.check(shown, self.rules()), agent=AGENT,
+                                routine=hidden)
+        self.assertIn("1 automatic token refreshes", html)
+        self.assertNotIn(">oauth_access.regenerate<", html)
+
 
 if __name__ == "__main__":
     unittest.main()
@@ -252,6 +290,17 @@ class TestCli(DoorBase):
         self.assertIn("rules broken: 1", out.stdout)
         self.assertTrue(os.path.exists(os.path.join(self.tmp, "door-report.html")))
         self.assertTrue(os.path.exists(os.path.join(self.tmp, "door.jsonl")))
+
+    def test_routine_refreshes_are_reported_not_listed(self):
+        rows = EXPORT_ROWS + [TestRoutine.REFRESH]
+        listing = self.run_cli(self.export(rows))
+        self.assertIn("1 automatic token refreshes not counted", listing.stdout)
+        out = self.run_cli(self.export(rows), "--agent", AGENT)
+        self.assertEqual(out.returncode, 0, out.stderr)
+        self.assertIn("3 actions by", out.stdout)
+        self.assertIn("token refreshes (sealed, not listed): 1", out.stdout)
+        with open(os.path.join(self.tmp, "door.jsonl")) as fh:
+            self.assertEqual(sum(1 for _ in fh), len(rows))
 
     def test_refuses_to_reuse_a_chain(self):
         self.run_cli(self.export(EXPORT_ROWS), "--agent", AGENT)
