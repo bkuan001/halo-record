@@ -380,6 +380,61 @@ def _cmd_witness_serve(args):
         return 1
 
 
+def _cmd_door(args):
+    """Buyer-side view of one outside agent, from a log export the buyer has."""
+    import os as _os
+    from collections import Counter
+    from . import door
+    from .policy import load_records
+    from .record import Recorder
+    try:
+        events = door.parse_github_log(args.export)
+    except (OSError, ValueError) as e:
+        sys.stderr.write("halo door: %s\n" % e)
+        return 2
+    if not args.agent:
+        counts = Counter(door.agent_key(e) or "(the person, no programmatic client)"
+                         for e in events)
+        print("Clients acting in this export (pass one to --agent):")
+        for key, n in counts.most_common():
+            print("  %6d  %s" % (n, key))
+        return 0
+    if _os.path.exists(args.chain):
+        sys.stderr.write("halo door: %s already exists; pass --chain NEW.jsonl so each "
+                         "ingest seals its own chain\n" % args.chain)
+        return 2
+    recs = door.isolate(door.ingest(events, Recorder(args.chain), subject=args.subject),
+                        args.agent)
+    if not recs:
+        sys.stderr.write("halo door: no actions by %r in this export (run without "
+                         "--agent to list clients)\n" % args.agent)
+        return 3
+    own = []
+    if args.own:
+        try:
+            own = load_records(args.own)
+        except (OSError, ValueError) as e:
+            sys.stderr.write("halo door: could not read --own %s: %s\n" % (args.own, e))
+            return 2
+    try:
+        rules = door.load_rules(args.rules if _os.path.exists(args.rules)
+                                else door.bundled_rules(args.rules))
+    except (OSError, ValueError) as e:
+        sys.stderr.write("halo door: rules: %s\n" % e)
+        return 2
+    matches = door.match(recs, own)
+    verdict = door.check(recs, rules)
+    with open(args.out, "w", encoding="utf-8") as fh:
+        fh.write(door.render_page(recs, matches, verdict, agent=args.agent,
+                                  unusual=door.unusual_devices(events)))
+    tiers = Counter(m["tier"] for m in matches)
+    print("%d actions by %s | rules broken: %d | matched %d, probable %d, unmatched %d"
+          % (len(recs), args.agent, verdict["violations"], tiers["matched"],
+             tiers["probable"], tiers["unmatched"]))
+    print("sealed chain: %s\npage: %s" % (args.chain, args.out))
+    return 0
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(
         prog="halo",
@@ -569,6 +624,22 @@ def main(argv=None):
     p_wserve.add_argument("--host", default="127.0.0.1", help="bind host (default: 127.0.0.1)")
     p_wserve.add_argument("--port", type=int, default=8730, help="bind port (default: 8730)")
     p_wserve.set_defaults(func=_cmd_witness_serve)
+
+    p_door = sub.add_parser(
+        "door",
+        help="buyer-side page of what one outside agent did, from a log export "
+             "you already have (GitHub security log)")
+    p_door.add_argument("export", help="GitHub security-log export (.json or .jsonl)")
+    p_door.add_argument("--agent", help="the client to report on, e.g. 'app:NAME' or "
+                        "'token:ID' (omit to list the clients in the export)")
+    p_door.add_argument("--own", help="the agent's own Halo log, to line its actions up against")
+    p_door.add_argument("--rules", default="github-default",
+                        help="rules file or bundled pack name (default: github-default)")
+    p_door.add_argument("--chain", default="door.jsonl",
+                        help="where to seal the ingested records (must not exist)")
+    p_door.add_argument("--out", default="door-report.html", help="page path")
+    p_door.add_argument("--subject", help="tenant id to tag the records with")
+    p_door.set_defaults(func=_cmd_door)
 
     args = parser.parse_args(argv)
     if not getattr(args, "func", None):

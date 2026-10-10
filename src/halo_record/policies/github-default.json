@@ -1,0 +1,42 @@
+{
+  "name": "GitHub account: outside-agent default rules",
+  "version": "0.1",
+  "note": "A STARTING POINT for checking what an outside agent did in a GitHub account, over records ingested from the account's security-log export (halo door). Each rule names GitHub audit actions an agent acting for the account owner should not take on its own. Edit the lists to match what the agent is actually permitted to do under its agreement.",
+  "rules": [
+    {
+      "id": "no-repo-deletion",
+      "source": "buyer default",
+      "severity": "CRITICAL",
+      "description": "The agent did not delete or transfer a repository.",
+      "forbid": {"action.tool": {"in": ["github:repo.destroy", "github:repo.transfer", "github:repo.transfer_start"]}}
+    },
+    {
+      "id": "no-visibility-change",
+      "source": "buyer default",
+      "severity": "HIGH",
+      "description": "The agent did not change a repository's visibility or archive state.",
+      "forbid": {"action.tool": {"in": ["github:repo.access", "github:repo.archived", "github:repo.unarchived"]}}
+    },
+    {
+      "id": "no-branch-protection-change",
+      "source": "buyer default",
+      "severity": "HIGH",
+      "description": "The agent did not remove, weaken, or override branch protection or rulesets.",
+      "forbid": {"action.tool": {"in": ["github:protected_branch.destroy", "github:protected_branch.policy_override", "github:protected_branch.update_admin_enforced", "github:repository_ruleset.destroy", "github:repository_ruleset.update"]}}
+    },
+    {
+      "id": "no-new-credentials",
+      "source": "buyer default",
+      "severity": "HIGH",
+      "description": "The agent did not create keys, tokens, or authorizations that would let it or anyone else act later.",
+      "forbid": {"action.tool": {"in": ["github:public_key.create", "github:deploy_key.create", "github:oauth_authorization.create", "github:personal_access_token.request_created", "github:oauth_application.create"]}}
+    },
+    {
+      "id": "no-security-downgrade",
+      "source": "buyer default",
+      "severity": "CRITICAL",
+      "description": "The agent did not turn off account security settings.",
+      "forbid": {"action.tool": {"in": ["github:two_factor_authentication.disabled", "github:repo.disable_secret_scanning", "github:repository_secret_scanning_push_protection.disable"]}}
+    }
+  ]
+}
