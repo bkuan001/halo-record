@@ -258,3 +258,46 @@ class TestCli(DoorBase):
         again = self.run_cli(self.export(EXPORT_ROWS), "--agent", AGENT)
         self.assertEqual(again.returncode, 2)
         self.assertIn("already exists", again.stderr)
+
+
+def _chrome(ts, url=None, tool="mcp__claude-in-chrome__navigate"):
+    return build("tool_call", "security", tool=tool,
+                 tool_input={"url": url} if url else {"tabId": 1}, ts=ts,
+                 agent={"id": "example-agent"}, source="hook")
+
+
+class TestDoneAsYou(DoorBase):
+    """Events the platform attributes to the person that the agent's own
+    browser record shows it was driving the site at the time."""
+    ROWS = [
+        {"@timestamp": 1791590400000, "action": "repository_ruleset.create", "user": "dev",
+         "repo": "acme/widgets", "user_agent": "Mozilla/5.0 (Macintosh)"},
+        {"@timestamp": 1791590410000, "action": "user.login", "user": "dev",
+         "user_agent": "Mozilla/5.0 (Macintosh)"},
+        {"@timestamp": 1791597600000, "action": "dependabot_alerts.enable", "user": "dev",
+         "user_agent": "Mozilla/5.0 (Macintosh)"},
+    ]
+
+    def test_flags_person_events_inside_an_agent_browser_session(self):
+        recs = self.ingested(self.ROWS)
+        own = [_chrome("2026-10-10T00:00:30+00:00", "https://github.com/acme/widgets/settings")]
+        hits = door.done_as_person(recs, own, site="github.com")
+        self.assertEqual([h["ingested"]["action"]["tool"] for h in hits],
+                         ["github:repository_ruleset.create"])  # not the login; not 2 h later
+
+    def test_requires_the_site_in_the_agent_record(self):
+        recs = self.ingested(self.ROWS)
+        own = [_chrome("2026-10-10T00:00:30+00:00", "https://example.com/")]
+        self.assertEqual(door.done_as_person(recs, own, site="github.com"), [])
+
+
+class TestCredentials(DoorBase):
+    def test_lists_credentials_and_flags_unexpected_ones(self):
+        rows = TestRealShape.ROWS + [dict(TestRealShape.ROWS[0], **{
+            "@timestamp": 1791590430000, "oauth_application_name": None,
+            "programmatic_access_type": None, "token_id": 99})]
+        recs = door.isolate(self.ingested(rows), "agent:claude-code")
+        used = door.credentials(recs)
+        self.assertEqual(used, {"app:GitHub CLI": 1, "token:99": 1})
+        off = door.unexpected_credentials(recs, ["app:GitHub CLI"])
+        self.assertEqual([r["agent"]["id"] for r in off], ["token:99 [claude-code]"])

@@ -299,6 +299,68 @@ def match(ingested, own):
     return results
 
 
+# ------------------------------------------------------- credentials ---
+
+def _credential(rec):
+    """The credential part of an agent id: 'app:X [agent]' -> 'app:X'."""
+    return str((rec.get("agent") or {}).get("id", "")).split(" [", 1)[0]
+
+
+def credentials(records):
+    """Which credentials the agent acted through, with counts. One agent using
+    several keys is itself worth seeing: each key is a separate way in."""
+    out = {}
+    for r in records:
+        c = _credential(r)
+        out[c] = out.get(c, 0) + 1
+    return out
+
+
+def unexpected_credentials(records, expected):
+    """Records where the agent acted through a credential other than the ones
+    the buyer issued it. A vendor agent should act only through its own key."""
+    allowed = set(expected)
+    return [r for r in records if _credential(r) not in allowed]
+
+
+# --------------------------------------------------- done as the person ---
+
+# Acts only the person can perform: never re-attributed to an agent.
+_PERSON_ONLY = re.compile(r"^github:(user\.|two_factor|passkey|webauthn)")
+DONE_AS_PERSON_WITHIN = 300   # seconds
+
+
+def _agent_on_site(rec, site):
+    act = rec.get("action") or {}
+    tool = str(act.get("tool") or "")
+    if "chrome" not in tool and "browser" not in tool:
+        return False
+    return site in str((act.get("input") or {}).get("summary") or "")
+
+
+def done_as_person(ingested, own, *, site, within=DONE_AS_PERSON_WITHIN):
+    """Events the platform attributes to the person, made while the agent's own
+    record shows it driving the person's browser on the same site. The platform
+    cannot tell the two apart; the agent's record can. Acts only a person can
+    perform (sign-in, two-factor, passkeys) are never attributed to the agent.
+    This is a likelihood from timing, not proof."""
+    sessions = sorted(t for t in (_when(o) for o in own if _agent_on_site(o, site))
+                      if t is not None)
+    hits = []
+    for rec in ingested:
+        if not str((rec.get("agent") or {}).get("id", "")).startswith("human:"):
+            continue
+        if _PERSON_ONLY.search(str((rec.get("action") or {}).get("tool") or "")):
+            continue
+        t = _when(rec)
+        if t is None or not sessions:
+            continue
+        gap = min(abs(s - t) for s in sessions)
+        if gap <= within:
+            hits.append({"ingested": rec, "gap_seconds": round(gap, 1)})
+    return hits
+
+
 # ------------------------------------------------------------------ rules ---
 
 def bundled_rules(name):
@@ -341,7 +403,43 @@ def _e(v):
     return html.escape("" if v is None else str(v), quote=True)
 
 
-def render_page(records, matches, verdict, *, agent, title=None, unusual=()):
+def _creds_section(records, expected):
+    used = credentials(records)
+    off = {_credential(r) for r in unexpected_credentials(records, expected)} if expected else set()
+    rows = "".join(
+        "<tr><td><code>%s</code></td><td>%d</td><td class='%s'>%s</td></tr>" % (
+            _e(c), n, "bad" if c in off else "",
+            "not a credential issued to this agent" if c in off else
+            ("issued" if expected else ""))
+        for c, n in sorted(used.items(), key=lambda x: -x[1]))
+    lead = ("The agent should act only through the credentials issued to it."
+            if expected else
+            "Each credential is a separate way in. Pass the ones you issued this agent "
+            "to flag any others.")
+    return ("<h2>Credentials the agent used</h2><p class='sub'>%s</p><div class='wrap'>"
+            "<table><tr><th>Credential</th><th>Actions</th><th></th></tr>%s</table></div>"
+            % (lead, rows))
+
+
+def _as_person_section(hits):
+    if not hits:
+        return ""
+    rows = "".join(
+        "<tr><td class='t'>%s</td><td><code>%s</code></td><td>%s s</td></tr>" % (
+            _e((h["ingested"].get("ts") or "")[:16].replace("T", " ")),
+            _e(((h["ingested"].get("action") or {}).get("tool") or "").replace("github:", "", 1)),
+            _e(h["gap_seconds"]))
+        for h in hits)
+    return ("<h2>Likely done by the agent as the person</h2><p class='sub'>The platform "
+            "attributes these to the person. The agent's own record shows it was driving the "
+            "person's browser on the same site within minutes. A likelihood from timing, not "
+            "proof; sign-ins and two-factor prompts are never counted.</p><div class='wrap'>"
+            "<table><tr><th>When (UTC)</th><th>Action</th><th>Nearest agent activity</th></tr>"
+            "%s</table></div>" % rows)
+
+
+def render_page(records, matches, verdict, *, agent, title=None, unusual=(),
+                as_person=(), expected_credentials=None):
     """One self-contained HTML page: what the agent did, what broke a rule,
     and what its own record does not account for. Every value that came from
     the export is escaped."""
@@ -397,6 +495,8 @@ action was found in the record the agent kept, either because none was kept or b
 was not recorded there.</div>
 <h2>Rules</h2><div class="wrap"><table><tr><th>Rule</th><th>What it checks</th><th>Result</th><th>Records</th></tr>
 %(rules)s</table></div>
+%(creds)s
+%(asperson)s
 %(unusual)s
 <h2>What the agent did</h2><div class="wrap"><table>
 <tr><th>When (UTC)</th><th>Action</th><th>Detail</th><th>Agent's own record</th><th></th></tr>
@@ -408,6 +508,8 @@ was not recorded there.</div>
         "un": tiers["unmatched"], "ucls": "warn" if tiers["unmatched"] else "ok",
         "mt": tiers["matched"] + tiers["probable"], "head": _e(head[:16] + "..." if len(head) > 16 else head),
         "rules": rule_rows, "rows": "\n".join(rows),
+        "creds": _creds_section(records, expected_credentials),
+        "asperson": _as_person_section(as_person),
         "unusual": ("<h2>Unusual devices in the account</h2><p class='sub'>A device type seen "
                     "only once or twice in the whole export. Not necessarily the agent; worth a look."
                     "</p><div class='wrap'><table><tr><th>When (UTC)</th><th>Action</th>"

@@ -403,8 +403,8 @@ def _cmd_door(args):
         sys.stderr.write("halo door: %s already exists; pass --chain NEW.jsonl so each "
                          "ingest seals its own chain\n" % args.chain)
         return 2
-    recs = door.isolate(door.ingest(events, Recorder(args.chain), subject=args.subject),
-                        args.agent)
+    all_recs = door.ingest(events, Recorder(args.chain), subject=args.subject)
+    recs = door.isolate(all_recs, args.agent)
     if not recs:
         sys.stderr.write("halo door: no actions by %r in this export (run without "
                          "--agent to list clients)\n" % args.agent)
@@ -425,12 +425,18 @@ def _cmd_door(args):
     matches = door.match(recs, own)
     verdict = door.check(recs, rules)
     with open(args.out, "w", encoding="utf-8") as fh:
+        as_person = door.done_as_person(all_recs, own, site="github.com") if own else []
         fh.write(door.render_page(recs, matches, verdict, agent=args.agent,
-                                  unusual=door.unusual_devices(events)))
+                                  unusual=door.unusual_devices(events), as_person=as_person,
+                                  expected_credentials=args.expect_credential or None))
     tiers = Counter(m["tier"] for m in matches)
     print("%d actions by %s | rules broken: %d | matched %d, probable %d, unmatched %d"
           % (len(recs), args.agent, verdict["violations"], tiers["matched"],
              tiers["probable"], tiers["unmatched"]))
+    if args.own:
+        print("likely done by the agent as the person: %d" % len(as_person))
+    print("credentials used: %s" % ", ".join("%s (%d)" % kv for kv in
+                                             sorted(door.credentials(recs).items(), key=lambda x: -x[1])))
     print("sealed chain: %s\npage: %s" % (args.chain, args.out))
     return 0
 
@@ -639,6 +645,8 @@ def main(argv=None):
                         help="where to seal the ingested records (must not exist)")
     p_door.add_argument("--out", default="door-report.html", help="page path")
     p_door.add_argument("--subject", help="tenant id to tag the records with")
+    p_door.add_argument("--expect-credential", action="append", metavar="KEY",
+                        help="a credential you issued this agent (repeatable); others are flagged")
     p_door.set_defaults(func=_cmd_door)
 
     args = parser.parse_args(argv)
