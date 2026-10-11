@@ -128,16 +128,41 @@ The report tells you which is which."
 
 ---
 
-## 4. Capture completeness is bounded by instrumentation
+## 4. Capture completeness is bounded by instrumentation, and by where the recorder sits
 
 The recorder writes what flows through the instrumented paths (`trace()`, the
 integrations, the hook). An agent acting through an uninstrumented side channel
 produces no record, and no record system can self-certify that its coverage of
 the runtime is total.
 
+The same boundary has a second edge: a recorder the agent can reach is a
+recorder the agent can turn off. The `halo hook` quickstart puts the hook in a
+settings file that the agent's own tool calls can edit. An agent (or a prompt
+injected into one) that removes or rewrites that entry stops the chain from that
+point on. Nothing in the chain can show a record that was never written (§1), so
+the removal appears only as silence: a chain that stops while the agent keeps
+working. The chain proves integrity from the capture point forward (relative to
+a head someone else holds, §1); the integrity of the capture point itself is a
+placement question, not a hash question.
+
+**Three places the recorder can live, ranked by who can switch it off:**
+
+| Placement | Where the recorder sits | Who can turn it off | Fit |
+|---|---|---|---|
+| Agent-reachable | A hook in a settings file the agent's process can write (`~/.claude/settings.json`, a project `.claude/settings.json`, `~/.codex/hooks.json`), or an adapter inside the agent's own code | The agent, anyone who can prompt it, and the operator | Evaluation, dogfooding, a developer's own machine |
+| Operator-held | Managed settings the agent's user account cannot write (Claude Code's `managed-settings.json`, or server-managed settings an organization deploys), a gateway or proxy the agent's traffic must pass through, or the OTel exporter running outside the agent's sandbox | The operator; not the agent | Evidence an operator keeps about its own agents |
+| Platform-held | The platform's own audit log (GitHub, a cloud provider, a SaaS the agent acts on), pulled and reconciled against the chain by the relying party (`halo door`) | Neither the agent nor the operator | Evidence handed to a counterparty |
+
+A witness checkpoint cadence (§1) is how silence becomes visible: a reviewer who
+knows how often a chain is expected to anchor can see that it stopped. Today that
+comparison is a person reading the witness log. There is no automated freshness
+check, and the chain carries no record of the hook's own configuration unless the
+operator supplies an `authority` snapshot (`HALO_AUTHORITY_FILE`).
+
 **What you say to a reviewer:** "The record covers the declared capture
-surface. Verifying that the surface matches the deployment is a review
-question about the integration, and the integration is open code."
+surface, from the point where the recorder sits. Verifying that the surface
+matches the deployment, and that the agent cannot reach the recorder, is a
+review question about the integration, and the integration is open code."
 
 ---
 
