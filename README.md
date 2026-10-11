@@ -266,6 +266,8 @@ halo anchor audit.jsonl witness.jsonl           # anchor a checkpoint to a local
 halo anchor audit.jsonl witness.jsonl --check   # completeness verdict against it
 ```
 
+A hosted neutral witness exists today: [KHOTEM](https://khotem.com) operates a public, free, halo-compatible witness — `POST https://khotem.com/api/witness/anchor` with any Bearer key (first use binds the key to your subject), read back at `GET /api/witness/v1/checkpoints?subject=…` (CORS-open, so a report viewer's browser can fetch the witness log directly). Receipts come Ed25519-signed — offline-verifiable against the published pubkey (`GET /api/witness/pubkey`), the offline-signed receipt the local store does not have — and the witness log itself is anchored daily into Bitcoin via OpenTimestamps (`GET /api/anchor`). Drop-in JS client: [`npm i khotem`](https://www.npmjs.com/package/khotem) (`witnessAnchor` mirrors `anchor_remote`).
+
 For *time* specifically, an external RFC 3161 timestamp replaces the checkpoint's self-asserted clock with a proof from a Timestamp Authority outside the operator's control — "this chain reached this head no later than T", verifiable by a third party with no hosted infrastructure. The default TSA is the free freetsa.org (fine for evaluation); for production, point `--tsa` at a TSA outside the operator's control (e.g. DigiCert / Sectigo, or one a relying party designates):
 
 ```
