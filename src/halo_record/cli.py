@@ -387,11 +387,22 @@ def _cmd_door(args):
     from . import door
     from .policy import load_records
     from .record import Recorder
+    source = args.source
+    if source == "auto":
+        source = "salesforce" if (_os.path.isdir(args.export)
+                                  or args.export.lower().endswith(".csv")) else "github"
+    sf = source == "salesforce"
+    allowlist = (args.allow_ip or list(door.DEFAULT_ALLOWLIST)) if sf else None
     try:
-        events = door.parse_github_log(args.export)
+        if sf:
+            events = door.parse_salesforce_eventlog(args.export, allowlist=allowlist)
+        else:
+            events = door.parse_github_log(args.export)
     except (OSError, ValueError) as e:
         sys.stderr.write("halo door: %s\n" % e)
         return 2
+    sample = bool(args.sample or getattr(events, "sample", False))
+    skipped = getattr(events, "skipped", None) or {}
     if not args.agent:
         routine = sum(1 for e in events if door.is_routine(e.get("action")))
         counts = Counter(door.agent_key(e) or "(the person, no programmatic client)"
@@ -401,6 +412,9 @@ def _cmd_door(args):
             print("  %6d  %s" % (n, key))
         if routine:
             print("  (%d automatic token refreshes not counted)" % routine)
+        if skipped:
+            print("  (%d rows of event types this reader does not use: %s)" % (
+                sum(skipped.values()), ", ".join("%s x%d" % kv for kv in sorted(skipped.items()))))
         return 0
     if _os.path.exists(args.chain):
         sys.stderr.write("halo door: %s already exists; pass --chain NEW.jsonl so each "
@@ -419,9 +433,10 @@ def _cmd_door(args):
         except (OSError, ValueError) as e:
             sys.stderr.write("halo door: could not read --own %s: %s\n" % (args.own, e))
             return 2
+    rules_name = args.rules or ("salesforce-default" if sf else "github-default")
     try:
-        rules = door.load_rules(args.rules if _os.path.exists(args.rules)
-                                else door.bundled_rules(args.rules))
+        rules = door.load_rules(rules_name if _os.path.exists(rules_name)
+                                else door.bundled_rules(rules_name))
     except (OSError, ValueError) as e:
         sys.stderr.write("halo door: rules: %s\n" % e)
         return 2
@@ -429,21 +444,36 @@ def _cmd_door(args):
     broke = {rid for r in verdict.get("rules", []) for rid in r.get("violators", [])}
     recs, routine = door.split_routine(recs, keep_ids=broke)
     matches = door.match(recs, own)
+    shared = door.shared_sessions(events) if sf else []
     with open(args.out, "w", encoding="utf-8") as fh:
-        as_person = door.done_as_person(all_recs, own, site="github.com") if own else []
+        as_person = door.done_as_person(all_recs, own, site="force.com" if sf else "github.com") \
+            if own else []
         fh.write(door.render_page(recs, matches, verdict, agent=args.agent,
-                                  unusual=door.unusual_devices(events), as_person=as_person,
+                                  unusual=() if sf else door.unusual_devices(events),
+                                  as_person=as_person,
                                   expected_credentials=args.expect_credential or None,
                                   routine=routine,
-                                  source_actions=[e.get("action") for e in events]))
+                                  source_actions=[e.get("action") for e in events],
+                                  own_supplied=bool(args.own), sample=sample, source=source,
+                                  shared=shared, allowlist=allowlist))
     tiers = Counter(m["tier"] for m in matches)
-    print("%d actions by %s | rules broken: %d | matched %d, probable %d, unmatched %d"
-          % (len(recs), args.agent, verdict["violations"], tiers["matched"],
-             tiers["probable"], tiers["unmatched"]))
+    line = "%d actions by %s | rules broken: %d | " % (len(recs), args.agent, verdict["violations"])
+    if args.own:
+        line += "matched %d, probable %d, unmatched %d" % (tiers["matched"], tiers["probable"],
+                                                          tiers["unmatched"])
+    else:
+        line += "vendor record: none supplied"
+    print(line)
     if routine:
         print("automatic token refreshes (sealed, not listed): %d" % len(routine))
     if args.own:
         print("likely done by the agent as the person: %d" % len(as_person))
+    if shared:
+        print("sessions used from more than one address: %d" % len(shared))
+    if skipped:
+        print("rows of event types this reader does not use: %d" % sum(skipped.values()))
+    if sample:
+        print("SAMPLE: synthetic export; the page says so")
     print("credentials used: %s" % ", ".join("%s (%d)" % kv for kv in
                                              sorted(door.credentials(recs + routine).items(), key=lambda x: -x[1])))
     print("sealed chain: %s\npage: %s" % (args.chain, args.out))
@@ -643,13 +673,22 @@ def main(argv=None):
     p_door = sub.add_parser(
         "door",
         help="buyer-side page of what one outside agent did, from a log export "
-             "you already have (GitHub security log)")
-    p_door.add_argument("export", help="GitHub security-log export (.json or .jsonl)")
+             "you already have (GitHub security log, or Salesforce Event Monitoring CSVs)")
+    p_door.add_argument("export", help="GitHub security-log export (.json or .jsonl), or a "
+                        "Salesforce EventLogFile CSV / directory of them")
+    p_door.add_argument("--source", choices=("auto", "github", "salesforce"), default="auto",
+                        help="export format (default: auto; a directory or .csv reads as salesforce)")
     p_door.add_argument("--agent", help="the client to report on, e.g. 'app:NAME' or "
                         "'token:ID' (omit to list the clients in the export)")
     p_door.add_argument("--own", help="the agent's own Halo log, to line its actions up against")
-    p_door.add_argument("--rules", default="github-default",
-                        help="rules file or bundled pack name (default: github-default)")
+    p_door.add_argument("--rules", "--policy", dest="rules", default=None,
+                        help="rules file or bundled pack name (default: github-default, or "
+                             "salesforce-default for a Salesforce export)")
+    p_door.add_argument("--allow-ip", action="append", metavar="CIDR",
+                        help="salesforce: an address range the integration may sign in from "
+                             "(repeatable; default: the sample fixture's 192.0.2.0/24)")
+    p_door.add_argument("--sample", action="store_true",
+                        help="mark the page SAMPLE (synthetic data); automatic for the bundled fixture")
     p_door.add_argument("--chain", default="door.jsonl",
                         help="where to seal the ingested records (must not exist)")
     p_door.add_argument("--out", default="door-report.html", help="page path")

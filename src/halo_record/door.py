@@ -12,8 +12,9 @@ after the fact, and Halo seals the copy it was given. Sealing proves the copy
 was not edited after ingest; it says nothing about whether the export itself
 was complete. The page states that, and states what one week cannot show.
 
-Supported export today: a GitHub account security log (JSON array or JSON
-lines, as downloaded from Settings > Archives > Security log).
+Supported exports: a GitHub account security log (JSON array or JSON lines,
+as downloaded from Settings > Archives > Security log), and a Salesforce
+Event Monitoring export (EventLogFile CSVs; see ``door_sources``).
 
     from halo_record import Recorder, door
     events = door.parse_github_log("export.json")
@@ -33,10 +34,36 @@ import re
 from datetime import datetime, timezone
 
 from . import policy as _policy
+from .door_sources import (DEFAULT_ALLOWLIST, SALESFORCE_SOURCE, ip_allowed,  # noqa: F401
+                           parse_salesforce_eventlog, shared_sessions)
 from .record import build
 
 SOURCE = {"adapter": "github_audit", "via": "GitHub security log export",
           "capture": "ingested"}
+_SF = SALESFORCE_SOURCE["adapter"]
+_PREFIX = re.compile(r"^(github|salesforce):")
+
+# What a Salesforce Event Monitoring export does not carry, for the page.
+SALESFORCE_CANNOT_SHOW = (
+    "What an Agentforce agent reasoned, was prompted with, or answered. An Apex Execution "
+    "row names the bot that ran (BOT_IDENTIFIER); the agent's prompts, plans and model "
+    "output are not in these files.",
+    "Which records a query returned. A REST API row shows that a query ran against an "
+    "object and how many rows came back, not which rows.",
+    "Event types this org does not export. Login and a few other types are available "
+    "without an add-on; REST API, Apex Execution, URI, Report Export and Bulk API rows may "
+    "require the Event Monitoring (Shield) add-on. A type absent from the input is an "
+    "absent file, not an absent event: check which types this org receives on the first "
+    "real export.",
+    "Who was at the keyboard on a shared session. Rows are attributed to a connected app "
+    "by the session it signed in with; a person acting on that same session reads as the "
+    "app, and the reverse.",
+    "Anything outside Salesforce. What the integration did on its own side is not in this "
+    "log; a vendor record, when supplied, is lined up against these rows.",
+    "Time between files. EventLogFile files are produced per event type per interval "
+    "(daily, or hourly where enabled); a day missing from the input is a gap in the input, "
+    "not proof of quiet.",
+)
 
 # Kinds of activity an export may or may not carry. A personal security log
 # carries none of them; an organization audit log can carry some. The page names
@@ -162,6 +189,15 @@ def agent_key(event):
     GitHub App (plus any agent the client declares in its user-agent), else
     the token. None means no programmatic client is named — the export
     attributes the act to the person."""
+    if event.get("adapter") == _SF:
+        # Every Salesforce row carries a session key, so a session alone is
+        # not a programmatic client: it is one only when the row names an app
+        # (or a bot), or the sign-in was an API sign-in.
+        if event.get("app"):
+            return "app:%s" % event["app"]
+        if event.get("access") and event.get("token_id"):
+            return "token:%s" % event["token_id"]
+        return None
     declared = ua_agent(event.get("user_agent"))
     if event.get("app"):
         key = "app:%s" % event["app"]
@@ -202,23 +238,32 @@ def unusual_devices(events, *, at_most=2):
 
 def ingest(events, recorder, *, subject=None, session_id="door"):
     """Seal each event as an ingested-tier record in ``recorder``'s chain,
-    keeping the event's own time. Returns the appended records."""
+    keeping the event's own time. Returns the appended records.
+
+    Salesforce rows seal the event type and the SHA-256 of the whole CSV row
+    under ``data`` (never the row itself: session keys, query text and
+    addresses stay out of the chain)."""
     out = []
     for e in events:
         key = agent_key(e)
         agent = {"id": key, "name": key.split(":", 1)[1].split(" [")[0]} if key else \
             {"id": "human:%s" % (e.get("actor") or "unknown"), "name": e.get("actor") or "unknown"}
-        detail = " · ".join(x for x in (e.get("repo"), e.get("access")) if x)
+        sf = e.get("adapter") == _SF
+        detail = e.get("detail") or " · ".join(x for x in (e.get("repo"), e.get("access")) if x)
+        data = None
+        if sf:
+            data = {"event_type": e.get("event_type"), "source_row": e.get("raw_hash")}
         rec = build(
             "tool_call", "security",
-            tool="github:%s" % e["action"],
+            tool="%s:%s" % ("salesforce" if sf else "github", e["action"]),
             tool_input=detail or e["action"],
             ts=e["ts"],
             agent=agent,
             principal={"human_id": e["actor"]} if e.get("actor") else None,
-            source=dict(SOURCE),
+            source=dict(SALESFORCE_SOURCE if sf else SOURCE),
             subject=subject,
             session_id=session_id,
+            data=data,
         )
         recorder.append(rec)
         out.append(rec)
@@ -449,6 +494,8 @@ h1{font-size:22px;margin:0 0 4px}h2{font-size:16px;margin:28px 0 8px}
 th,td{text-align:left;padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:top}
 th{color:var(--muted);font-weight:600}td.t{font-variant-numeric:tabular-nums;white-space:nowrap}
 code{font:12px ui-monospace,SFMono-Regular,Menlo,monospace;word-break:break-all}
+.banner{background:var(--warn);color:#fff;font-weight:600;padding:8px 14px;border-radius:6px;margin:0 0 14px;letter-spacing:.02em}
+.note ul{margin:6px 0 0 18px;padding:0}.note li{margin:3px 0}
 """
 
 
@@ -480,7 +527,7 @@ def _as_person_section(hits):
     rows = "".join(
         "<tr><td class='t'>%s</td><td><code>%s</code></td><td>%s s</td></tr>" % (
             _e((h["ingested"].get("ts") or "")[:16].replace("T", " ")),
-            _e(((h["ingested"].get("action") or {}).get("tool") or "").replace("github:", "", 1)),
+            _e(_PREFIX.sub("", (h["ingested"].get("action") or {}).get("tool") or "", 1)),
             _e(h["gap_seconds"]))
         for h in hits)
     return ("<h2>Likely done by the agent as the person</h2><p class='sub'>The platform "
@@ -491,12 +538,46 @@ def _as_person_section(hits):
             "%s</table></div>" % rows)
 
 
+def _shared_section(hits):
+    if not hits:
+        return ""
+    rows = "".join(
+        "<tr><td class='t'>%s</td><td><code>%s</code></td><td><code>%s</code></td>"
+        "<td>%s</td><td>%d</td></tr>" % (
+            _e((h.get("first_ts") or "")[:16].replace("T", " ")), _e(h["session"]),
+            _e(h["agent"]), _e(", ".join(h["ips"])), h["rows"])
+        for h in hits)
+    return ("<h2>One session, more than one address</h2><p class='sub'>A session the platform "
+            "issued at one sign-in, later used from a different address. The log cannot tell a "
+            "proxy change from a copied or shared session; it shows that one sign-in was used from "
+            "two places. Worth a look, not a finding.</p><div class='wrap'><table><tr>"
+            "<th>Signed in (UTC)</th><th>Session</th><th>Client</th><th>Addresses</th>"
+            "<th>Rows from the other address</th></tr>%s</table></div>" % rows)
+
+
+_VOCAB = {
+    "github": {"title": "What an outside agent did", "who": "Outside agent",
+               "export": "the account's own security-log export",
+               "sample": "SAMPLE — synthetic export; no real account data."},
+    "salesforce": {"title": "What an outside integration did in Salesforce", "who": "Connected app",
+                   "export": "the org's own Event Monitoring export (EventLogFile CSVs)",
+                   "sample": "SAMPLE — synthetic Salesforce export; no real org data."},
+}
+
+
 def render_page(records, matches, verdict, *, agent, title=None, unusual=(),
                 as_person=(), expected_credentials=None, routine=(),
-                source_actions=None):
+                source_actions=None, own_supplied=True, sample=False, anchored=None,
+                source="github", shared=(), allowlist=None):
     """One self-contained HTML page: what the agent did, what broke a rule,
     and what its own record does not account for. Every value that came from
-    the export is escaped."""
+    the export is escaped.
+
+    ``own_supplied=False`` states that no vendor record was supplied and drops
+    the comparison counts, so the page is not read as a finding against a
+    vendor that was never asked for its record. ``sample`` adds a banner.
+    ``anchored`` is the anchor receipt to cite, or None for none."""
+    voc = _VOCAB.get(source, _VOCAB["github"])
     tiers = {"matched": 0, "probable": 0, "unmatched": 0}
     by_id = {}
     for m in matches:
@@ -513,13 +594,17 @@ def render_page(records, matches, verdict, *, agent, title=None, unusual=(),
         act = r.get("action") or {}
         summ = (act.get("input") or {}).get("summary") or ""
         m = by_id.get(r.get("record_id"))
-        tier = m["tier"] if m else "not compared"
-        cls = "bad" if r.get("record_id") in bad_ids else ("warn" if tier == "unmatched" else "")
+        if own_supplied:
+            tier = m["tier"] if m else "not compared"
+        else:
+            tier = "none supplied"
+        cls = "bad" if r.get("record_id") in bad_ids else (
+            "warn" if own_supplied and tier == "unmatched" else "")
         rows.append(
             "<tr class='%s'><td class='t'>%s</td><td><code>%s</code></td><td>%s</td>"
             "<td>%s</td><td>%s</td></tr>" % (
                 cls, _e((r.get("ts") or "")[:19].replace("T", " ")),
-                _e((act.get("tool") or "").replace("github:", "", 1)), _e(summ),
+                _e(_PREFIX.sub("", act.get("tool") or "", 1)), _e(summ),
                 _e(tier), "rule broken" if r.get("record_id") in bad_ids else ""))
 
     rule_rows = "".join(
@@ -529,46 +614,87 @@ def render_page(records, matches, verdict, *, agent, title=None, unusual=(),
             _e(r["status"]), len(r["violators"]))
         for r in verdict.get("rules", []))
 
+    if own_supplied:
+        compare_tiles = (
+            "<div class=\"tile\"><b class=\"%s\">%d</b><span>not in the agent's own record</span></div>\n"
+            "<div class=\"tile\"><b>%d</b><span>matched or probable</span></div>" % (
+                "warn" if tiers["unmatched"] else "ok", tiers["unmatched"],
+                tiers["matched"] + tiers["probable"]))
+        compare_note = ("\"Not in the agent's own record\" means no matching action was found in the "
+                        "record the agent kept, either because none was kept or because the act was "
+                        "not recorded there.")
+        own_col = "Agent's own record"
+    else:
+        compare_tiles = ("<div class=\"tile\"><b>&mdash;</b><span>no vendor record supplied</span></div>")
+        compare_note = ("No vendor record was supplied; this page shows the platform's own log only. "
+                        "When the vendor's own record is supplied, each row here is lined up against it.")
+        own_col = "Vendor record"
+
+    if source == "salesforce":
+        items = list(SALESFORCE_CANNOT_SHOW)
+        cannot = "<ul>%s</ul>" % "".join("<li>%s</li>" % _e(x) for x in items)
+    else:
+        cannot = _e(cannot_see(source_actions if source_actions is not None else
+                               [(r.get("action") or {}).get("tool") for r in list(records) + list(routine)]))
+    if source == "salesforce":
+        allow_note = ("<p class='sub'>Address allowlist behind <code>login-outside-allowlist</code>: "
+                      "<code>%s</code>%s</p>" % (
+                          _e(", ".join(allowlist)),
+                          " (the sample's range; pass <code>--allow-ip</code> for yours)"
+                          if sample else "")
+                      if allowlist else
+                      "<p class='sub'>No address allowlist was supplied, so "
+                      "<code>login-outside-allowlist</code> had nothing to check.</p>")
+    else:
+        allow_note = ""
+    receipt = anchored or ("none at the time this page was rendered"
+                           + (" (a sample is never anchored)" if sample else
+                              "; <code>halo anchor</code> records the head with a witness"))
+
     return """<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>%(title)s</title><style>%(style)s</style></head><body><main>
-<h1>%(title)s</h1>
-<p class="sub">Outside agent <code>%(agent)s</code> &middot; %(window)s &middot; %(n)d actions</p>
+%(banner)s<h1>%(title)s</h1>
+<p class="sub">%(who)s <code>%(agent)s</code> &middot; %(window)s &middot; %(n)d actions</p>
 <div class="tiles">
 <div class="tile"><b>%(n)d</b><span>actions in the export</span></div>
 <div class="tile"><b class="%(vcls)s">%(nv)d</b><span>rules broken</span></div>
-<div class="tile"><b class="%(ucls)s">%(un)d</b><span>not in the agent's own record</span></div>
-<div class="tile"><b>%(mt)d</b><span>matched or probable</span></div>
+%(compare_tiles)s
 </div>
-<div class="note">These records were <b>ingested</b> from the account's own security-log export
+<div class="note">These records were <b>ingested</b> from %(export)s
 and sealed into a hash chain on ingest (chain head <code>%(head)s</code>). Sealing proves this copy
 has not been edited since, not the completeness of the export: the export is only as complete as
 what the platform logged. One week of records is a baseline: what changed since the
-prior period appears from the second week on. "Not in the agent's own record" means no matching
-action was found in the record the agent kept, either because none was kept or because the act
-was not recorded there.</div>
+prior period appears from the second week on. %(compare_note)s</div>
+<div class="note"><b>Where this copy stands.</b> The sealed copy's integrity holds
+relative to a head someone other than the operator holds; a head only the operator keeps can be
+re-sealed without a trace. Anchor receipt: %(receipt)s. Keep the chain file in storage you control;
+the witness keeps the head.</div>
 <div class="note"><b>What this source cannot show.</b> %(cannot)s%(routine)s</div>
-<h2>Rules</h2><div class="wrap"><table><tr><th>Rule</th><th>What it checks</th><th>Result</th><th>Records</th></tr>
+<h2>Rules</h2>%(allow_note)s<div class="wrap"><table><tr><th>Rule</th><th>What it checks</th><th>Result</th><th>Records</th></tr>
 %(rules)s</table></div>
 %(creds)s
 %(asperson)s
+%(shared)s
 %(unusual)s
 <h2>What the agent did</h2><div class="wrap"><table>
-<tr><th>When (UTC)</th><th>Action</th><th>Detail</th><th>Agent's own record</th><th></th></tr>
+<tr><th>When (UTC)</th><th>Action</th><th>Detail</th><th>%(own_col)s</th><th></th></tr>
 %(rows)s</table></div>
 </main></body></html>""" % {
-        "title": _e(title or "What an outside agent did"),
+        "title": _e(title or voc["title"]), "who": _e(voc["who"]), "export": _e(voc["export"]),
+        "banner": ("<div class=\"banner\">%s</div>\n" % _e(voc["sample"])) if sample else "",
         "style": _STYLE, "agent": _e(agent), "window": _e(window),
         "n": len(records), "nv": len(violated), "vcls": "bad" if violated else "ok",
-        "un": tiers["unmatched"], "ucls": "warn" if tiers["unmatched"] else "ok",
-        "mt": tiers["matched"] + tiers["probable"], "head": _e(head[:16] + "..." if len(head) > 16 else head),
-        "rules": rule_rows, "rows": "\n".join(rows),
+        "compare_tiles": compare_tiles, "compare_note": compare_note, "own_col": own_col,
+        "head": _e(head[:16] + "..." if len(head) > 16 else head),
+        "receipt": _e(anchored) if anchored else receipt,
+        "rules": rule_rows, "rows": "\n".join(rows), "allow_note": allow_note,
         "creds": _creds_section(list(records) + list(routine), expected_credentials),
-        "cannot": _e(cannot_see(source_actions if source_actions is not None else
-                                [(r.get("action") or {}).get("tool") for r in list(records) + list(routine)])),
+        "cannot": cannot,
         "routine": (" %d automatic token refreshes by this agent are sealed in the chain "
                     "but not listed below." % len(routine)) if routine else "",
         "asperson": _as_person_section(as_person),
+        "shared": _shared_section(shared),
         "unusual": ("<h2>Unusual devices in the account</h2><p class='sub'>A device type seen "
                     "only once or twice in the whole export. Not necessarily the agent; worth a look."
                     "</p><div class='wrap'><table><tr><th>When (UTC)</th><th>Action</th>"

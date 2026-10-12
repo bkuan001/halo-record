@@ -1,0 +1,35 @@
+{
+  "name": "Salesforce org: outside-integration default rules",
+  "version": "0.1",
+  "note": "A STARTING POINT for checking what an outside integration (a connected app, or an agent acting through one) did in a Salesforce org, over records ingested from the org's Event Monitoring EventLogFile export (halo door --source salesforce). Each rule names a shape an integration acting for the org should not produce on its own. Edit the lists to match what the integration is permitted to do under its agreement. The address allowlist behind login-outside-allowlist is supplied when the export is read (halo door --allow-ip CIDR, repeatable; the bundled default is the sample fixture's 192.0.2.0/24): a sign-in from outside it is sealed as the action salesforce:Login.outside_allowlist. Without an allowlist no sign-in is classified and that rule finds nothing; the page says which allowlist it used.",
+  "rules": [
+    {
+      "id": "no-data-export",
+      "source": "buyer default",
+      "severity": "CRITICAL",
+      "description": "The integration did not export data in bulk: no report export, and no Bulk API query or ingest job.",
+      "forbid": {"action.tool": {"in": ["salesforce:URI.ReportExport", "salesforce:ReportExport.export", "salesforce:BulkApi.query", "salesforce:BulkApi.ingest", "salesforce:BulkApi.GET", "salesforce:BulkApi.POST"]}}
+    },
+    {
+      "id": "no-login-as",
+      "source": "buyer default",
+      "severity": "HIGH",
+      "description": "The integration did not act on a session that began with Login As, an administrator entering another user's session. Read from the sign-in row's LOGIN_TYPE.",
+      "forbid": {"action.tool": {"in": ["salesforce:Login.Login_As"]}}
+    },
+    {
+      "id": "no-metadata-change",
+      "source": "buyer default",
+      "severity": "HIGH",
+      "description": "The integration did not touch Setup or metadata: no Metadata or Tooling API call, no Apex entry point that deploys metadata, no Setup page.",
+      "forbid": {"action.tool": {"in": ["salesforce:ApexExecution.Metadata", "salesforce:URI.Setup", "salesforce:Metadata.GET", "salesforce:Metadata.POST", "salesforce:Metadata.PUT", "salesforce:Metadata.PATCH", "salesforce:Metadata.DELETE"]}}
+    },
+    {
+      "id": "login-outside-allowlist",
+      "source": "buyer default",
+      "severity": "HIGH",
+      "description": "The integration did not sign in from an address outside the allowlist the org set for it. Read from each sign-in row's address against the allowlist supplied when the export was read (halo door --allow-ip); the page names the allowlist it used.",
+      "forbid": {"action.tool": {"in": ["salesforce:Login.outside_allowlist"]}}
+    }
+  ]
+}
