@@ -192,6 +192,7 @@ async function verifyText(text){
   if (dup) return {ok:false, at:dup.at, why:"duplicate key " + JSON.stringify(dup.key) + " in one object"};
   return verify(records);
 }
+/*WITNESS-BEGIN*/
 function cleanCheckpoints(list){
   // Checkpoints arrive from the page or from a witness URL the report names, so
   // they are untrusted: keep only well-formed {count: positive integer, head:
@@ -280,6 +281,7 @@ async function liveCheckpoints(cfg, embedded){
     return {cps: cleanCheckpoints(embedded), live: false, error: e.message};
   }
 }
+/*WITNESS-END*/
 function haloSet(id, html){
   const node = document.getElementById(id);
   if (node) node.innerHTML = html;
@@ -408,7 +410,13 @@ async function haloBind(records, cfg){
     }
   } catch (e){ polErr = e.message; rules = null; }
   const chainOk = WINDOW ? cfg.chainVerified !== false : true;
-  const R = HaloView.regions(records, rules, chainOk, digest);
+  // Door mode: every record was verified above; the regions are rendered from
+  // the one agent's rows, and the heading is the door's (a label, not a fact
+  // derived from the records).
+  const door = (cfg.door && typeof cfg.door === "object") ? cfg.door : null;
+  const shown = door ? records.filter(function(r){ return haloDoorKeeps(r, door); }) : records;
+  const R = HaloView.regions(shown, rules, chainOk, digest, door);
+  if (door){ R.title = String(door.title || R.title); R.h1 = haloEsc(R.title); }
   let policy = "none";
   if (polErr !== null){
     R.policy = "<div class='verdict fail'>Policy verdict withheld &mdash; the policy embedded in this page " +
@@ -435,7 +443,7 @@ async function haloBind(records, cfg){
     window.__haloPendingRows = R.rows;
     haloSet("activity-body", R.rows.join("\n"));
   }
-  return {policy: policy, digest: digest};
+  return {policy: policy, digest: digest, shown: shown.length, door: !!door};
 }
 function haloWithhold(why){
   // Nothing derived from unverified records is presented as if it verified.
@@ -451,6 +459,7 @@ function haloWithhold(why){
 function haloEsc(s){
   return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
+/*WITNESS-BEGIN*/
 async function haloCompleteness(records, embedded, cfg, pinned){
   const cel = document.getElementById("completeness");
   if (!cel || window.__haloLayoutRefused) return;
@@ -532,6 +541,22 @@ async function haloCompleteness(records, embedded, cfg, pinned){
       haloEsc(comp.why) + (comp.at ? " at record " + comp.at : "") + ")." + note;
   }
 }
+/*WITNESS-END*/
+function haloDoorKeeps(r, door){
+  // Door mode (mirror report._door_keeps): the page embeds and verifies the
+  // whole sealed chain, and displays the rows of the one outside agent the
+  // buyer isolated: the agent's own key, or, for an "agent:NAME" key, every
+  // credential that declared NAME. Routine housekeeping rows the generator
+  // set aside (listed by id in the config, counted on the page) are not shown.
+  const a = (r && r.agent && typeof r.agent === "object") ? r.agent : {};
+  const id = (a.id === undefined || a.id === null) ? "" : String(a.id);
+  const key = String(door.agent || "");
+  let mine = id === key;
+  if (!mine && key.indexOf("agent:") === 0) mine = id.endsWith("[" + key.slice(6) + "]");
+  if (!mine) return false;
+  const hidden = Array.isArray(door.hidden) ? door.hidden : [];
+  return hidden.indexOf(r.record_id) < 0;
+}
 (async function(){
   // Check the page as parsed in full: static markup after this script (a
   // style rule, a repeated id) is in place before anything is judged.
@@ -577,6 +602,13 @@ async function haloCompleteness(records, embedded, cfg, pinned){
       shown = " This page's scripts re-rendered the table and summary from the verified " +
               "records; the page's styling and any added content are not checked &mdash; " +
               "run <span class='mono'>halo verify</span> on the JSONL for evidence.";
+      if (bound.door)
+        shown = " Of these, " + bound.shown + " are this agent's and are listed below; the rest are other " +
+          "clients' actions in the same export, sealed in the same chain. This page's scripts " +
+          "re-rendered the table and tiles from the verified records; the summary and detail " +
+          "sections were computed when the page was generated, and the page's styling and any " +
+          "added content are not checked &mdash; " +
+          "run <span class='mono'>halo verify</span> on the JSONL for evidence.";
       if (bound.policy === "ok")
         shown += " The policy verdict was re-computed from them under the policy embedded in this page " +
                  "by whoever generated it (sha256 <span class='mono'>" + bound.digest.slice(0, 16) +
@@ -633,6 +665,7 @@ async function haloCompleteness(records, embedded, cfg, pinned){
     };
     window.setTimeout(tick, 500 + Math.random() * 1000);
   }
+  /*WITNESS-BEGIN*/
   let pinned = cfg.expectedSubject || null;
   try {
     const m = /(?:^#|&)expect=([^&]*)/.exec(String((window.location && window.location.hash) || ""));
@@ -647,8 +680,21 @@ async function haloCompleteness(records, embedded, cfg, pinned){
     const v = input ? String(input.value).trim() : "";
     haloCompleteness(records, embedded, cfg, v || null);
   });
+  /*WITNESS-END*/
 })();
 """
+
+_WITNESS_SPAN = re.compile(r"/\*WITNESS-BEGIN\*/.*?/\*WITNESS-END\*/", re.S)
+
+
+def _door_keeps(r, door):
+    """Mirror of the page's ``haloDoorKeeps``: a record the door page lists."""
+    agent = r.get("agent")
+    aid = (agent.get("id") if isinstance(agent, dict) else None)
+    aid = "" if aid is None else str(aid)
+    key = str(door.get("agent") or "")
+    mine = aid == key or (key.startswith("agent:") and aid.endswith("[%s]" % key[6:]))
+    return mine and r.get("record_id") not in set(door.get("hidden") or ())
 
 
 # Activity rows are rendered newest-first. The first batch sits in the table;
@@ -1202,12 +1248,84 @@ border-radius:10px;padding:11px 14px}
 footer{margin-top:42px;color:var(--dim);font-size:12px;text-align:center}
 footer a{color:var(--gold);text-decoration:none}
 @media(max-width:720px){.cards{grid-template-columns:repeat(2,1fr)}h1{font-size:36px}}
+/* Door mode: the buyer's page. A banner for synthetic data, the five-line
+   summary above the verdict, and the door's detail sections folded below. */
+.banner{background:var(--warn);color:#fff;font-weight:600;padding:8px 14px;border-radius:8px;
+margin:0 0 18px;letter-spacing:.02em}
+.door-summary{background:#fff;border:1px solid var(--line);border-left:4px solid var(--gold);
+border-radius:12px;padding:14px 20px;margin:0 0 22px;font-size:15px}
+.door-summary ol{margin:0;padding-left:20px}.door-summary li{margin:4px 0}
+.door-summary .bad{color:var(--fail);font-weight:600}.door-summary .ok{color:var(--ok)}
+.door-summary .warn{color:var(--warn)}
+details.door-sec{background:#fff;border:1px solid var(--line);border-radius:12px;
+padding:10px 18px;margin:0 0 10px}
+details.door-sec summary{cursor:pointer;font-weight:600;font-size:15px;padding:4px 0}
+details.door-sec .sub{color:var(--dim);font-size:13px;margin:6px 0 10px}
+details.door-sec .door-scroll{overflow-x:auto;margin:0 0 8px}
+details.door-sec table{min-width:0;font-size:13px}
+details.door-sec th{position:static;background:transparent}
+details.door-sec td.t{font-variant-numeric:tabular-nums;white-space:nowrap}
+details.door-sec .bad{color:var(--fail)}details.door-sec .warn{color:var(--warn)}
+details.door-sec .ok{color:var(--ok)}
+details.door-sec ul{margin:6px 0 8px 18px;padding:0}details.door-sec li{margin:3px 0}
+.door-sections{margin:0 0 30px}
+.note.door-note{margin:0 0 30px}
 """
 
 
+# The page above the activity table: the vendor's Runtime Report, or the
+# buyer's door page (banner, summary, verdict, source line, tiles, the door's
+# detail sections, where the copy stands). Everything from the table down is
+# shared.
+_HEAD_REPORT = """<div class="eyebrow">Halo Runtime Report</div>
+<h1 id="r-h1">%(h1)s<!--/r-h1--></h1>
+<div class="meta" id="r-meta">%(meta)s</div><div id="r-subject-note">%(subject_note)s</div>
+%(review_window)s<div class="period" id="r-period">%(period)s<!--/r-period--></div>
+<div id="verdict" class="verdict neutral">Not verified yet &mdash; this page verifies its records in your browser with JavaScript.</div>
+<div id="completeness" class="verdict neutral">Checking completeness against the witness checkpoints&hellip;</div>
+<form id="pin" class="filters" autocomplete="off">
+  <label class="f-lab" for="pin-subject">Expected customer id</label>
+  <input type="search" id="pin-subject" class="f-grow" value="%(pin_value)s" placeholder="the id you expect, e.g. from your contract" aria-label="Expected customer id">
+  <button type="submit" class="f-btn">Check against witness</button>
+</form>
+<div class="note">Pin the id you expect: the page then requires every record to carry it and looks the witness up under it, rather than under the id the records carry (which the vendor writes).</div>
+%(window_block)s
+<div class="note">%(integrity_note)s</div>
+%(policy_block)s
+<div class="cards" id="r-cards">%(cards)s<!--/r-cards--></div>
+<h2>Authorized scopes</h2>
+<div class="scopes" id="r-scopes">%(scopes)s</div>
+<div id="r-provenance">%(provenance)s</div>
+<h2>Activity</h2>"""
+
+_HEAD_DOOR = """%(banner)s<div class="eyebrow">Halo Runtime Report &middot; the door</div>
+<h1 id="r-h1">%(h1)s<!--/r-h1--></h1>
+<div class="meta" id="r-meta">%(meta)s<!--/r-meta--></div><div id="r-subject-note">%(subject_note)s</div>
+<div class="period" id="r-period">%(period)s<!--/r-period--></div>
+<div class="door-summary" id="door-summary"><ol>%(summary)s</ol><!--/door-summary--></div>
+<div id="verdict" class="verdict neutral">Not verified yet &mdash; this page verifies its records in your browser with JavaScript.</div>
+<div class="note">%(source_note)s</div>
+<div class="cards" id="r-cards">%(cards)s<!--/r-cards--></div>
+<div id="r-provenance">%(provenance)s</div>
+<div class="door-sections">%(sections)s</div>
+<div class="note door-note">%(stands)s</div>
+<h2>Activity</h2>"""
+
+
 def render(records, checkpoints=None, *, witness_url=None, policy=None, window=None,
-           expected_subject=None, policy_text=None):
+           expected_subject=None, policy_text=None, door=None):
     """Return the full HTML for a runtime-record report over ``records``.
+
+    ``door`` renders the buyer-side page (``halo door``): ``records`` is the
+    whole sealed chain the buyer's export produced, every record of which is
+    embedded and verified in the browser, and the page displays the rows of
+    the one outside agent in ``door["agent"]`` (``door["hidden"]`` lists ids
+    of routine rows set aside). The door supplies ``title``, ``who``, the
+    ``summary`` lines (``<li>`` HTML), ``source_note``, ``sections`` (its
+    detail sections), ``stands`` (where the sealed copy stands) and an
+    optional ``banner``. The vendor-facing controls (expected customer id,
+    witness check, scopes, redaction tiles) are not rendered, and the witness
+    lookup code is left out of the page's script.
 
     If ``checkpoints`` (a list of notary witnesses for this chain) is given, the
     page re-checks completeness in the browser against those witnesses. If
@@ -1254,8 +1372,20 @@ def render(records, checkpoints=None, *, witness_url=None, policy=None, window=N
     else:
         from .verify import verify_records
         chain_verified = verify_records(records)
-    reg = _view.regions(records, policy, chain_verified, policy_digest)
-    multi_agent = len(_view.agents(records)) > 1
+    if door:
+        if policy or window:
+            raise ValueError("halo-record: the door page carries its own rules table and "
+                             "the whole chain; it takes no policy or window")
+        door = dict(door)
+        door.setdefault("hidden", [])
+        shown = [r for r in records if _door_keeps(r, door)]
+    else:
+        shown = records
+    reg = _view.regions(shown, policy, chain_verified, policy_digest, door=door)
+    if door:
+        reg["title"] = str(door.get("title") or reg["title"])
+        reg["h1"] = _esc(reg["title"])
+    multi_agent = len(_view.agents(shown)) > 1
     row_html = reg["rows"]
     if row_html:
         rows = "\n".join(row_html[:_ROW_BATCH])
@@ -1278,7 +1408,8 @@ def render(records, checkpoints=None, *, witness_url=None, policy=None, window=N
         more_rows = ""
         rowcount = '<div class="rowcount" id="rowcount"></div>'
         noscript = ""
-    agent_th = "<th>Agent</th>" if multi_agent else ""
+    # In door mode each row's agent name is the credential it came through.
+    agent_th = ("<th>%s</th>" % ("Credential" if door else "Agent")) if multi_agent else ""
     # Escape "<" so a record value containing "</script>" can't break out of
     # the embedded JSON block. The in-browser JSON.parse reads these unchanged.
     records_json = json.dumps(records, separators=(",", ":")).replace("<", "\\u003c")
@@ -1305,12 +1436,15 @@ def render(records, checkpoints=None, *, witness_url=None, policy=None, window=N
                           "<b>not yet witnessed</b>: this report is anchored to no external witness, "
                           "so completeness rests on the vendor until one holds checkpoints for this "
                           "chain (see below). " + own_check)
-    config_json = json.dumps(
-        {"witnessUrl": witness_url, "subject": _subject_id(records),
-         "chainRoot": (_chain_root(records) if records and _subject_id(records) is None else None),
-         "expectedSubject": expected_subject,
-         "chainVerified": bool(chain_verified)},
-        separators=(",", ":")).replace("<", "\\u003c")
+    config = {"witnessUrl": witness_url, "subject": _subject_id(records),
+              "chainRoot": (_chain_root(records) if records and _subject_id(records) is None else None),
+              "expectedSubject": expected_subject,
+              "chainVerified": bool(chain_verified)}
+    if door:
+        config["door"] = {"agent": str(door.get("agent") or ""),
+                          "hidden": [str(h) for h in door["hidden"]],
+                          "title": reg["title"], "who": str(door.get("who") or "Agent")}
+    config_json = json.dumps(config, separators=(",", ":")).replace("<", "\\u003c")
     review_window = ""
     if window:
         window_json = json.dumps(
@@ -1359,6 +1493,9 @@ def render(records, checkpoints=None, *, witness_url=None, policy=None, window=N
     else:
         verify_js = _VERIFY_JS % {"genesis": _js_anchor(GENESIS_PREV), "window_json": "null"}
         window_block = ""
+    if door:
+        # No witness is looked up from the buyer's page: integrity only.
+        verify_js = _WITNESS_SPAN.sub("", verify_js)
     policy_block = ""
     if policy:
         from .policy import _PANEL_CSS
@@ -1367,32 +1504,38 @@ def render(records, checkpoints=None, *, witness_url=None, policy=None, window=N
                         % (_PANEL_CSS, reg["policy"]))
     pin_value = _esc(expected_subject) if expected_subject is not None else ""
 
+    if door:
+        source_note = (
+            "%s This page embeds the full sealed chain (<b>%d</b> records, every client in the "
+            "export) and verifies all of it in your browser; the tiles and the table show this "
+            "agent's <b>%d</b> rows. %s"
+            % (door.get("source_note") or "", len(records), len(shown), own_check))
+        head = _HEAD_DOOR % {
+            "banner": door.get("banner") or "",
+            "h1": reg["h1"], "meta": reg["meta"], "subject_note": reg["subject_note"],
+            "period": reg["period"],
+            "summary": "".join(door.get("summary") or ()),
+            "source_note": source_note,
+            "cards": reg["cards"], "provenance": reg["provenance"],
+            "sections": door.get("sections") or "",
+            "stands": door.get("stands") or "",
+        }
+    else:
+        head = _HEAD_REPORT % {
+            "h1": reg["h1"], "meta": reg["meta"], "subject_note": reg["subject_note"],
+            "review_window": review_window, "period": reg["period"],
+            "pin_value": pin_value, "window_block": window_block,
+            "integrity_note": integrity_note, "policy_block": policy_block,
+            "cards": reg["cards"], "scopes": reg["scopes"], "provenance": reg["provenance"],
+        }
+
     return """<!doctype html>
 <html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>%(title)s — Runtime Report</title>
 <style>%(style)s</style>
 </head><body><div class="wrap">
-<div class="eyebrow">Halo Runtime Report</div>
-<h1 id="r-h1">%(h1)s<!--/r-h1--></h1>
-<div class="meta" id="r-meta">%(meta)s</div><div id="r-subject-note">%(subject_note)s</div>
-%(review_window)s<div class="period" id="r-period">%(period)s<!--/r-period--></div>
-<div id="verdict" class="verdict neutral">Not verified yet &mdash; this page verifies its records in your browser with JavaScript.</div>
-<div id="completeness" class="verdict neutral">Checking completeness against the witness checkpoints&hellip;</div>
-<form id="pin" class="filters" autocomplete="off">
-  <label class="f-lab" for="pin-subject">Expected customer id</label>
-  <input type="search" id="pin-subject" class="f-grow" value="%(pin_value)s" placeholder="the id you expect, e.g. from your contract" aria-label="Expected customer id">
-  <button type="submit" class="f-btn">Check against witness</button>
-</form>
-<div class="note">Pin the id you expect: the page then requires every record to carry it and looks the witness up under it, rather than under the id the records carry (which the vendor writes).</div>
-%(window_block)s
-<div class="note">%(integrity_note)s</div>
-%(policy_block)s
-<div class="cards" id="r-cards">%(cards)s<!--/r-cards--></div>
-<h2>Authorized scopes</h2>
-<div class="scopes" id="r-scopes">%(scopes)s</div>
-<div id="r-provenance">%(provenance)s</div>
-<h2>Activity</h2>
+%(head)s
 <div class="filters" id="filters">
   <input type="search" id="f-q" class="f-grow" placeholder="Search time, tool, scope, summary, record id, hash&hellip;" aria-label="Search actions">
   <select id="f-tool" aria-label="Filter by tool"><option value="">All tools</option></select>
@@ -1438,20 +1581,9 @@ def render(records, checkpoints=None, *, witness_url=None, policy=None, window=N
 <script>%(paginate_js)s</script>
 </body></html>""" % {
         "title": _esc(reg["title"]),
-        "h1": reg["h1"],
-        "meta": reg["meta"],
-        "subject_note": reg["subject_note"],
-        "review_window": review_window,
-        "period": reg["period"],
-        "cards": reg["cards"],
-        "scopes": reg["scopes"],
-        "provenance": reg["provenance"],
+        "head": head,
         "agent_th": agent_th,
         "style": _STYLE,
-        "integrity_note": integrity_note,
-        "policy_block": policy_block,
-        "window_block": window_block,
-        "pin_value": pin_value,
         "rows": rows,
         "more_rows": more_rows,
         "rowcount": rowcount,

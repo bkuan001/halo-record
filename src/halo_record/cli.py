@@ -455,7 +455,8 @@ def _cmd_door(args):
                                   routine=routine,
                                   source_actions=[e.get("action") for e in events],
                                   own_supplied=bool(args.own), sample=sample, source=source,
-                                  shared=shared, allowlist=allowlist))
+                                  shared=shared, allowlist=allowlist, chain=all_recs,
+                                  tenant=args.subject))
     tiers = Counter(m["tier"] for m in matches)
     line = "%d actions by %s | rules broken: %d | " % (len(recs), args.agent, verdict["violations"])
     if args.own:

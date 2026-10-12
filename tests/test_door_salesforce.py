@@ -160,7 +160,8 @@ class TestIngest(SfBase):
         self.assertEqual(r["source"]["adapter"], "salesforce_eventlog")
         self.assertEqual(r["source"]["capture"], "ingested")
         self.assertEqual(r["agent"]["id"], APP)
-        self.assertEqual(r["principal"]["human_id"], "svc.acme@globex.example")
+        # the person is sealed as the agent field shows them: initial and domain
+        self.assertEqual(r["principal"]["human_id"], "s****@globex.example")
         self.assertEqual(r["data"]["event_type"], "RestApi")
         self.assertRegex(r["data"]["source_row"], r"^sha256:[0-9a-f]{64}$")
         self.assertEqual(sum(1 for r in recs if r["action"]["tool"] == "salesforce:Login.outside_allowlist"), 1)
@@ -270,7 +271,9 @@ class TestPage(SfBase):
                        "Acme Collections Agent", "One session, more than one address", "LKa10",
                        "Login_As", "ReportExport", "Metadata", "192.0.2.0/24"):
             self.assertIn(needle, html, needle)
-        self.assertNotIn("github", html.lower())
+        # No GitHub vocabulary on a Salesforce page; the footer's link to the
+        # halo-record repository is the one place the name belongs.
+        self.assertNotIn("github", html[:html.index("<footer>")].lower())
         self.assertNotIn("SKa05", html)
 
 

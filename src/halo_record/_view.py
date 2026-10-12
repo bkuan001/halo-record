@@ -665,11 +665,19 @@ def row(r, show_agent=False):
     )
 
 
-def cards(records, policy_result=None):
+def cards(records, policy_result=None, door=False):
+    """The headline tiles. In door mode (a buyer reading one outside agent's
+    rows from their own platform's log) only Actions and Tools are headline
+    numbers: scopes and redaction severities describe the vendor's recorder,
+    and findings stay in each row and its drawer."""
     st = stats(records)
     out = [
         '<div class="card"><div class="n">%d</div><div class="l">Actions</div></div>' % st["total"],
         '<div class="card"><div class="n">%d</div><div class="l">Tools</div></div>' % len(st["tools"]),
+    ]
+    if door:
+        return "".join(out)
+    out += [
         '<div class="card"><div class="n">%d</div><div class="l">Scopes</div></div>' % len(st["scopes"]),
         '<div class="card" title="records whose redaction-scanner severity is MEDIUM or higher">'
         '<div class="n">%d</div><div class="l">Flagged (MEDIUM+)</div></div>'
@@ -720,21 +728,38 @@ def policy_result(records, rules, chain_verified=True, policy_digest=None):
     return res
 
 
-def regions(records, rules=None, chain_verified=True, policy_digest=None):
-    """Every record-derived region of the report page, as HTML strings."""
+PROV_NOTE_MARK = '<div class="note prov-note">'
+
+
+def regions(records, rules=None, chain_verified=True, policy_digest=None, door=None):
+    """Every record-derived region of the report page, as HTML strings.
+
+    ``door`` (``{"who": ..., "agent": ...}``) renders the regions for the
+    door page: ``records`` are already the one outside agent's rows, the
+    header names that agent by the key the buyer isolated (the rows' own
+    agent names are its credentials), the tiles are Actions and Tools, and
+    the provenance note about the vendor's telemetry is left off."""
     from .policy import panel_card
     names = agents(records)
     res = policy_result(records, rules, chain_verified, policy_digest)
     label = subject_label(records)
+    if door:
+        who = "%s <b>%s</b>" % (esc(_str(door.get("who") or "Agent")),
+                                 esc(show_id(_str(door.get("agent") or ""))))
+    else:
+        who = agent_meta(names)
+    prov = provenance(records)
+    if door and PROV_NOTE_MARK in prov:
+        prov = prov[:prov.index(PROV_NOTE_MARK)]
     return {
         "title": label,
         "h1": esc(label),
-        "meta": '%s &middot; <b>%d</b> recorded actions' % (agent_meta(names), len(records)),
+        "meta": '%s &middot; <b>%d</b> recorded actions' % (who, len(records)),
         "subject_note": subject_note(records),
         "period": period(records),
-        "cards": cards(records, res),
+        "cards": cards(records, res, door=bool(door)),
         "scopes": scopes(records),
-        "provenance": provenance(records),
+        "provenance": prov,
         "rows": [row(r, show_agent=len(names) > 1) for r in reversed(records)],
         "policy": panel_card(res, subject=label, in_page=True) if res is not None else "",
     }
@@ -1607,15 +1632,16 @@ var HaloView = (function(){
       esc(FOOT_PAGE) + " <b>No model judgment.</b></span><span>" + subj + "</span></div></div>";
   }
   /*POLICY-END*/
-  function cards(records, res){
+  function cards(records, res, door){
     var st = stats(records), nflag = 0, nlow = 0;
     records.forEach(function(r){
       if (["MEDIUM", "HIGH", "CRITICAL"].indexOf(r.severity) >= 0) nflag++;
       if (r.severity === "LOW") nlow++;
     });
     var out = '<div class="card"><div class="n">' + st.total + '</div><div class="l">Actions</div></div>' +
-      '<div class="card"><div class="n">' + st.ntools + '</div><div class="l">Tools</div></div>' +
-      '<div class="card"><div class="n">' + st.scopes.length + '</div><div class="l">Scopes</div></div>' +
+      '<div class="card"><div class="n">' + st.ntools + '</div><div class="l">Tools</div></div>';
+    if (door) return out;
+    out += '<div class="card"><div class="n">' + st.scopes.length + '</div><div class="l">Scopes</div></div>' +
       '<div class="card" title="records whose redaction-scanner severity is MEDIUM or higher"><div class="n">' + nflag +
       '</div><div class="l">Flagged (MEDIUM+)</div></div>' +
       '<div class="card"><div class="n">' + nlow + '</div><div class="l">Low notes</div></div>';
@@ -1623,7 +1649,7 @@ var HaloView = (function(){
       res.violating_records + '</div><div class="l">Out of policy</div></div>';
     return out;
   }
-  function regions(records, rules, chainVerified, rulesDigest){
+  function regions(records, rules, chainVerified, rulesDigest, door){
     var names = agents(records), st = stats(records), label = subjectLabel(records);
     var hasRules = rules !== null && rules !== undefined && !(Array.isArray(rules) && !rules.length);
     var invalid = hasRules && typeof validatePolicy === "function" ? validatePolicy(rules) : null;
@@ -1631,17 +1657,23 @@ var HaloView = (function(){
       ? evaluate(records, rules, chainVerified, rulesDigest) : null;
     var rows = [];
     for (var i = records.length - 1; i >= 0; i--) rows.push(row(records[i], names.length > 1));
+    // door mode (mirror _view.regions): the header names the agent the buyer
+    // isolated, the tiles are Actions and Tools, the vendor-telemetry note is off.
+    var who = door ? esc(str(or(door.who, "Agent"))) + " <b>" + esc(showId(str(or(door.agent, "")))) + "</b>"
+                   : agentMeta(names);
+    var prov = provenance(records), mark = '<div class="note prov-note">';
+    if (door && prov.indexOf(mark) >= 0) prov = prov.slice(0, prov.indexOf(mark));
     return {
       title: label,
       h1: esc(label),
-      meta: agentMeta(names) + " &middot; <b>" + records.length + "</b> recorded actions",
+      meta: who + " &middot; <b>" + records.length + "</b> recorded actions",
       subject_note: subjectNote(records),
       period: '<span class="period-l">Records span</span> <b>' + esc(st.start) + "</b> &ndash; <b>" + esc(st.end) +
               '</b> <span class="period-tz">UTC</span>',
-      cards: cards(records, res),
+      cards: cards(records, res, !!door),
       scopes: st.scopes.map(function(s){ return '<span class="pill">' + esc(showId(s)) + "</span>"; }).join("") ||
               '<span class="dim">none</span>',
-      provenance: provenance(records),
+      provenance: prov,
       rows: rows,
       policyEvaluated: res !== null,
       policy: invalid ? "<div class='verdict fail'>Policy verdict withheld &mdash; the policy embedded in " +
