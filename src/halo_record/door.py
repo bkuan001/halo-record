@@ -43,7 +43,7 @@ from urllib.parse import urlsplit
 
 from . import _view
 from . import policy as _policy
-from .door_sources import (DEFAULT_ALLOWLIST, SALESFORCE_SOURCE, ip_allowed,  # noqa: F401
+from .door_sources import (DEFAULT_ALLOWLIST, PLATFORM_IP, SALESFORCE_SOURCE, ip_allowed,  # noqa: F401
                            parse_salesforce_eventlog, shared_sessions)
 from .record import build
 from .redact import mask_known_secrets
@@ -52,6 +52,10 @@ SOURCE = {"adapter": "github_audit", "via": "GitHub security log export",
           "capture": "ingested"}
 _SF = SALESFORCE_SOURCE["adapter"]
 _PREFIX = re.compile(r"^(github|salesforce):")
+
+# Printed after the package version in the door page's footer while the door
+# ships from its branch ahead of a release. A release clears it to "".
+DOOR_RELEASE_NOTE = " (bank-door branch, unreleased)"
 
 # What a Salesforce Event Monitoring export does not carry, for the page.
 SALESFORCE_CANNOT_SHOW = (
@@ -73,6 +77,17 @@ SALESFORCE_CANNOT_SHOW = (
     "Time between files. EventLogFile files are produced per event type per interval "
     "(daily, or hourly where enabled); a day missing from the input is a gap in the input, "
     "not proof of quiet.",
+)
+
+# What the same export does not carry about an Agentforce agent in particular;
+# listed after the first Salesforce bullet.
+AGENTFORCE_CANNOT_SHOW = (
+    "Which members an action touched. Rows for a service-agent carry the agent's own user, "
+    "not the member; the member join lives in Agentforce Session Tracing.",
+    "What the system on the other end of a call did. An Apex Callout row shows the host, "
+    "method and status; the MuleSoft and core-banking side of the call is in their logs.",
+    "The agent's prompts, plans, topic choice and session outcome. Those are Data 360 tables "
+    "(Agentforce Session Tracing, Einstein Audit), not EventLogFile.",
 )
 
 # Kinds of activity an export may or may not carry. A personal security log
@@ -253,13 +268,68 @@ def unusual_devices(events, *, at_most=2):
 
 # ----------------------------------------------------------------- ingest ---
 
+_URL_RE = re.compile(r"[a-z][a-z0-9+.-]*://[^\s·]+|(?<![\w/])/[^\s·]+", re.I)
+_DIGIT_RUN = re.compile(r"\d{4,}")
+
+
+def mask_path_digits(url):
+    """A URL or path with every run of four or more digits in its path
+    replaced by ``****``: an account or record number is never written to the
+    chain, while the path itself stays readable (``/hogan/v2/transfers``
+    survives; ``/loans/0000012345/payments`` reads ``/loans/****/payments``).
+    The host and any query string are left as given."""
+    text = str(url or "")
+    parts = urlsplit(text) if "://" in text else None
+    if parts is not None:
+        path = _DIGIT_RUN.sub("****", parts.path)
+        return parts._replace(path=path).geturl()
+    head, sep, query = text.partition("?")
+    return _DIGIT_RUN.sub("****", head) + sep + query
+
+
+def _mask_urls(text):
+    """``mask_path_digits`` applied to each URL or absolute path in ``text``."""
+    return _URL_RE.sub(lambda m: mask_path_digits(m.group(0)), str(text or ""))
+
+
+def _target(event):
+    """What the row acted on, as the chain seals it: a URL as host and path
+    (digit runs masked, no scheme, no query), a path with its digit runs
+    masked, anything else as the parser read it."""
+    sf = event.get("adapter") == _SF
+    t = event.get("target") if sf else event.get("repo")
+    if not t:
+        return None
+    t = str(t)
+    if "://" in t:
+        parts = urlsplit(mask_path_digits(t))
+        return (parts.hostname or "") + parts.path
+    if t.startswith("/"):
+        return mask_path_digits(t.split("?", 1)[0])   # a query string never enters the chain
+    return t
+
+
+def event_index(events, records):
+    """``{record_id: event}`` for records ``ingest`` sealed from ``events``, in
+    the same order. The page uses it for what the chain deliberately does not
+    carry (addresses, session keys): a reading aid, never evidence."""
+    events, records = list(events), list(records)
+    if len(events) != len(records):
+        raise ValueError("halo door: %d events but %d records; the index needs the records "
+                         "ingest sealed from these events" % (len(events), len(records)))
+    return {r["record_id"]: e for e, r in zip(events, records) if r.get("record_id")}
+
+
 def ingest(events, recorder, *, subject=None, session_id="door"):
     """Seal each event as an ingested-tier record in ``recorder``'s chain,
     keeping the event's own time. Returns the appended records.
 
-    Salesforce rows seal the event type and the SHA-256 of the whole CSV row
-    under ``data`` (never the row itself: session keys, query text and
-    addresses stay out of the chain)."""
+    Salesforce rows seal the event type, the SHA-256 of the whole CSV row,
+    what the row acted on (``target``), the row's own status and, for an
+    Agentforce row, its bot session under ``data`` (never the row itself:
+    session keys, query text and addresses stay out of the chain; a URL's
+    digit runs are masked before anything is kept). A GitHub row seals its
+    repository as ``data.target``."""
     out = []
     for e in events:
         key = agent_key(e)
@@ -267,13 +337,21 @@ def ingest(events, recorder, *, subject=None, session_id="door"):
             {"id": "human:%s" % (e.get("actor") or "unknown"), "name": e.get("actor") or "unknown"}
         sf = e.get("adapter") == _SF
         detail = e.get("detail") or " · ".join(x for x in (e.get("repo"), e.get("access")) if x)
-        data = None
+        detail = _mask_urls(detail)
+        data = {}
+        target = _target(e)
+        if target:
+            data["target"] = target
         if sf:
-            data = {"event_type": e.get("event_type"), "source_row": e.get("raw_hash")}
+            data.update({"event_type": e.get("event_type"), "source_row": e.get("raw_hash")})
+            status = e.get("status")
+            if status:
+                data["status"] = int(status) if str(status).isdigit() else status
+            if e.get("bot_session"):
+                data["bot_session"] = e["bot_session"]
             if e.get("event_type") == "ApexCallout":
                 # A call outside the org: the host it reached and the status
-                # it got, sealed as fields (the URL in the summary is masked by
-                # the redactor; the path and query never enter the chain).
+                # it got, sealed as fields the page can count on.
                 data.update(callout_fields(e))
         rec = build(
             "tool_call", "security",
@@ -288,7 +366,13 @@ def ingest(events, recorder, *, subject=None, session_id="door"):
             source=dict(SALESFORCE_SOURCE if sf else SOURCE),
             subject=subject,
             session_id=session_id,
-            data=data,
+            data=data or None,
+            # Every field here is an enumerated identifier the platform wrote
+            # (an action name, an entry point, a URL with its digit runs
+            # already masked, a status): named patterns mask and flag; the
+            # high-entropy catch-all, which reads a long class name or path
+            # as a secret, does not run over log identifiers.
+            entropy=False,
         )
         recorder.append(rec)
         out.append(rec)
@@ -764,9 +848,9 @@ def _reach_bars(records):
                     '<i style="width:%d%%"></i></div><span class="n">%d%s</span></div>' % (
                         _e(host), max(1, round(h["n"] * 100 / top)), h["n"], failed))
     return (_h2("Where it reached") + "".join(bars)
-            + _note("Hosts the agent called from inside the org, by name only; the path and "
-                    "query of each call are not in the chain. A failed call got a status "
-                    "outside 2xx."))
+            + _note("Hosts the agent called from inside the org. Each call's path is in the "
+                    "table under Every action with its digit runs masked; the query string is "
+                    "not in the chain. A failed call got a status outside 2xx."))
 
 
 def _creds_bars(records, expected, agent=None, label=None):
@@ -844,22 +928,29 @@ def _as_person_table(hits):
                     "never counted."))
 
 
-def _shared_table(hits):
+def _shared_table(hits, agent=None, label=None, broken_sessions=()):
+    """The sessions used from more than one address. The Client cell names
+    the agent by its label when the session is the agent's; the closing
+    "worth a look" aside is dropped when one of these sessions is part of a
+    broken rule (the What broke paragraph has already said so)."""
     if not hits:
         return ""
-    rows = "".join(
-        '<tr><td class="t">%s</td><td><code>%s</code></td><td><code>%s</code></td>'
-        "<td>%s</td><td>%d</td></tr>" % (
+    rows = []
+    for h in hits:
+        client = ("<td>%s</td>" % _e(label)) if (label and h["agent"] == agent) else \
+            "<td><code>%s</code></td>" % _e(h["agent"])
+        rows.append('<tr><td class="t">%s</td><td><code>%s</code></td>%s<td>%s</td><td>%d</td></tr>' % (
             _e((h.get("first_ts") or "")[:16].replace("T", " ")), _e(h["session"]),
-            _e(h["agent"]), _e(", ".join(h["ips"])), h["rows"])
-        for h in hits)
+            client, _e(", ".join(h["ips"])), h["rows"]))
+    note = ("A session the platform issued at one sign-in, later used from a different "
+            "address. The log cannot tell a proxy change from a copied or shared session; "
+            "it shows that one sign-in was used from two places.")
+    if not any(h["session"] in set(broken_sessions) for h in hits):
+        note += " Worth a look, not a finding."
     return (_h2("One session, more than one address")
             + _table(("Signed in (UTC)", "Session", "Client", "Addresses",
-                      "Rows from the other address"), rows)
-            + _note("A session the platform issued at one sign-in, later used from a different "
-                    "address. The log cannot tell a proxy change from a copied or shared session; "
-                    "it shows that one sign-in was used from two places. Worth a look, not a "
-                    "finding."))
+                      "Rows from the other address"), "".join(rows))
+            + _note(note))
 
 
 def _unusual_table(unusual):
@@ -884,6 +975,162 @@ def _cannot_section(items, routine):
     return _h2("What this source cannot show") + body
 
 
+# ---------------------------------------------------------- what broke ---
+
+def _stamp(ts):
+    """``Oct 8, 2026 23:12 UTC`` for a record timestamp, or "" when unreadable."""
+    dt = _view.ts_utc(ts)
+    if dt is None:
+        return ""
+    return "%s %02d:%02d UTC" % (_view.day_label(dt, True), dt.hour, dt.minute)
+
+
+def _short_entry(entry):
+    """``PFFSC.AccountSearchController.search`` reads ``AccountSearchController.search``:
+    a namespace prefix is dropped when the entry point has three or more parts."""
+    parts = str(entry or "").split(".")
+    return ".".join(parts[1:]) if len(parts) >= 3 else str(entry or "")
+
+
+def _counted(names):
+    """``Query Records ×2, Get Record Details ×1`` from an ordered count."""
+    return ", ".join("%s ×%d" % (n, c) for n, c in names)
+
+
+def _ordered_counts(values):
+    counts, order = {}, []
+    for v in values:
+        if not v:
+            continue
+        if v not in counts:
+            order.append(v)
+        counts[v] = counts.get(v, 0) + 1
+    return [(v, counts[v]) for v in order]
+
+
+def _is_login(rec):
+    return str((rec.get("action") or {}).get("tool") or "").startswith("salesforce:Login.")
+
+
+def session_activity(key, agent, context):
+    """What the agent's rows on session ``key`` did, from the event index:
+    ``{"rows": n, "actions": [(name, count)], "entries": [entry point]}``.
+    Rows are the agent's non-sign-in events on the session key; the action
+    names are the agent actions of the bot sessions those rows belong to
+    (an InvocableAction row names the action but carries no session key),
+    else the rows' own actions in words; the entry points are the Apex
+    entry points the session ran."""
+    rows = [e for e in context.values()
+            if e.get("token_id") == key and e.get("event_type") != "Login" and agent_key(e) == agent]
+    bot_sessions = {e.get("bot_session") for e in rows if e.get("bot_session")}
+    names = _ordered_counts(
+        e.get("repo") for e in sorted(context.values(), key=lambda e: e.get("ts") or "")
+        if e.get("bot_session") in bot_sessions and str(e.get("action") or "").startswith("Agent.")
+        and agent_key(e) == agent)
+    if not names:
+        names = _ordered_counts(_view.action_name("salesforce:%s" % e.get("action"))
+                                for e in sorted(rows, key=lambda e: e.get("ts") or ""))
+    entries = []
+    for e in sorted(rows, key=lambda e: e.get("ts") or ""):
+        if e.get("event_type") == "ApexExecution" and e.get("target"):
+            short = _short_entry(e["target"])
+            if short not in entries:
+                entries.append(short)
+    return {"rows": len(rows), "actions": names, "entries": entries}
+
+
+def broken_paragraphs(verdict, records, *, agent, label=None, context=None, shared=()):
+    """One paragraph per broken rule, built from the violating records and
+    the event index: the rule's name; when (first and last when more than
+    one); who (the credential, or the agent's own service user with its
+    masked id); from where, when the row carried an address; for a sign-in
+    rule, what the session then did and whether the same session appears in
+    the shared-session table. Returns ``[(rule_label, text)]`` and the set of
+    session keys the broken rules touched."""
+    context = context or {}
+    by_id = {r.get("record_id"): r for r in records}
+    shared_by_key = {h["session"]: h for h in shared}
+    out, sessions = [], set()
+    for rule in verdict.get("rules", []):
+        if rule.get("status") != "violated":
+            continue
+        vs = sorted((by_id[i] for i in rule.get("violators", []) if i in by_id),
+                    key=lambda r: r.get("ts") or "")
+        if not vs:
+            continue
+        parts = []
+        first, last = _stamp(vs[0].get("ts")), _stamp(vs[-1].get("ts"))
+        if len(vs) == 1:
+            parts.append(first + ".")
+        else:
+            parts.append("%s, first %s, last %s." % (_plural(len(vs), "action"), first, last))
+        cred = _credential(vs[0])
+        who = label if (label and cred == agent) else cred
+        if cred.startswith("app:bot:"):
+            ids = sorted({str((r.get("principal") or {}).get("human_id") or "") for r in vs} - {""})
+            who = "%s's own service user%s" % (who, (" (%s)" % ", ".join(ids)) if ids else "")
+        evs = [context.get(r.get("record_id")) or {} for r in vs]
+        ips = []
+        for e in evs:
+            ip = e.get("ip")
+            if ip and ip != PLATFORM_IP and ip not in ips:
+                ips.append(ip)
+        browsers = sorted({e.get("user_agent") for e in evs if e.get("user_agent")})
+        where = ""
+        if ips:
+            where = " from %s" % ", ".join(ips)
+            if browsers:
+                where += " (%s)" % ", ".join(browsers)
+        login = all(_is_login(r) for r in vs)
+        if login:
+            parts.append("%s signed in%s." % (who, where))
+            keys = []
+            for e in evs:
+                if e.get("token_id") and e["token_id"] not in keys:
+                    keys.append(e["token_id"])
+            for key in keys:
+                sessions.add(key)
+                act = session_activity(key, agent, context)
+                if act["rows"]:
+                    text = "In that session it ran %s" % _plural(act["rows"], "action")
+                    if act["actions"]:
+                        text += ": " + _counted(act["actions"])
+                    if act["entries"]:
+                        text += " — " + ", ".join(act["entries"])
+                    parts.append(text + ".")
+                else:
+                    parts.append("No other row in this export shares that session.")
+                h = shared_by_key.get(key)
+                if h:
+                    others = [ip for ip in h["ips"] if ip != h.get("first_ip")]
+                    if others:
+                        parts.append("The same session was later used from %s." % ", ".join(others))
+        else:
+            names = _ordered_counts(_view.action_name((r.get("action") or {}).get("tool")) for r in vs)
+            targets = []
+            for r in vs:
+                t = (r.get("data") or {}).get("target") if isinstance(r.get("data"), dict) else None
+                if t and t not in targets:
+                    targets.append(str(t))
+            text = "%s ran %s" % (who, _counted(names))
+            if targets:
+                text += " — " + ", ".join(targets)
+            parts.append(text + where + ".")
+            for e in evs:
+                if e.get("token_id"):
+                    sessions.add(e["token_id"])
+        out.append((rule_label(rule), " ".join(parts)))
+    return out, sessions
+
+
+def _broken_section(paragraphs):
+    if not paragraphs:
+        return ""
+    body = "".join('<p class="broke"><b>%s.</b> %s</p>' % (_e(name), _e(text)) for name, text in paragraphs)
+    return (_h2("What broke") + body
+            + _note("Rules are the account owner's; edit the list to match what this agent is permitted."))
+
+
 # ----------------------------------------------------------- the page ---
 
 _VOCAB = {
@@ -892,7 +1139,7 @@ _VOCAB = {
                "sample": "SAMPLE — synthetic export; no real account data."},
     "salesforce": {"platform": "Salesforce", "tenant": "this org",
                    "source": "Salesforce event log export",
-                   "sample": "SAMPLE — synthetic Salesforce export; no real org data."},
+                   "sample": "SAMPLE — synthetic export shaped from public sources; no real org data."},
 }
 
 
@@ -910,35 +1157,96 @@ def agent_label(key):
     return str(key)
 
 
+def bot_sessions(records):
+    """The distinct Agentforce sessions the records carry (``data.bot_session``)."""
+    return {str(r["data"]["bot_session"]) for r in records
+            if isinstance(r.get("data"), dict) and r["data"].get("bot_session")}
+
+
+def sign_ins(records, context=None):
+    """``(platform, browser)``: how many of the agent's sign-in rows came
+    through the platform (the literal "Salesforce.com IP" address, or an API
+    sign-in type) and how many from a browser or any other address. Without
+    an event index the sealed summary decides: an "API" sign-in is the
+    platform's, anything else a browser's."""
+    context = context or {}
+    platform = browser = 0
+    for r in records:
+        if not _is_login(r):
+            continue
+        e = context.get(r.get("record_id"))
+        if e is not None:
+            via_platform = e.get("ip") == PLATFORM_IP or bool(e.get("access"))
+        else:
+            summary = str(((r.get("action") or {}).get("input") or {}).get("summary") or "")
+            via_platform = " · API " in summary or summary.startswith("API ")
+        if via_platform:
+            platform += 1
+        else:
+            browser += 1
+    return platform, browser
+
+
 def summary_lines(records, matches, verdict, *, agent, tenant, own_supplied=True,
-                  as_person=(), routine=(), label=None):
+                  as_person=(), routine=(), label=None, source="github", context=None,
+                  tenant_named=True):
     """The plain lines at the top of the door page, in order: what the agent
-    did and when; rules broken (by the names the Rules row uses); credentials
-    used; calls outside the org (omitted when none); actions that look like a
-    person on the agent's session (omitted when none); and what the agent's
-    own record does not account for, or that no vendor record was supplied.
-    ``label`` stands in for the agent's key wherever it would print. Returns
-    ``(text, css_class)`` pairs."""
+    did and when; rules broken (by the names the Rules row uses); the
+    credentials or identity it acted through; calls outside the org (omitted
+    when none); actions that look like a person on the agent's session
+    (omitted when none); and what the agent's own record does not account
+    for, or that no vendor record was supplied. ``label`` stands in for the
+    agent's key wherever it would print. Returns ``(text, css_class)`` pairs.
+
+    A Salesforce page reads "<name> ran N logged actions in <tenant>'s
+    Salesforce org between A and B[ across M sessions]"; an Agentforce agent
+    acting through one identity has its sign-ins counted in the credentials
+    line; the reach line names the one host when there is one; and without a
+    vendor record the last line names the agent's own session trace as the
+    record not yet compared against."""
     times = sorted(r.get("ts") for r in records if r.get("ts"))
     when = ("between %s and %s" % (times[0][:10], times[-1][:10])) if times else "(no dated records)"
     violated = [r for r in verdict.get("rules", []) if r["status"] == "violated"]
     used = credentials(list(records) + list(routine))
     unmatched = sum(1 for m in matches if m["tier"] == "unmatched")
     name = label or agent
-    lines = [("%s acted in %s %s %s." % (name, tenant, _plural(len(records), "time"), when), "")]
+    sf = source == "salesforce"
+    bot = str(agent).startswith("app:bot:")
+    if sf:
+        org = ("%s's Salesforce org" % tenant) if tenant_named else "this Salesforce org"
+        first = "%s ran %s in %s %s" % (name, _plural(len(records), "logged action"), org, when)
+        sessions = bot_sessions(records)
+        if sessions:
+            first += " across %s" % _plural(len(sessions), "session")
+        lines = [(first + ".", "")]
+    else:
+        lines = [("%s acted in %s %s %s." % (name, tenant, _plural(len(records), "time"), when), "")]
     if violated:
         lines.append(("%s broken: %s" % (_plural(len(violated), "rule"),
                                          ", ".join(rule_label(r) for r in violated)), "bad"))
     else:
         lines.append(("No rules broken.", "ok"))
-    lines.append(("It used %s: %s." % (
-        _plural(len(used), "credential"),
-        ", ".join(name if (label and c == agent) else c
-                  for c in sorted(used, key=lambda c: -used[c]))), ""))
+    if sf and bot and len(used) == 1:
+        platform, browser = sign_ins(records, context)
+        if platform or browser:
+            lines.append(("It acted through one identity, its own service user, which signed in %s "
+                          "through the platform and %s from a browser." % (
+                              _plural(platform, "time"), _plural(browser, "time")), ""))
+        else:
+            lines.append(("It acted through one identity, its own service user. Its sign-ins are "
+                          "not in this export.", ""))
+    else:
+        lines.append(("It used %s: %s." % (
+            _plural(len(used), "credential"),
+            ", ".join(name if (label and c == agent) else c
+                      for c in sorted(used, key=lambda c: -used[c]))), ""))
     reach = callouts(records)
     if reach["count"]:
-        lines.append(("It reached outside the org %s, to %s." % (
-            _plural(reach["count"], "time"), _plural(len(reach["hosts"]), "host")), ""))
+        failed = sum(h["failed"] for h in reach["hosts"].values())
+        hosts = reach["hosts"]
+        where = next(iter(hosts)) if len(hosts) == 1 else _plural(len(hosts), "host")
+        lines.append(("It reached outside the org %s, to %s%s." % (
+            _plural(reach["count"], "time"), where, (" (%d failed)" % failed) if failed else ""), ""))
     if as_person:
         n = len(as_person)
         lines.append(("%d action%s like a person on the agent's session." % (
@@ -947,6 +1255,9 @@ def summary_lines(records, matches, verdict, *, agent, tenant, own_supplied=True
         lines.append(("%s not in the agent's own record." % (
             "1 action is" if unmatched == 1 else "%d actions are" % unmatched),
             "warn" if unmatched else "ok"))
+    elif sf and bot:
+        lines.append(("Not yet compared against %s's own session trace (Agentforce Session Tracing "
+                      "in Data 360); this page shows the platform's event log only." % name, ""))
     else:
         lines.append(("No vendor record was supplied; this page shows the platform's own log only.", ""))
     return lines
@@ -956,43 +1267,50 @@ def render_page(records, matches, verdict, *, agent, title=None, unusual=(),
                 as_person=(), expected_credentials=None, routine=(),
                 source_actions=None, own_supplied=True, sample=False, anchored=None,
                 source="github", shared=(), allowlist=None, chain=None, tenant=None,
-                prepared=None, chain_file=None, label=None):
+                prepared=None, chain_file=None, label=None, events=None, sample_note=None):
     """The door page, rendered through the Runtime Report in door mode: a
     header naming the agent in the buyer's platform, the five-line summary,
-    the agent's actions per week, the rules checked, the credentials it signed
-    in through, the comparison against its own record (when one was supplied),
-    the door's smaller tables, what the source cannot show, the agent's rows
-    in the records table, and the in-browser re-hash of the whole chain as the
-    badge near the bottom. Every value that came from the export is escaped.
+    what broke (one paragraph per broken rule, when any), the agent's actions
+    per week, the rules checked, the credentials it signed in through (unless
+    the sentence already carries the one identity), the comparison against
+    its own record (when one was supplied), the door's smaller tables, what
+    the source cannot show, the agent's rows in the records table, and the
+    in-browser re-hash of the whole chain as the badge near the bottom. Every
+    value that came from the export is escaped.
 
     ``chain`` is the whole sealed chain the export produced; the page embeds
     and verifies all of it and displays ``records`` (the one agent's rows).
     Without it, ``records`` is embedded as the chain, which verifies in the
     browser only when it is the whole chain. ``routine`` rows are sealed in
     the chain but not listed. ``own_supplied=False`` states that no vendor
-    record was supplied and drops the comparison. ``sample`` adds a banner.
-    ``anchored`` is the anchor receipt to cite, or None for none. ``tenant``
-    names the account or org; ``prepared`` is the date label in the header
-    (today, by the preparer's clock, by default); ``chain_file`` is named in the page's
-    ``halo verify`` line; ``label`` is a display name for the agent, used in the
-    heading, the summary and the credential bar in place of its key (which the
-    header meta then shows once)."""
+    record was supplied and drops the comparison. ``sample`` adds a banner,
+    and ``sample_note`` one owner-supplied clause to it. ``anchored`` is the
+    anchor receipt to cite, or None for none. ``tenant`` names the account or
+    org; ``prepared`` is the date label in the header (today, by the
+    preparer's clock, by default); ``chain_file`` is named in the page's
+    ``halo verify`` line; ``label`` is a display name for the agent, used in
+    the heading, the summary and the credential bar in place of its key
+    (which the header meta then shows once). ``events`` is the event index
+    (``event_index``) the What broke paragraphs and the sign-in count read
+    addresses and session keys from; the chain itself carries neither."""
     from . import report as _report
     voc = _VOCAB.get(source, _VOCAB["github"])
     records = list(records)
     routine = list(routine)
     chain = list(chain) if chain is not None else records
+    context = events or {}
     violated = [r for r in verdict.get("rules", []) if r["status"] == "violated"]
     bad_ids = {rid for r in violated for rid in r["violators"]}
-    tenant = tenant or next((str((r.get("subject") or {}).get("id")) for r in records
-                             if isinstance(r.get("subject"), dict) and (r.get("subject") or {}).get("id")),
-                            None) or voc["tenant"]
+    named = tenant or next((str((r.get("subject") or {}).get("id")) for r in records
+                            if isinstance(r.get("subject"), dict) and (r.get("subject") or {}).get("id")),
+                           None)
+    tenant = named or voc["tenant"]
     if prepared is None:
         prepared = _view.day_label(datetime.now(), True)   # the preparer's own date
 
     lines = summary_lines(records, matches, verdict, agent=agent, tenant=tenant,
                           own_supplied=own_supplied, as_person=as_person, routine=routine,
-                          label=label)
+                          label=label, source=source, context=context, tenant_named=bool(named))
     # Text content, not attributes: only <, > and & need escaping, so the
     # lines keep their apostrophes.
     summary = ['<li><span class="n">%d</span><span%s>%s</span></li>' % (
@@ -1005,30 +1323,35 @@ def render_page(records, matches, verdict, *, agent, title=None, unusual=(),
                    "week of records is a baseline, and what changed since the prior period "
                    "appears from the second week on." % voc["platform"])
 
+    paragraphs, broken_sessions = broken_paragraphs(verdict, records + routine, agent=agent, label=label,
+                                                    context=context, shared=shared)
+    one_identity = source == "salesforce" and len(credentials(records + routine)) == 1
+
     if source == "salesforce":
-        cannot = list(SALESFORCE_CANNOT_SHOW)
-        allow_note = (_note("Address allowlist behind <code>login-outside-allowlist</code>: "
-                            "<code>%s</code>%s" % (
-                                _e(", ".join(allowlist)),
-                                " (the sample's range; pass <code>--allow-ip</code> for yours)"
-                                if sample else ""), escape=False)
-                      if allowlist else
-                      _note("No address allowlist was supplied, so "
-                            "<code>login-outside-allowlist</code> had nothing to check.", escape=False))
+        cannot = list(SALESFORCE_CANNOT_SHOW[:1]) + list(AGENTFORCE_CANNOT_SHOW) + list(SALESFORCE_CANNOT_SHOW[1:])
+        foot_note = (_note("Address allowlist behind <code>login-outside-allowlist</code>: "
+                           "<code>%s</code>%s" % (
+                               _e(", ".join(allowlist)),
+                               " (the sample's range; pass <code>--allow-ip</code> for yours)"
+                               if sample else ""), escape=False)
+                     if allowlist else
+                     _note("No address allowlist was supplied, so "
+                           "<code>login-outside-allowlist</code> had nothing to check.", escape=False))
     else:
         gone = missing_sentence(source_actions if source_actions is not None else
                                 [(r.get("action") or {}).get("tool") for r in records + routine])
         cannot = ([gone] if gone else []) + [READS_NOTE, "Anything outside %s." % voc["platform"]]
-        allow_note = ""
+        foot_note = ""
 
     sections = "".join(x for x in (
+        _broken_section(paragraphs),
         _chart_section(records, bad_ids),
-        _rules_row(verdict, allow_note),
-        _creds_bars(records + routine, expected_credentials, agent, label),
+        _rules_row(verdict, ""),
+        "" if one_identity else _creds_bars(records + routine, expected_credentials, agent, label),
         _reach_bars(records) if source == "salesforce" else "",
         _split_bar(matches) if own_supplied else "",
         _as_person_table(as_person),
-        _shared_table(shared),
+        _shared_table(shared, agent, label, broken_sessions),
         _unusual_table(unusual),
         _cannot_section(cannot, routine),
     ) if x)
@@ -1042,15 +1365,24 @@ def render_page(records, matches, verdict, *, agent, title=None, unusual=(),
               "be re-sealed without a trace. Anchor receipt: %s. Keep the chain file in storage "
               "you control; the witness keeps the head." % receipt)
 
+    banner = ""
+    if sample:
+        text = voc["sample"]
+        note = str(sample_note or "").strip().rstrip(".")
+        if note:
+            text = text.rstrip(".") + "; " + note + "."
+        banner = '<div class="banner">%s</div>\n' % _e(text)
+
     page = _report.render(chain, door={
         "agent": agent,
         "title": title or "%s in %s's %s" % (label or agent_label(agent), tenant, voc["platform"]),
         "label": label or "",
         "prepared": prepared, "source_label": voc["source"], "chain_file": chain_file,
         "hidden": [r.get("record_id") for r in routine if r.get("record_id")],
-        "banner": ('<div class="banner">%s</div>\n' % _e(voc["sample"])) if sample else "",
+        "banner": banner,
         "summary": summary, "sections": sections,
         "every": _unmatched_fold(matches, bad_ids) if own_supplied else "",
         "source_note": source_note, "stands": stands,
+        "version_note": DOOR_RELEASE_NOTE, "foot_note": foot_note,
     })
     return _report._LONE_SURROGATE_RE.sub("�", page)

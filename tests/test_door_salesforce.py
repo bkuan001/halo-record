@@ -253,7 +253,7 @@ class TestPage(SfBase):
         self.assertIn("Anchor receipt: witness.example 2026-10-12", html)
 
     def test_sample_banner(self):
-        self.assertIn("SAMPLE — synthetic Salesforce export; no real org data.", self.page(sample=True))
+        self.assertIn("SAMPLE — synthetic export shaped from public sources; no real org data.", self.page(sample=True))
         self.assertNotIn("SAMPLE —", self.page(sample=False))
 
     def test_salesforce_cannot_show_list(self):
@@ -297,7 +297,7 @@ class TestCli(SfBase):
         self.assertIn("vendor record: none supplied", out.stdout)
         with open(os.path.join(self.tmp, "p.html"), encoding="utf-8") as fh:
             html = fh.read()
-        self.assertIn("SAMPLE — synthetic Salesforce export; no real org data.", html)
+        self.assertIn("SAMPLE — synthetic export shaped from public sources; no real org data.", html)
         self.assertIn("No vendor record was supplied", html)
         self.assertIn("One session, more than one address", html)
         self.assertNotRegex(html, r"\b(?!192\.0\.2\.|198\.51\.100\.)\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b")

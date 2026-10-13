@@ -665,6 +665,107 @@ def row(r, show_agent=False):
     )
 
 
+_URI_NAMES = {"page": "Page view", "ReportExport": "Report export", "Setup": "Setup page"}
+
+
+def action_name(tool):
+    """The door's reading of a tool id, in words: ``salesforce:Agent.Financial_
+    Account_Balances`` reads "Financial Account Balances", ``Callout.POST``
+    "POST callout", ``Login.Application`` "Sign-in (Application)",
+    ``ApexExecution.PFFSC`` "Apex PFFSC". A GitHub action keeps GitHub's own
+    name without the prefix; anything else is shown as written."""
+    t = _str(tool)
+    if t.startswith("salesforce:"):
+        fam, _, name = t[len("salesforce:"):].partition(".")
+        words = name.replace("_", " ")
+        if fam == "Agent":
+            return words or "Agent action"
+        if fam == "Callout":
+            return (name + " callout") if name else "Callout"
+        if fam == "Login":
+            return ("Sign-in (%s)" % words) if words else "Sign-in"
+        if fam == "ApexExecution":
+            return ("Apex " + name) if name else "Apex"
+        if fam == "Prompt":
+            return ("Prompt " + words) if words else "Prompt"
+        if fam == "RestApi":
+            return ("REST " + name) if name else "REST"
+        if fam == "BulkApi":
+            return ("Bulk API " + words) if words else "Bulk API"
+        if fam == "Metadata":
+            return ("Metadata " + name) if name else "Metadata"
+        if fam == "URI":
+            return _URI_NAMES.get(name, ("Page " + words) if words else "Page")
+        if fam == "ReportExport":
+            return "Report export"
+        if fam == "InvocableAction":
+            return (words + " (invocable action)") if words else "Invocable action"
+        return (fam + " " + words).strip()
+    if t.startswith("github:"):
+        return t[len("github:"):]
+    return t
+
+
+def door_row(r, show_agent=False):
+    """One row of the door page's table: Time, [Credential,] Action (in
+    words), Target (what it acted on, from the sealed ``data.target``),
+    Status (the row's own status, from ``data.status``), Findings, Hash. The
+    row's ``data-tool`` carries the action's words, so the Action filter
+    lists them."""
+    action = _dict(r.get("action"))
+    data = _dict(r.get("data"))
+    findings = _list(r.get("findings"))
+    threats = _list(r.get("threats"))
+    principal = _dict(r.get("principal"))
+    sev = _str(r.get("severity", "INFO"))
+    summary = _str((_dict(action.get("input"))).get("summary") or "")
+    short_hash = _cut(_str(_dict(r.get("integrity")).get("hash", "")), 12)
+    name = action_name(action.get("tool") or "—")
+    target = _str(data.get("target") or "")
+    status = data.get("status")
+    status = _str(status) if status is not None and status != "" else "—"
+    pills = []
+    if sev not in ("INFO", ""):
+        pills.append('<span class="pill %s" title="highest redaction-scanner finding">%s</span>'
+                     % ("warn" if sev in ("MEDIUM", "HIGH", "CRITICAL") else "neutral", esc(sev)))
+    if findings:
+        pills.append('<span class="pill warn" title="redaction patterns that matched">%d</span>'
+                     % len(findings))
+    if threats:
+        pills.append('<span class="pill warn" title="threat flags supplied with the record: %s">'
+                     '%d threat%s</span>' % (
+                         esc(", ".join(_str(_dict(t).get("type")) for t in threats)),
+                         len(threats), "" if len(threats) == 1 else "s"))
+    if not findings and not threats:
+        pills.append('<span class="pill ok" title="no redaction pattern matched and no threat '
+                     'flag supplied; not a guarantee no sensitive data is present">no flags</span>')
+    agent = _dict(r.get("agent"))
+    agent_cell = ('<td class="mono">%s</td>' % esc(show_id(_str(agent.get("name") or agent.get("id") or "—")))
+                  if show_agent else "")
+    text = plain(r)
+    haystack = " ".join(_str(x) for x in (
+        r.get("ts"), action.get("tool"), name, target, status, sev, summary, agent.get("name"),
+        short_hash, r.get("record_id"), r.get("parent_id"), principal.get("human_id"),
+        principal.get("service_account"),
+        " ".join(_str(_dict(t).get("type")) for t in threats),
+    ) if x).lower()
+    return (
+        '<tr data-ts="%s" data-tool="%s" data-type="%s" data-sev="%s"'
+        ' data-status="%s" data-flags="%d" data-rid="%s" data-text="%s"'
+        ' tabindex="0" class="rowclick" title="Click for the full record">'
+        '<td class="mono dim ts-cell">%s</td>%s<td class="act">%s</td>'
+        '<td class="mono tgt%s">%s</td><td class="mono%s">%s</td><td>%s</td>'
+        '<td class="mono dim">%s</td></tr>'
+    ) % (
+        esc(_str(r.get("ts") or "")), esc(name), esc(_str(action.get("type") or "—")), esc(sev),
+        esc(status), len(findings) + len(threats), esc(_str(r.get("record_id") or "")),
+        esc(haystack + " " + text.lower()),
+        esc(fmt_ts(r.get("ts"))), agent_cell, esc(show_id(name)),
+        "" if target else " dim", esc(show_id(target)) if target else "—",
+        "" if status != "—" else " dim", esc(status), " ".join(pills), esc(short_hash),
+    )
+
+
 MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
 
 
@@ -796,7 +897,7 @@ def regions(records, rules=None, chain_verified=True, policy_digest=None, door=N
         "cards": "" if door else cards(records, res),
         "scopes": scopes(records),
         "provenance": prov,
-        "rows": [row(r, show_agent=len(names) > 1) for r in reversed(records)],
+        "rows": [(door_row if door else row)(r, show_agent=len(names) > 1) for r in reversed(records)],
         "policy": panel_card(res, subject=label, in_page=True) if res is not None else "",
     }
 
@@ -1237,6 +1338,70 @@ var HaloView = (function(){
       (status === "ok" ? "ok" : (status === "error" || status === "denied") ? "warn" : "neutral") + '">' + esc(status) +
       "</span></td><td>" + pills.join(" ") + '</td><td class="trunc dim">' + esc(cut(text, 110)) +
       '</td><td class="mono dim">' + esc(shortHash) + "</td></tr>";
+  }
+
+  var URI_NAMES = {page: "Page view", ReportExport: "Report export", Setup: "Setup page"};
+  function actionName(tool){
+    // mirror _view.action_name
+    var t = str(tool);
+    if (t.indexOf("salesforce:") === 0){
+      var rest = t.slice("salesforce:".length), dot = rest.indexOf(".");
+      var fam = dot < 0 ? rest : rest.slice(0, dot), name = dot < 0 ? "" : rest.slice(dot + 1);
+      var words = name.split("_").join(" ");
+      if (fam === "Agent") return words || "Agent action";
+      if (fam === "Callout") return name ? name + " callout" : "Callout";
+      if (fam === "Login") return words ? "Sign-in (" + words + ")" : "Sign-in";
+      if (fam === "ApexExecution") return name ? "Apex " + name : "Apex";
+      if (fam === "Prompt") return words ? "Prompt " + words : "Prompt";
+      if (fam === "RestApi") return name ? "REST " + name : "REST";
+      if (fam === "BulkApi") return words ? "Bulk API " + words : "Bulk API";
+      if (fam === "Metadata") return name ? "Metadata " + name : "Metadata";
+      if (fam === "URI") return has(URI_NAMES, name) ? URI_NAMES[name] : (words ? "Page " + words : "Page");
+      if (fam === "ReportExport") return "Report export";
+      if (fam === "InvocableAction") return words ? words + " (invocable action)" : "Invocable action";
+      return pyStrip(fam + " " + words);
+    }
+    if (t.indexOf("github:") === 0) return t.slice("github:".length);
+    return t;
+  }
+  function doorRow(r, showAgent){
+    // mirror _view.door_row
+    var action = dict(r.action), data = dict(r.data), findings = list(r.findings), threats = list(r.threats),
+        principal = dict(r.principal), agent = dict(r.agent);
+    var sev = str(get(r, "severity", "INFO"));
+    var summary = str(or(dict(action.input).summary, ""));
+    var shortHash = cut(str(get(dict(r.integrity), "hash", "")), 12);
+    var name = actionName(or(action.tool, "—"));
+    var target = str(or(data.target, ""));
+    var status = data.status;
+    status = (status !== null && status !== undefined && status !== "") ? str(status) : "—";
+    var pills = [];
+    if (sev !== "INFO" && sev !== "")
+      pills.push('<span class="pill ' + (["MEDIUM", "HIGH", "CRITICAL"].indexOf(sev) >= 0 ? "warn" : "neutral") +
+                 '" title="highest redaction-scanner finding">' + esc(sev) + "</span>");
+    if (findings.length) pills.push('<span class="pill warn" title="redaction patterns that matched">' + findings.length + "</span>");
+    if (threats.length)
+      pills.push('<span class="pill warn" title="threat flags supplied with the record: ' +
+        esc(threats.map(function(t){ return str(dict(t).type); }).join(", ")) + '">' +
+        threats.length + " threat" + (threats.length === 1 ? "" : "s") + "</span>");
+    if (!findings.length && !threats.length)
+      pills.push('<span class="pill ok" title="no redaction pattern matched and no threat flag supplied; not a guarantee no sensitive data is present">no flags</span>');
+    var agentCell = showAgent ? '<td class="mono">' + esc(showId(str(or(agent.name, agent.id, "—")))) + "</td>" : "";
+    var text = plain(r);
+    var hay = [r.ts, action.tool, name, target, status, sev, summary, agent.name, shortHash, r.record_id,
+               r.parent_id, principal.human_id, principal.service_account,
+               threats.map(function(t){ return str(dict(t).type); }).join(" ")]
+      .filter(truthy).map(str).join(" ").toLowerCase();
+    return '<tr data-ts="' + esc(str(or(r.ts, ""))) + '" data-tool="' + esc(name) +
+      '" data-type="' + esc(str(or(action.type, "—"))) + '" data-sev="' + esc(sev) +
+      '" data-status="' + esc(status) + '" data-flags="' + (findings.length + threats.length) +
+      '" data-rid="' + esc(str(or(r.record_id, ""))) + '" data-text="' + esc(hay + " " + text.toLowerCase()) +
+      '" tabindex="0" class="rowclick" title="Click for the full record">' +
+      '<td class="mono dim ts-cell">' + esc(fmtTs(r.ts)) + "</td>" + agentCell +
+      '<td class="act">' + esc(showId(name)) + "</td>" +
+      '<td class="mono tgt' + (target ? "" : " dim") + '">' + (target ? esc(showId(target)) : "—") + "</td>" +
+      '<td class="mono' + (status !== "—" ? "" : " dim") + '">' + esc(status) + "</td>" +
+      "<td>" + pills.join(" ") + '</td><td class="mono dim">' + esc(shortHash) + "</td></tr>";
   }
 
   /*POLICY-BEGIN*/
@@ -1714,8 +1879,8 @@ var HaloView = (function(){
     var invalid = hasRules && typeof validatePolicy === "function" ? validatePolicy(rules) : null;
     var res = (hasRules && !invalid && typeof evaluate === "function")
       ? evaluate(records, rules, chainVerified, rulesDigest) : null;
-    var rows = [];
-    for (var i = records.length - 1; i >= 0; i--) rows.push(row(records[i], names.length > 1));
+    var rows = [], rowOf = door ? doorRow : row;
+    for (var i = records.length - 1; i >= 0; i--) rows.push(rowOf(records[i], names.length > 1));
     // door mode (mirror _view.regions): the header meta is the period, the
     // export kind and the prepared date; no tiles; the vendor-telemetry note is off.
     var meta = door ? doorMeta(records, door)

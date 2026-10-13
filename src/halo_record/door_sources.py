@@ -12,9 +12,12 @@ work unchanged:
     ts, action, actor, repo (the target), access, app, token_id, user_agent
 
 plus, for this source: ``ip``, ``event_type``, ``user_id``, ``login_type``,
-``detail`` (the one-line summary that is sealed) and ``raw_hash`` (SHA-256 of
-the whole CSV row, sealed in place of the row itself; session keys, query
-text and addresses are never written to the chain).
+``target`` (what the row acted on: an entry point, a URI, a URL, a report),
+``status`` (the row's own status: a login status, an HTTP status code, a
+request status), ``bot_session`` (BOT_SESSION_IDENTIFIER, one Agentforce
+conversation), ``detail`` (the one-line summary that is sealed) and
+``raw_hash`` (SHA-256 of the whole CSV row, sealed in place of the row itself;
+session keys, query text and addresses are never written to the chain).
 
 Attribution: ``CLIENT_NAME`` (or ``CONNECTED_APP_ID``) names the connected
 app; ``BOT_IDENTIFIER`` (on InvocableAction, ApexExecution and ApexCallout
@@ -117,6 +120,7 @@ def _normalize(row, event_type, allowlist=None):
         "token_id": _get(row, "LOGIN_KEY", "SESSION_KEY"),
         "ip": _get(row, "SOURCE_IP", "CLIENT_IP"),
         "app": None, "access": None, "user_agent": None, "login_type": None,
+        "target": None, "status": None, "bot_session": None,
         "raw_hash": _row_hash(row),
     }
     if event_type == "Login":
@@ -134,6 +138,7 @@ def _normalize(row, event_type, allowlist=None):
         else:
             base["action"] = "Login.%s" % (_slug(login_type) or "unknown")
         base["repo"] = _get(row, "LOGIN_STATUS")
+        base["status"] = base["repo"]
         base["access"] = _get(row, "API_TYPE")
         base["user_agent"] = _get(row, "BROWSER_TYPE")
         base["detail"] = " · ".join(x for x in (
@@ -153,6 +158,8 @@ def _normalize(row, event_type, allowlist=None):
         base["action"] = action
         base["app"] = _get(row, "CLIENT_NAME", "CONNECTED_APP_ID")
         base["repo"] = _get(row, "ENTITY_NAME") or uri or None
+        base["target"] = uri or base["repo"]
+        base["status"] = _get(row, "STATUS_CODE")
         base["access"] = "REST"
         base["user_agent"] = _get(row, "USER_AGENT")
         rows = _get(row, "ROWS_PROCESSED")
@@ -166,7 +173,9 @@ def _normalize(row, event_type, allowlist=None):
             "ApexExecution.%s" % (_slug(head) or "unknown")
         bot = _get(row, "BOT_IDENTIFIER")
         base["app"] = "bot:%s" % bot if bot else None
+        base["bot_session"] = _get(row, "BOT_SESSION_IDENTIFIER")
         base["repo"] = entry or None
+        base["target"] = entry or None
         base["access"] = None   # a person's click runs Apex too: attribute by bot or session only
         soql = _get(row, "NUMBER_SOQL_QUERIES")
         base["detail"] = " · ".join(x for x in (
@@ -181,11 +190,14 @@ def _normalize(row, event_type, allowlist=None):
         else:
             base["action"] = "URI.page"
         base["repo"] = uri or None
+        base["target"] = uri or None
         status = _get(row, "REQUEST_STATUS")
+        base["status"] = status
         base["detail"] = " · ".join(x for x in (uri or None, status) if x)
     elif event_type == "ReportExport":
         base["action"] = "ReportExport.export"
         base["repo"] = _get(row, "REPORT_ID")
+        base["target"] = base["repo"]
         base["detail"] = " · ".join(x for x in ("report export", base["repo"]) if x)
     elif event_type == "InvocableAction":
         # One row per action call. INVOCATION_SOURCE says who asked: an agent
@@ -202,7 +214,12 @@ def _normalize(row, event_type, allowlist=None):
         else:
             base["action"] = "InvocableAction.%s" % (_slug(name) or "unknown")
         base["app"] = "bot:%s" % bot if bot else None
+        base["bot_session"] = _get(row, "BOT_SESSION_IDENTIFIER")
         base["repo"] = name
+        # What the action ran: its Apex class, the prompt template, or the
+        # kind of flow when the row names nothing more specific.
+        base["target"] = (_get(row, "INVOKING_APEX_CLASS_NAME") or template
+                          or _get(row, "FLOW_PROCESS_TYPE"))
         base["detail"] = " · ".join(x for x in (
             source or None, name, template and ("template %s" % template),
             _get(row, "INVOKING_APEX_CLASS_NAME"), _get(row, "FLOW_PROCESS_TYPE"),
@@ -217,7 +234,10 @@ def _normalize(row, event_type, allowlist=None):
         status = _get(row, "STATUS_CODE")
         base["action"] = "Callout.%s" % method
         base["app"] = "bot:%s" % bot if bot else None
+        base["bot_session"] = _get(row, "BOT_SESSION_IDENTIFIER")
         base["repo"] = url or None
+        base["target"] = url or None
+        base["status"] = status
         base["detail"] = " · ".join(x for x in (
             "%s %s" % (method, url) if url else method, status,
             ("bot %s" % bot) if bot else None) if x)

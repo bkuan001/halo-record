@@ -439,7 +439,7 @@ def build(action_type, category, tool=None, tool_input=None, *,
           approver=None, findings=None, outcome=None, ts=None,
           subject=None, source=None, authority=None, summaries=True,
           principal=None, parent_id=None, threats=None, data=None,
-          verification=None):
+          verification=None, entropy=True):
     """Construct a v0.1 record (without integrity.hash filled in).
 
     ``tool_input`` is hashed (canonical) and, by default, a redacted summary is
@@ -477,7 +477,14 @@ def build(action_type, category, tool=None, tool_input=None, *,
     moment it ran (``status`` of allowed | blocked | modified | unverified,
     plus optional ``verifier`` / ``policy_ref`` / ``checked_at``) — sealed
     as supplied, the reporting layer's claim, never adjudicated by Halo; an
-    absent block means no verification claim was made. ``outcome["status"]``,
+    absent block means no verification claim was made. ``entropy=False`` says
+    the input, outcome and ``data`` are enumerated identifiers read from a
+    platform's own log (action names, entry points, URLs, status codes), not
+    free text: the high-entropy catch-all, which reads a long mixed path or
+    class name as a secret, is skipped for this record, while every named
+    secret and personal-data pattern still masks and flags. The chain's own
+    ingest (``halo door``) sets it; an integration recording tool arguments
+    leaves the default. ``outcome["status"]``,
     when present, must be ``ok``, ``error`` or ``denied``; any other value
     raises ValueError before anything is sealed.
     """
@@ -554,7 +561,7 @@ def build(action_type, category, tool=None, tool_input=None, *,
             # bytes, object reprs, credential-bearing URL paths) are caught by a
             # final pass over the rendered summary.
             inp["summary"] = mask_known_secrets(
-                _summary_window(str(redact_fields(tool_input))))[:200]
+                _summary_window(str(redact_fields(tool_input, _entropy=entropy))))[:200]
         action["input"] = inp
 
     # Normalize the outcome up front so its summary is redacted before it is
@@ -584,7 +591,8 @@ def build(action_type, category, tool=None, tool_input=None, *,
             outcome = kept
         else:
             if outcome_summary_raw is not None:
-                outcome["summary"] = redact_text(_summary_window(outcome_summary_raw))[:200]
+                outcome["summary"] = redact_text(_summary_window(outcome_summary_raw),
+                                                 entropy=entropy)[:200]
             h = outcome.get("hash")
             if h is not None and not (isinstance(h, str) and _OUTCOME_HASH_RE.fullmatch(h)):
                 outcome.pop("hash")  # only a hash-shaped value is kept under that name
@@ -593,17 +601,17 @@ def build(action_type, category, tool=None, tool_input=None, *,
         findings = []
         seen = set()
         if tool_input is not None:
-            findings += scan_fields(tool_input, _seen=seen)
+            findings += scan_fields(tool_input, _entropy=entropy, _seen=seen)
         if outcome_scan is not None:
-            findings += scan_fields(outcome_scan, _seen=seen)
+            findings += scan_fields(outcome_scan, _entropy=entropy, _seen=seen)
         elif outcome_summary_raw is not None:
-            findings += scan(outcome_summary_raw)
+            findings += scan(outcome_summary_raw, entropy=entropy)
         if outcome_custom is not None:
-            findings += scan_fields(outcome_custom, _seen=seen)
+            findings += scan_fields(outcome_custom, _entropy=entropy, _seen=seen)
         if isinstance(data, dict):
             data_custom = {k: v for k, v in data.items() if k not in ("pii_types", "cross_region")}
             if data_custom:
-                findings += scan_fields(_canon_safe(data_custom), _seen=seen)
+                findings += scan_fields(_canon_safe(data_custom), _entropy=entropy, _seen=seen)
     findings = findings or []
     if not summaries:
         # Hash-only records carry finding types and severities, never excerpts.
@@ -657,7 +665,7 @@ def build(action_type, category, tool=None, tool_input=None, *,
         record["data"] = data_block
     if outcome is not None:
         record["outcome"] = outcome
-    _scrub_fields(record)
+    _scrub_fields(record, entropy=entropy)
     if not summaries:
         _pseudonymize_ids(record)
     # Final guard: a caller-supplied value (a float score in data/outcome, say)
@@ -691,7 +699,7 @@ def _valid_ts(ts):
     return _now()
 
 
-def _scrub_fields(record):
+def _scrub_fields(record, entropy=True):
     def walk(node, path):
         if isinstance(node, dict):
             out = {}
@@ -726,7 +734,9 @@ def _scrub_fields(record):
                 return node  # a UUID or hex id carries no secret; patterns can misfire on it
             if path in _IDENTITY_PATHS or (path and path[0] == "principal"):
                 return mask_secrets_only(node)
-            return mask_known_secrets(node) if _identifier_like(path) else redact_text(node)
+            if _identifier_like(path) or not entropy:
+                return mask_known_secrets(node)   # named patterns only; no catch-all
+            return redact_text(node)
         return node
     scrubbed = walk(record, ())
     record.clear()
@@ -774,10 +784,13 @@ _OPAQUE_ID = re.compile(
 
 
 def _identifier_like(path):
-    """Identifier-shaped fields (ids, versions, refs) skip the high-entropy
-    catch-all, which would mangle legitimate opaque identifiers."""
+    """Identifier-shaped fields (ids, versions, refs, the tool name) skip the
+    high-entropy catch-all, which would mangle legitimate opaque identifiers.
+    A tool name is an enumerated identifier the integration or a log parser
+    supplies (``getUserProfile``, ``salesforce:Agent.Schedule_Payment``), never
+    argument text; named secret formats in it are still masked."""
     return path[-1] in ("id", "session_id", "parent_id", "version", "ref", "policy_ref") or \
-        path[:1] in (("agent",), ("threats",))
+        path[:1] in (("agent",), ("threats",)) or path == ("action", "tool")
 
 
 def _complete_record(line):

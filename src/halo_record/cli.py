@@ -458,7 +458,8 @@ def _cmd_door(args):
                                   shared=shared, allowlist=allowlist, chain=all_recs,
                                   tenant=args.subject,
                                   chain_file=_os.path.basename(args.chain),
-                                  label=args.label))
+                                  label=args.label, events=door.event_index(events, all_recs),
+                                  sample_note=args.sample_note))
     tiers = Counter(m["tier"] for m in matches)
     line = "%d actions by %s | rules broken: %d | " % (len(recs), args.agent, verdict["violations"])
     if args.own:
@@ -692,6 +693,9 @@ def main(argv=None):
     p_door.add_argument("--allow-ip", action="append", metavar="CIDR",
                         help="salesforce: an address range the integration may sign in from "
                              "(repeatable; default: the sample fixture's 192.0.2.0/24)")
+    p_door.add_argument("--sample-note", metavar="TEXT", default=None,
+                        help="one clause the owner adds to the SAMPLE banner, e.g. what the "
+                             "synthetic export was shaped after")
     p_door.add_argument("--sample", action="store_true",
                         help="mark the page SAMPLE (synthetic data); automatic for the bundled fixture")
     p_door.add_argument("--chain", default="door.jsonl",
