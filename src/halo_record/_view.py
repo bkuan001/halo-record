@@ -665,18 +665,54 @@ def row(r, show_agent=False):
     )
 
 
-def cards(records, policy_result=None, door=False):
-    """The headline tiles. In door mode (a buyer reading one outside agent's
-    rows from their own platform's log) only Actions and Tools are headline
-    numbers: scopes and redaction severities describe the vendor's recorder,
-    and findings stay in each row and its drawer."""
+MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+
+
+def day_label(dt, year):
+    """``Jun 11`` or, with ``year``, ``Jun 11, 2026``."""
+    s = "%s %d" % (MONTHS[dt.month - 1], dt.day)
+    return s + (", %d" % dt.year) if year else s
+
+
+def date_range(first, last):
+    """A span of dates as a reader writes it: ``Oct 10, 2026`` for one day,
+    ``Jun 11 &ndash; Sep 13, 2026`` within a year, both years otherwise."""
+    if (first.year, first.month, first.day) == (last.year, last.month, last.day):
+        return day_label(first, True)
+    if first.year == last.year:
+        return "%s &ndash; %s" % (day_label(first, False), day_label(last, True))
+    return "%s &ndash; %s" % (day_label(first, True), day_label(last, True))
+
+
+def door_meta(records, door):
+    """The door page's header meta: the period the agent's rows span with its
+    day count, the kind of export the page was made from, and the date the
+    page was prepared (both labels carried in the door config)."""
+    times = sorted(t for t in (ts_utc(r.get("ts")) for r in records) if t is not None)
+    if times:
+        first, last = times[0], times[-1]
+        days = (last.date() - first.date()).days + 1
+        out = "<div>%s &middot; <b>%d day%s</b></div>" % (date_range(first, last), days,
+                                                           "" if days == 1 else "s")
+    else:
+        out = "<div>No dated records</div>"
+    out += "<div>Source <b>%s</b></div>" % esc(_str(door.get("source_label") or "export"))
+    if door.get("label"):
+        # A display name stands in for the key elsewhere; the key shows here.
+        out += '<div>Agent key <b class="mono">%s</b></div>' % esc(show_id(_str(door.get("agent") or "")))
+    prepared = _str(door.get("prepared") or "")
+    if prepared:
+        out += "<div>Prepared <b>%s</b></div>" % esc(prepared)
+    return out
+
+
+def cards(records, policy_result=None):
+    """The headline tiles of the vendor's Runtime Report."""
     st = stats(records)
     out = [
         '<div class="card"><div class="n">%d</div><div class="l">Actions</div></div>' % st["total"],
         '<div class="card"><div class="n">%d</div><div class="l">Tools</div></div>' % len(st["tools"]),
     ]
-    if door:
-        return "".join(out)
     out += [
         '<div class="card"><div class="n">%d</div><div class="l">Scopes</div></div>' % len(st["scopes"]),
         '<div class="card" title="records whose redaction-scanner severity is MEDIUM or higher">'
@@ -734,30 +770,30 @@ PROV_NOTE_MARK = '<div class="note prov-note">'
 def regions(records, rules=None, chain_verified=True, policy_digest=None, door=None):
     """Every record-derived region of the report page, as HTML strings.
 
-    ``door`` (``{"who": ..., "agent": ...}``) renders the regions for the
-    door page: ``records`` are already the one outside agent's rows, the
-    header names that agent by the key the buyer isolated (the rows' own
-    agent names are its credentials), the tiles are Actions and Tools, and
-    the provenance note about the vendor's telemetry is left off."""
+    ``door`` (``{"agent": ..., "prepared": ..., "source_label": ...}``)
+    renders the regions for the door page: ``records`` are already the one
+    outside agent's rows, the header meta is the period they span, the kind
+    of export and the prepared date (``door_meta``), there are no tiles, and
+    the provenance note about the vendor's telemetry is left off. The door's
+    heading is a label the door supplies, set by the caller."""
     from .policy import panel_card
     names = agents(records)
     res = policy_result(records, rules, chain_verified, policy_digest)
     label = subject_label(records)
     if door:
-        who = "%s <b>%s</b>" % (esc(_str(door.get("who") or "Agent")),
-                                 esc(show_id(_str(door.get("agent") or ""))))
+        meta = door_meta(records, door)
     else:
-        who = agent_meta(names)
+        meta = '%s &middot; <b>%d</b> recorded actions' % (agent_meta(names), len(records))
     prov = provenance(records)
     if door and PROV_NOTE_MARK in prov:
         prov = prov[:prov.index(PROV_NOTE_MARK)]
     return {
         "title": label,
         "h1": esc(label),
-        "meta": '%s &middot; <b>%d</b> recorded actions' % (who, len(records)),
+        "meta": meta,
         "subject_note": subject_note(records),
         "period": period(records),
-        "cards": cards(records, res, door=bool(door)),
+        "cards": "" if door else cards(records, res),
         "scopes": scopes(records),
         "provenance": prov,
         "rows": [row(r, show_agent=len(names) > 1) for r in reversed(records)],
@@ -1632,7 +1668,31 @@ var HaloView = (function(){
       esc(FOOT_PAGE) + " <b>No model judgment.</b></span><span>" + subj + "</span></div></div>";
   }
   /*POLICY-END*/
-  function cards(records, res, door){
+  var MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  function dayLabel(t, year){ var s = MONTHS[t.mo - 1] + " " + t.d; return year ? s + ", " + t.y : s; }
+  function dateRange(a, b){
+    if (a.y === b.y && a.mo === b.mo && a.d === b.d) return dayLabel(a, true);
+    if (a.y === b.y) return dayLabel(a, false) + " &ndash; " + dayLabel(b, true);
+    return dayLabel(a, true) + " &ndash; " + dayLabel(b, true);
+  }
+  function doorMeta(records, door){
+    // mirror _view.door_meta
+    var times = [];
+    records.forEach(function(r){ var t = tsUtc(r.ts); if (t) times.push(t); });
+    times.sort(cmpTs);
+    var out;
+    if (times.length){
+      var a = times[0], b = times[times.length - 1];
+      var days = Math.round((Date.UTC(b.y, b.mo - 1, b.d) - Date.UTC(a.y, a.mo - 1, a.d)) / 86400000) + 1;
+      out = "<div>" + dateRange(a, b) + " &middot; <b>" + days + " day" + (days === 1 ? "" : "s") + "</b></div>";
+    } else out = "<div>No dated records</div>";
+    out += "<div>Source <b>" + esc(str(or(door.source_label, "export"))) + "</b></div>";
+    if (truthy(door.label)) out += '<div>Agent key <b class="mono">' + esc(showId(str(or(door.agent, "")))) + "</b></div>";
+    var prepared = str(or(door.prepared, ""));
+    if (prepared) out += "<div>Prepared <b>" + esc(prepared) + "</b></div>";
+    return out;
+  }
+  function cards(records, res){
     var st = stats(records), nflag = 0, nlow = 0;
     records.forEach(function(r){
       if (["MEDIUM", "HIGH", "CRITICAL"].indexOf(r.severity) >= 0) nflag++;
@@ -1640,7 +1700,6 @@ var HaloView = (function(){
     });
     var out = '<div class="card"><div class="n">' + st.total + '</div><div class="l">Actions</div></div>' +
       '<div class="card"><div class="n">' + st.ntools + '</div><div class="l">Tools</div></div>';
-    if (door) return out;
     out += '<div class="card"><div class="n">' + st.scopes.length + '</div><div class="l">Scopes</div></div>' +
       '<div class="card" title="records whose redaction-scanner severity is MEDIUM or higher"><div class="n">' + nflag +
       '</div><div class="l">Flagged (MEDIUM+)</div></div>' +
@@ -1657,20 +1716,20 @@ var HaloView = (function(){
       ? evaluate(records, rules, chainVerified, rulesDigest) : null;
     var rows = [];
     for (var i = records.length - 1; i >= 0; i--) rows.push(row(records[i], names.length > 1));
-    // door mode (mirror _view.regions): the header names the agent the buyer
-    // isolated, the tiles are Actions and Tools, the vendor-telemetry note is off.
-    var who = door ? esc(str(or(door.who, "Agent"))) + " <b>" + esc(showId(str(or(door.agent, "")))) + "</b>"
-                   : agentMeta(names);
+    // door mode (mirror _view.regions): the header meta is the period, the
+    // export kind and the prepared date; no tiles; the vendor-telemetry note is off.
+    var meta = door ? doorMeta(records, door)
+                    : agentMeta(names) + " &middot; <b>" + records.length + "</b> recorded actions";
     var prov = provenance(records), mark = '<div class="note prov-note">';
     if (door && prov.indexOf(mark) >= 0) prov = prov.slice(0, prov.indexOf(mark));
     return {
       title: label,
       h1: esc(label),
-      meta: who + " &middot; <b>" + records.length + "</b> recorded actions",
+      meta: meta,
       subject_note: subjectNote(records),
       period: '<span class="period-l">Records span</span> <b>' + esc(st.start) + "</b> &ndash; <b>" + esc(st.end) +
               '</b> <span class="period-tz">UTC</span>',
-      cards: cards(records, res, !!door),
+      cards: door ? "" : cards(records, res),
       scopes: st.scopes.map(function(s){ return '<span class="pill">' + esc(showId(s)) + "</span>"; }).join("") ||
               '<span class="dim">none</span>',
       provenance: prov,

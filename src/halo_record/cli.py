@@ -456,7 +456,9 @@ def _cmd_door(args):
                                   source_actions=[e.get("action") for e in events],
                                   own_supplied=bool(args.own), sample=sample, source=source,
                                   shared=shared, allowlist=allowlist, chain=all_recs,
-                                  tenant=args.subject))
+                                  tenant=args.subject,
+                                  chain_file=_os.path.basename(args.chain),
+                                  label=args.label))
     tiers = Counter(m["tier"] for m in matches)
     line = "%d actions by %s | rules broken: %d | " % (len(recs), args.agent, verdict["violations"])
     if args.own:
@@ -681,6 +683,8 @@ def main(argv=None):
                         help="export format (default: auto; a directory or .csv reads as salesforce)")
     p_door.add_argument("--agent", help="the client to report on, e.g. 'app:NAME' or "
                         "'token:ID' (omit to list the clients in the export)")
+    p_door.add_argument("--label", help="a display name for the agent on the page (the key "
+                                        "still selects its rows and is shown in the header)")
     p_door.add_argument("--own", help="the agent's own Halo log, to line its actions up against")
     p_door.add_argument("--rules", "--policy", dest="rules", default=None,
                         help="rules file or bundled pack name (default: github-default, or "

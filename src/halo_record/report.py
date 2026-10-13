@@ -416,7 +416,7 @@ async function haloBind(records, cfg){
   const door = (cfg.door && typeof cfg.door === "object") ? cfg.door : null;
   const shown = door ? records.filter(function(r){ return haloDoorKeeps(r, door); }) : records;
   const R = HaloView.regions(shown, rules, chainOk, digest, door);
-  if (door){ R.title = String(door.title || R.title); R.h1 = haloEsc(R.title); }
+  if (door){ R.title = String(door.title || R.title); R.h1 = HaloView.esc(R.title); }
   let policy = "none";
   if (polErr !== null){
     R.policy = "<div class='verdict fail'>Policy verdict withheld &mdash; the policy embedded in this page " +
@@ -603,10 +603,10 @@ function haloDoorKeeps(r, door){
               "records; the page's styling and any added content are not checked &mdash; " +
               "run <span class='mono'>halo verify</span> on the JSONL for evidence.";
       if (bound.door)
-        shown = " Of these, " + bound.shown + " are this agent's and are listed below; the rest are other " +
+        shown = " Of these, " + bound.shown + " are this agent's and are listed above; the rest are other " +
           "clients' actions in the same export, sealed in the same chain. This page's scripts " +
-          "re-rendered the table and tiles from the verified records; the summary and detail " +
-          "sections were computed when the page was generated, and the page's styling and any " +
+          "re-rendered the header and the table from the verified records; the summary, chart and " +
+          "detail sections were computed when the page was generated, and the page's styling and any " +
           "added content are not checked &mdash; " +
           "run <span class='mono'>halo verify</span> on the JSONL for evidence.";
       if (bound.policy === "ok")
@@ -622,6 +622,10 @@ function haloDoorKeeps(r, door){
       el.innerHTML = "&#10003; Verified in your browser — records " + WINDOW.first +
         "&ndash;" + WINDOW.last + " of " + WINDOW.total +
         ", window chain intact from its anchor to window head <span class='mono'>" +
+        res.head.slice(0,16) + "&hellip;</span>." + shown + limit;
+    } else if (bound && bound.door){
+      el.innerHTML = "<span class='k'>Checked in your browser.</span> All " + records.length +
+        " records in this export were re-hashed on load and match the sealed chain, head <span class='mono'>" +
         res.head.slice(0,16) + "&hellip;</span>." + shown + limit;
     } else {
       el.innerHTML = "&#10003; Verified in your browser — " + records.length +
@@ -1248,30 +1252,151 @@ border-radius:10px;padding:11px 14px}
 footer{margin-top:42px;color:var(--dim);font-size:12px;text-align:center}
 footer a{color:var(--gold);text-decoration:none}
 @media(max-width:720px){.cards{grid-template-columns:repeat(2,1fr)}h1{font-size:36px}}
-/* Door mode: the buyer's page. A banner for synthetic data, the five-line
-   summary above the verdict, and the door's detail sections folded below. */
-.banner{background:var(--warn);color:#fff;font-weight:600;padding:8px 14px;border-radius:8px;
-margin:0 0 18px;letter-spacing:.02em}
-.door-summary{background:#fff;border:1px solid var(--line);border-left:4px solid var(--gold);
-border-radius:12px;padding:14px 20px;margin:0 0 22px;font-size:15px}
-.door-summary ol{margin:0;padding-left:20px}.door-summary li{margin:4px 0}
-.door-summary .bad{color:var(--fail);font-weight:600}.door-summary .ok{color:var(--ok)}
-.door-summary .warn{color:var(--warn)}
-details.door-sec{background:#fff;border:1px solid var(--line);border-radius:12px;
-padding:10px 18px;margin:0 0 10px}
-details.door-sec summary{cursor:pointer;font-weight:600;font-size:15px;padding:4px 0}
-details.door-sec .sub{color:var(--dim);font-size:13px;margin:6px 0 10px}
-details.door-sec .door-scroll{overflow-x:auto;margin:0 0 8px}
-details.door-sec table{min-width:0;font-size:13px}
-details.door-sec th{position:static;background:transparent}
-details.door-sec td.t{font-variant-numeric:tabular-nums;white-space:nowrap}
-details.door-sec .bad{color:var(--fail)}details.door-sec .warn{color:var(--warn)}
-details.door-sec .ok{color:var(--ok)}
-details.door-sec ul{margin:6px 0 8px 18px;padding:0}details.door-sec li{margin:3px 0}
-.door-sections{margin:0 0 30px}
-.note.door-note{margin:0 0 30px}
 """
 
+# The door's own sheet: the buyer's page is a sheet of paper, not a dashboard.
+# Warm paper tokens on :root, a dark theme by media query (opt-out with
+# data-theme="light") and by data-theme="dark"; one sans face and a mono face
+# for identifiers, hashes and timestamps only; hairline rules; no tiles, pills
+# or card borders. Named fonts fall back to the system's: nothing is fetched.
+_DOOR_STYLE = """
+:root{--paper:#F7F5F0;--ink:#1E1C19;--muted:#6E685F;--rule:#DDD7CC;--rule-soft:#ECE7DD;
+--amber:#B07A17;--amber-soft:#F5E9CF;--bad:#A83E2E;--ok:#3F6E52;--bar:#D9CFBC;--bar-strong:#B07A17;
+--warn:#9A5B00;--field:#FFFFFF;
+--sans:"Hanken Grotesk",system-ui,-apple-system,"Segoe UI",sans-serif;
+--mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,monospace}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){color-scheme:dark;
+--paper:#191816;--ink:#ECE8E0;--muted:#A39C90;--rule:#3A3731;--rule-soft:#2A2825;
+--amber:#DDA847;--amber-soft:#3A2F15;--bad:#E27E6B;--ok:#92C4A2;--bar:#48423A;--bar-strong:#DDA847;
+--warn:#8A5A10;--field:#211F1C}}
+:root[data-theme="dark"]{color-scheme:dark;
+--paper:#191816;--ink:#ECE8E0;--muted:#A39C90;--rule:#3A3731;--rule-soft:#2A2825;
+--amber:#DDA847;--amber-soft:#3A2F15;--bad:#E27E6B;--ok:#92C4A2;--bar:#48423A;--bar-strong:#DDA847;
+--warn:#8A5A10;--field:#211F1C}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);font-size:15.5px;
+line-height:1.5;padding:40px 16px 72px;-webkit-font-smoothing:antialiased}
+.wrap{max-width:820px;margin:0 auto}
+.banner{background:var(--warn);color:#fff;font-weight:600;padding:8px 14px;border-radius:6px;
+margin:0 0 18px;letter-spacing:.02em}
+header.door-head{display:grid;grid-template-columns:1fr auto;gap:10px 24px;align-items:end;
+padding-bottom:16px;border-bottom:1px solid var(--ink)}
+.brand{font-size:12.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted)}
+h1{font-size:27px;font-weight:600;line-height:1.15;margin:6px 0 0;text-wrap:balance;overflow-wrap:anywhere}
+.meta{text-align:right;font-size:13.5px;color:var(--muted);line-height:1.5}
+.meta b{color:var(--ink);font-weight:500}
+#r-subject-note .meta{text-align:left;margin-top:4px}
+.mono{font-family:var(--mono);font-size:.92em}
+.dim{color:var(--muted)}
+code{font-family:var(--mono);font-size:.92em}
+.facts{margin:24px 0 0;padding:0;list-style:none;display:grid;gap:8px;font-size:17px;line-height:1.4}
+.facts li{display:grid;grid-template-columns:1.6em 1fr;gap:8px}
+.facts .n{font-family:var(--mono);font-size:13.5px;color:var(--muted);padding-top:4px}
+.facts .bad{color:var(--bad);font-weight:500}
+.facts .ok{color:var(--ok)}
+h2{font-size:12.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);font-weight:500;
+margin:34px 0 10px;text-wrap:balance}
+svg.weeks{display:block;width:100%;height:auto}
+.legend{display:flex;gap:16px;flex-wrap:wrap;font-size:12.5px;color:var(--muted);margin-top:6px}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;vertical-align:-1px}
+.rulesrow{display:flex;flex-wrap:wrap;gap:6px 18px;font-size:14.5px}
+.rulesrow span::before{content:"";display:inline-block;width:8px;height:8px;border-radius:50%;
+margin-right:7px;background:var(--ok);vertical-align:1px}
+.rulesrow span.v{color:var(--bad);font-weight:500}.rulesrow span.v::before{background:var(--bad)}
+.rulesrow span.u{color:var(--muted)}.rulesrow span.u::before{background:var(--bar)}
+.hbar{display:grid;grid-template-columns:150px 1fr 36px;align-items:center;gap:10px;font-size:14px;margin:6px 0}
+.hbar>span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hbar .t{height:10px;background:var(--bar);border-radius:2px;overflow:hidden}
+.hbar .t i{display:block;height:100%;background:var(--bar-strong)}
+.hbar .n{text-align:right;font-variant-numeric:tabular-nums;color:var(--muted)}
+.hbar .v{color:var(--bad);font-weight:500}
+.hbar.host{grid-template-columns:150px 1fr auto}
+.hbar .f{color:var(--bad);font-size:12.5px;margin-left:6px;font-variant-numeric:tabular-nums}
+.split{height:12px;border-radius:3px;overflow:hidden;display:flex;margin-top:4px}
+.split i{display:block;height:100%}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th{text-align:left;font-weight:500;color:var(--muted);font-size:12.5px;padding:6px 8px 6px 0;
+border-bottom:1px solid var(--rule)}
+td{padding:8px 8px 8px 0;border-bottom:1px solid var(--rule-soft);vertical-align:top}
+td.t{white-space:nowrap;color:var(--muted);font-family:var(--mono);font-size:12.5px}
+td code{font-size:12.5px}
+.door-scroll{overflow-x:auto}
+.bad{color:var(--bad);font-weight:500}.ok{color:var(--ok)}
+.note{font-size:13.5px;color:var(--muted);margin:8px 0 0}
+.cannot{margin:0;padding-left:18px;font-size:14.5px}.cannot li{margin:5px 0}
+details.door-sec{margin:0 0 14px}
+details.door-sec summary{cursor:pointer;color:var(--muted);font-size:13.5px;list-style:none}
+details.door-sec summary::-webkit-details-marker{display:none}
+details.door-sec summary::before{content:"+ ";font-family:var(--mono)}
+details.door-sec[open] summary::before{content:"\\2013 "}
+details.door-sec .note{margin:6px 0 10px}
+details.door-sec table{font-size:13px}
+details.door-sec tr.bad td{color:var(--bad)}
+/* The records table and its controls, as the Runtime Report renders them. */
+.filters{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:0 0 12px}
+.filters input[type=search],.filters select,.filters input[type=datetime-local]{
+font:inherit;font-size:13px;color:var(--ink);background:var(--field);
+border:1px solid var(--rule);border-radius:4px;padding:6px 9px;max-width:100%}
+.filters .f-grow{flex:1 1 220px;min-width:160px}
+.filters input[type=search]:focus,.filters select:focus,
+.filters input[type=datetime-local]:focus,.f-btn:focus-visible{
+outline:2px solid var(--amber);outline-offset:1px}
+.f-lab,.f-check{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)}
+.f-btn{font:inherit;font-size:12px;color:var(--ink);background:var(--field);cursor:pointer;
+border:1px solid var(--rule);border-radius:4px;padding:6px 11px}
+.f-btn:hover{border-color:var(--amber)}
+.rowcount{font-size:12.5px;color:var(--muted);margin:0 0 8px}
+.tablewrap{max-height:72vh;overflow:auto;border-top:1px solid var(--rule)}
+.tablewrap table{min-width:900px;font-size:13px}
+.tablewrap th{position:sticky;top:0;z-index:2;background:var(--paper);padding:8px 10px 8px 0}
+.tablewrap td{padding:8px 10px 8px 0}
+.tablewrap td:first-child{white-space:nowrap}
+th[data-sort]{cursor:pointer;user-select:none;white-space:nowrap}
+th[data-sort]:hover{color:var(--amber)}
+th[data-sort]:focus-visible{outline:2px solid var(--amber);outline-offset:2px}
+th[data-sort]::after{content:"\\2195";opacity:.3;margin-left:5px;font-size:11px}
+th[data-active=asc]::after{content:"\\2191";opacity:1;color:var(--amber)}
+th[data-active=desc]::after{content:"\\2193";opacity:1;color:var(--amber)}
+tr.rowclick{cursor:pointer}
+tr.rowclick:hover td{background:var(--rule-soft)}
+tr.rowclick:focus-visible{outline:2px solid var(--amber);outline-offset:-2px}
+.trunc{max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* The report's pill markers read as plain coloured words here: no chrome. */
+.pill{display:inline;padding:0;border-radius:0;font-size:12.5px;font-weight:500;color:var(--ink);background:none}
+.pill.ok{color:var(--ok)}.pill.warn{color:var(--bad)}
+.pill.neutral,.pill.ing,.pill.cap{color:var(--muted);font-weight:400}
+#more-sentinel{height:1px}
+.detail{position:fixed;top:0;right:0;width:min(560px,92vw);height:100%;background:var(--paper);
+border-left:1px solid var(--rule);box-shadow:-8px 0 28px rgba(0,0,0,.18);
+padding:22px 24px 40px;overflow:auto;transform:translateX(101%);transition:transform .18s ease;z-index:40}
+.detail.open{transform:translateX(0)}
+.detail-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px}
+.detail-title{font-size:20px;font-weight:600}
+.d-plain{font-size:15px;line-height:1.45;background:var(--amber-soft);border-radius:6px;padding:12px 14px;margin-bottom:16px}
+.d-sec{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--amber);
+font-weight:600;margin:18px 0 8px;padding-bottom:5px;border-bottom:1px solid var(--rule)}
+.d-row{display:flex;gap:12px;padding:5px 0;font-size:13px;align-items:baseline}
+.d-k{flex:0 0 150px;color:var(--muted)}
+.d-v{flex:1 1 auto;word-break:break-word}
+.d-pre{font-family:var(--mono);font-size:12px;background:var(--rule-soft);border-radius:6px;
+padding:10px 12px;white-space:pre-wrap;word-break:break-word;max-height:240px;overflow:auto}
+.d-note{font-size:12px;color:var(--muted);margin-top:8px;line-height:1.5}
+.d-note.ok{color:var(--ok)}.d-note.bad{color:var(--bad)}
+/* The badge: an amber block near the bottom, written by the verifier. */
+.verify{margin-top:40px;padding:14px 18px;background:var(--amber-soft);border-radius:6px;font-size:14px;line-height:1.5}
+.verify .verdict{margin:0}
+.verify .k{color:var(--amber);font-weight:600}
+.verify .verdict.fail{color:var(--bad);font-weight:500}
+.verify .verdict.neutral{color:var(--muted)}
+.verify .note{font-size:13px}
+.verify code,.verify .mono{font-size:12.5px}
+footer{margin-top:24px;color:var(--muted);font-size:12.5px;line-height:1.5}
+footer a{color:inherit}
+@media (max-width:560px){header.door-head{grid-template-columns:1fr}.meta{text-align:left}
+.hbar{grid-template-columns:110px 1fr 36px}h1{font-size:23px}.facts{font-size:16px}
+svg.weeks text{font-size:17px}svg.weeks g:last-of-type text:nth-child(even){display:none}}
+@media print{.filters,.detail{display:none}.tablewrap{max-height:none;overflow:visible}}
+"""
 
 # The page above the activity table: the vendor's Runtime Report, or the
 # buyer's door page (banner, summary, verdict, source line, tiles, the door's
@@ -1298,18 +1423,28 @@ _HEAD_REPORT = """<div class="eyebrow">Halo Runtime Report</div>
 <div id="r-provenance">%(provenance)s</div>
 <h2>Activity</h2>"""
 
-_HEAD_DOOR = """%(banner)s<div class="eyebrow">Halo Runtime Report &middot; the door</div>
-<h1 id="r-h1">%(h1)s<!--/r-h1--></h1>
-<div class="meta" id="r-meta">%(meta)s<!--/r-meta--></div><div id="r-subject-note">%(subject_note)s</div>
-<div class="period" id="r-period">%(period)s<!--/r-period--></div>
-<div class="door-summary" id="door-summary"><ol>%(summary)s</ol><!--/door-summary--></div>
-<div id="verdict" class="verdict neutral">Not verified yet &mdash; this page verifies its records in your browser with JavaScript.</div>
-<div class="note">%(source_note)s</div>
-<div class="cards" id="r-cards">%(cards)s<!--/r-cards--></div>
-<div id="r-provenance">%(provenance)s</div>
-<div class="door-sections">%(sections)s</div>
-<div class="note door-note">%(stands)s</div>
-<h2>Activity</h2>"""
+_HEAD_DOOR = """%(banner)s<header class="door-head"><div><div class="brand">Halo &middot; Runtime Report</div>
+<h1 id="r-h1">%(h1)s<!--/r-h1--></h1><div id="r-subject-note">%(subject_note)s</div></div>
+<div class="meta" id="r-meta">%(meta)s<!--/r-meta--></div></header>
+<ol class="facts" id="door-summary">%(summary)s<!--/door-summary--></ol>
+%(sections)s
+<h2>Every action</h2>
+%(every)s"""
+
+# Below the records table on the door page: the badge the verifier writes,
+# where the sealed copy stands, and the command that checks it without this page.
+_TAIL_DOOR = """<div class="verify"><div id="verdict" class="verdict neutral">Not verified yet &mdash; this page verifies its records in your browser with JavaScript.</div>
+<p class="note">%(source_note)s</p>
+<p class="note">%(stands)s</p>
+<p class="note">To check without trusting this page: %(verify_line)s.</p></div>
+"""
+
+_FOOT_REPORT = ('<footer>Generated by <a href="https://github.com/bkuan001/halo-record">halo-record</a> '
+                '&middot; format <a href="https://github.com/bkuan001/halo-record/blob/main/src/halo_record/'
+                'halo-record.schema.json">Halo Runtime Record v0.1</a></footer>')
+_FOOT_DOOR = ('<footer>Prepared with <a href="https://github.com/bkuan001/halo-record">halo-record %(version)s</a> '
+              'from a %(source)s supplied by the account owner. Halo records; it does not block, approve, '
+              'or interpret.</footer>')
 
 
 def render(records, checkpoints=None, *, witness_url=None, policy=None, window=None,
@@ -1320,12 +1455,16 @@ def render(records, checkpoints=None, *, witness_url=None, policy=None, window=N
     whole sealed chain the buyer's export produced, every record of which is
     embedded and verified in the browser, and the page displays the rows of
     the one outside agent in ``door["agent"]`` (``door["hidden"]`` lists ids
-    of routine rows set aside). The door supplies ``title``, ``who``, the
-    ``summary`` lines (``<li>`` HTML), ``source_note``, ``sections`` (its
-    detail sections), ``stands`` (where the sealed copy stands) and an
-    optional ``banner``. The vendor-facing controls (expected customer id,
-    witness check, scopes, redaction tiles) are not rendered, and the witness
-    lookup code is left out of the page's script.
+    of routine rows set aside). The door supplies ``title``, ``prepared`` and
+    ``source_label`` (labels the header meta carries), the ``summary`` lines
+    (``<li>`` HTML), ``sections`` (its analysis sections, chart first),
+    ``every`` (what sits between the Every action heading and the table),
+    ``source_note``, ``stands`` (where the sealed copy stands), ``chain_file``
+    (named in the ``halo verify`` line) and an optional ``banner``. The page
+    takes the door's own stylesheet; the vendor-facing controls (expected
+    customer id, witness check, scopes, tiles) are not rendered, the badge
+    sits below the table, and the witness lookup code is left out of the
+    page's script.
 
     If ``checkpoints`` (a list of notary witnesses for this chain) is given, the
     page re-checks completeness in the browser against those witnesses. If
@@ -1441,9 +1580,14 @@ def render(records, checkpoints=None, *, witness_url=None, policy=None, window=N
               "expectedSubject": expected_subject,
               "chainVerified": bool(chain_verified)}
     if door:
+        # Labels the page's script re-renders the header from: the title, the
+        # kind of export and the prepared date are the door's, not the records'.
         config["door"] = {"agent": str(door.get("agent") or ""),
                           "hidden": [str(h) for h in door["hidden"]],
-                          "title": reg["title"], "who": str(door.get("who") or "Agent")}
+                          "title": reg["title"],
+                          "label": str(door.get("label") or ""),
+                          "prepared": str(door.get("prepared") or ""),
+                          "source_label": str(door.get("source_label") or "")}
     config_json = json.dumps(config, separators=(",", ":")).replace("<", "\\u003c")
     review_window = ""
     if window:
@@ -1505,22 +1649,31 @@ def render(records, checkpoints=None, *, witness_url=None, policy=None, window=N
     pin_value = _esc(expected_subject) if expected_subject is not None else ""
 
     if door:
+        from . import __version__
         source_note = (
             "%s This page embeds the full sealed chain (<b>%d</b> records, every client in the "
-            "export) and verifies all of it in your browser; the tiles and the table show this "
-            "agent's <b>%d</b> rows. %s"
+            "export) and verifies all of it in your browser; the table under Every action lists "
+            "this agent's <b>%d</b> rows. %s"
             % (door.get("source_note") or "", len(records), len(shown), own_check))
         head = _HEAD_DOOR % {
             "banner": door.get("banner") or "",
             "h1": reg["h1"], "meta": reg["meta"], "subject_note": reg["subject_note"],
-            "period": reg["period"],
             "summary": "".join(door.get("summary") or ()),
-            "source_note": source_note,
-            "cards": reg["cards"], "provenance": reg["provenance"],
             "sections": door.get("sections") or "",
-            "stands": door.get("stands") or "",
+            "every": door.get("every") or "",
         }
+        chain_file = door.get("chain_file")
+        tail = _TAIL_DOOR % {
+            "source_note": source_note,
+            "stands": door.get("stands") or "",
+            "verify_line": ("<code>halo verify %s</code>" % _esc(chain_file) if chain_file
+                            else "<code>halo verify</code> on the chain file"),
+        }
+        foot = _FOOT_DOOR % {"version": _esc(__version__),
+                             "source": _esc(door.get("source_label") or "log export")}
+        style = _DOOR_STYLE
     else:
+        tail, foot, style = "", _FOOT_REPORT, _STYLE
         head = _HEAD_REPORT % {
             "h1": reg["h1"], "meta": reg["meta"], "subject_note": reg["subject_note"],
             "review_window": review_window, "period": reg["period"],
@@ -1570,7 +1723,7 @@ def render(records, checkpoints=None, *, witness_url=None, policy=None, window=N
   </div>
   <div id="detail-body"></div>
 </aside>
-<footer>Generated by <a href="https://github.com/bkuan001/halo-record">halo-record</a> &middot; format <a href="https://github.com/bkuan001/halo-record/blob/main/src/halo_record/halo-record.schema.json">Halo Runtime Record v0.1</a></footer>
+%(tail)s%(footer)s
 </div>
 <script id="records" type="application/json">%(records_json)s</script>
 <script id="checkpoints" type="application/json">%(checkpoints_json)s</script>
@@ -1582,8 +1735,10 @@ def render(records, checkpoints=None, *, witness_url=None, policy=None, window=N
 </body></html>""" % {
         "title": _esc(reg["title"]),
         "head": head,
+        "tail": tail,
+        "footer": foot,
         "agent_th": agent_th,
-        "style": _STYLE,
+        "style": style,
         "rows": rows,
         "more_rows": more_rows,
         "rowcount": rowcount,
