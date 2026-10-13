@@ -1,0 +1,42 @@
+{
+  "name": "Salesforce org: Agentforce agent default rules",
+  "version": "0.1",
+  "note": "A STARTING POINT for checking what an Agentforce agent did in a Salesforce org, over records ingested from the org's Event Monitoring EventLogFile export (halo door --source salesforce --agent app:bot:<BOT_IDENTIFIER>). Agent actions arrive as InvocableAction rows (salesforce:Agent.<action name>), their Apex and outbound calls as ApexExecution and ApexCallout rows, and the agent's service-user sign-ins as Login rows whose session did only that agent's work. Each rule names a shape the agent should not produce; edit the action lists to the actions this agent is permitted. The address allowlist behind login-outside-allowlist is supplied when the export is read (halo door --allow-ip CIDR); a sign-in from Salesforce's own addresses carries no address to check.",
+  "rules": [
+    {
+      "id": "login-outside-allowlist",
+      "source": "buyer default",
+      "severity": "HIGH",
+      "description": "The agent's service user signed in only through the platform or from the allowlist the org set for it. A sign-in from anywhere else, with a browser attached, is a person using the agent's account.",
+      "forbid": {"action.tool": {"in": ["salesforce:Login.outside_allowlist"]}}
+    },
+    {
+      "id": "no-external-transfer",
+      "source": "buyer default",
+      "severity": "CRITICAL",
+      "description": "The agent moved money only between a member's own accounts: no transfer to an external account, and no new external payee. Edit the action names to the ones your agent exposes.",
+      "forbid": {"action.tool": {"in": ["salesforce:Agent.Transfer_Funds_External", "salesforce:Agent.Funds_Transfer_External", "salesforce:Agent.Add_External_Payee", "salesforce:Agent.Add_External_Account"]}}
+    },
+    {
+      "id": "no-data-export",
+      "source": "buyer default",
+      "severity": "CRITICAL",
+      "description": "The agent did not export data in bulk: no report export, and no Bulk API query or ingest job.",
+      "forbid": {"action.tool": {"in": ["salesforce:URI.ReportExport", "salesforce:ReportExport.export", "salesforce:BulkApi.query", "salesforce:BulkApi.ingest", "salesforce:BulkApi.GET", "salesforce:BulkApi.POST"]}}
+    },
+    {
+      "id": "no-login-as",
+      "source": "buyer default",
+      "severity": "HIGH",
+      "description": "The agent did not act on a session that began with Login As, an administrator entering another user's session. Read from the sign-in row's LOGIN_TYPE.",
+      "forbid": {"action.tool": {"in": ["salesforce:Login.Login_As"]}}
+    },
+    {
+      "id": "no-metadata-change",
+      "source": "buyer default",
+      "severity": "HIGH",
+      "description": "The agent did not touch Setup or metadata: no Metadata or Tooling API call, no Apex entry point that deploys metadata, no Setup page.",
+      "forbid": {"action.tool": {"in": ["salesforce:ApexExecution.Metadata", "salesforce:URI.Setup", "salesforce:Metadata.GET", "salesforce:Metadata.POST", "salesforce:Metadata.PUT", "salesforce:Metadata.PATCH", "salesforce:Metadata.DELETE"]}}
+    }
+  ]
+}

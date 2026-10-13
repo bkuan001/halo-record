@@ -3,8 +3,11 @@
 Salesforce Event Monitoring writes one EventLogFile per event type per
 interval; each downloads as a CSV whose first column is ``EVENT_TYPE``. This
 module reads Login, RestApi, ApexExecution, URI (and ReportExport when
-present) into the same normalized event shape ``door.parse_github_log``
-produces, so ingest, isolate, rules and the page work unchanged:
+present), plus the two types an Agentforce agent leaves behind,
+InvocableAction (one row per agent action) and ApexCallout (what the org
+reached outside itself), into the same normalized event shape
+``door.parse_github_log`` produces, so ingest, isolate, rules and the page
+work unchanged:
 
     ts, action, actor, repo (the target), access, app, token_id, user_agent
 
@@ -14,11 +17,13 @@ the whole CSV row, sealed in place of the row itself; session keys, query
 text and addresses are never written to the chain).
 
 Attribution: ``CLIENT_NAME`` (or ``CONNECTED_APP_ID``) names the connected
-app; ``BOT_IDENTIFIER`` on an Apex Execution row names an Agentforce bot
-(``app:bot:<id>``) and outranks the session; rows that name no client but
-share a ``LOGIN_KEY`` with rows that do are attributed to that app, because
-one sign-in is one session. ``USER_ID`` is resolved to ``USER_NAME`` through
-whichever file carries both.
+app; ``BOT_IDENTIFIER`` (on InvocableAction, ApexExecution and ApexCallout
+rows) names an Agentforce bot (``app:bot:<id>``) and outranks the session;
+rows that name no client but share a ``LOGIN_KEY`` with rows that do are
+attributed to that app, because one sign-in is one session. A bot never
+inherits a person's sign-in that way; the one sign-in attributed to a bot is
+one whose session did nothing but that bot's work (its own service user).
+``USER_ID`` is resolved to ``USER_NAME`` through whichever file carries both.
 
 Pure stdlib.
 """
@@ -40,7 +45,12 @@ SALESFORCE_SOURCE = {"adapter": "salesforce_eventlog",
 DEFAULT_ALLOWLIST = ("192.0.2.0/24",)
 
 KNOWN_TYPES = {"login": "Login", "restapi": "RestApi", "apexexecution": "ApexExecution",
-               "uri": "URI", "reportexport": "ReportExport"}
+               "uri": "URI", "reportexport": "ReportExport",
+               "invocableaction": "InvocableAction", "apexcallout": "ApexCallout"}
+
+# Event Monitoring writes this literal, not an address, for traffic that
+# begins inside Salesforce (an Agentforce runtime sign-in, a scheduled job).
+PLATFORM_IP = "Salesforce.com IP"
 
 _LOGIN_AS = re.compile(r"login\s*_?\s*as", re.I)
 _BULK = ((re.compile(r"/jobs/query\b", re.I), "BulkApi.query"),
@@ -115,7 +125,8 @@ def _normalize(row, event_type, allowlist=None):
         # Classified in this order: a Login As names who entered the session
         # (identity before location); then, when an allowlist was given, a
         # sign-in from outside it; else the sign-in type as the platform wrote it.
-        outside = allowlist and base["ip"] and ip_allowed(base["ip"], allowlist) is False
+        outside = (allowlist and base["ip"] and base["ip"] != PLATFORM_IP
+                   and ip_allowed(base["ip"], allowlist) is False)
         if _LOGIN_AS.search(login_type):
             base["action"] = "Login.Login_As"
         elif outside:
@@ -176,6 +187,40 @@ def _normalize(row, event_type, allowlist=None):
         base["action"] = "ReportExport.export"
         base["repo"] = _get(row, "REPORT_ID")
         base["detail"] = " · ".join(x for x in ("report export", base["repo"]) if x)
+    elif event_type == "InvocableAction":
+        # One row per action call. INVOCATION_SOURCE says who asked: an agent
+        # (Agent Action), a prompt template, a flow, Apex, REST. The row names
+        # the bot but carries no session key, so attribution is by bot alone.
+        name = _get(row, "ACTION_NAME") or _get(row, "AGENT_ACTION") or "unknown"
+        source = _get(row, "INVOCATION_SOURCE") or ""
+        bot = _get(row, "BOT_IDENTIFIER")
+        template = _get(row, "PROMPT_TEMPLATE")
+        if source.lower() == "prompt template" or (template and not source):
+            base["action"] = "Prompt.%s" % (_slug(template or name) or "unknown")
+        elif source.lower() == "agent action" or bot:
+            base["action"] = "Agent.%s" % (_slug(name) or "unknown")
+        else:
+            base["action"] = "InvocableAction.%s" % (_slug(name) or "unknown")
+        base["app"] = "bot:%s" % bot if bot else None
+        base["repo"] = name
+        base["detail"] = " · ".join(x for x in (
+            source or None, name, template and ("template %s" % template),
+            _get(row, "INVOKING_APEX_CLASS_NAME"), _get(row, "FLOW_PROCESS_TYPE"),
+            ("bot %s" % bot) if bot else None) if x)
+    elif event_type == "ApexCallout":
+        # An outbound call from the org: the one place the export shows the
+        # agent reaching another system. The query string is dropped before
+        # anything is kept; the row itself is sealed only as a hash.
+        method = (_get(row, "METHOD") or "CALL").upper()
+        url = (_get(row, "URL") or "").split("?", 1)[0]
+        bot = _get(row, "BOT_IDENTIFIER")
+        status = _get(row, "STATUS_CODE")
+        base["action"] = "Callout.%s" % method
+        base["app"] = "bot:%s" % bot if bot else None
+        base["repo"] = url or None
+        base["detail"] = " · ".join(x for x in (
+            "%s %s" % (method, url) if url else method, status,
+            ("bot %s" % bot) if bot else None) if x)
     return base
 
 
@@ -234,6 +279,20 @@ def parse_salesforce_eventlog(paths_or_dir, allowlist=None):
             e["actor"] = users.get(e["user_id"], e["user_id"])
         if not e.get("app") and e.get("token_id") in sessions:
             e["app"] = sessions[e["token_id"]]
+    # A bot never owns a person's session: an employee agent runs inside the
+    # employee's sign-in, and that sign-in stays the person's. But a sign-in
+    # whose session did nothing except one bot's work is the bot's own
+    # service user signing in, however it signed in.
+    bot_sessions = {}
+    for e in rows:
+        if e.get("token_id") and e.get("event_type") != "Login":
+            seen = bot_sessions.setdefault(e["token_id"], set())
+            seen.add(e.get("app") if (e.get("app") or "").startswith("bot:") else None)
+    for e in rows:
+        if e.get("event_type") == "Login" and not e.get("app"):
+            seen = bot_sessions.get(e.get("token_id")) or set()
+            if len(seen) == 1 and None not in seen:
+                e["app"] = next(iter(seen))
     rows.sort(key=lambda e: e["ts"] or "")
     events = EventList(rows)
     events.skipped = skipped

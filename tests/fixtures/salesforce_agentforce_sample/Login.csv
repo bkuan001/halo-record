@@ -1,0 +1,4 @@
+"EVENT_TYPE","TIMESTAMP_DERIVED","USER_ID","USER_NAME","USER_TYPE","LOGIN_STATUS","LOGIN_TYPE","SOURCE_IP","CLIENT_IP","API_TYPE","LOGIN_KEY","SESSION_KEY","BROWSER_TYPE","REQUEST_ID"
+"Login","2026-10-05T05:10:02.000Z","005SAMPLE00000009A","svc.agent@globex.example","Standard","LOGIN_NO_ERROR","Application","Salesforce.com IP","Salesforce.com IP","REST","LKb05","SKb05","","SAMPLE-REQ-000201"
+"Login","2026-10-05T13:02:11.000Z","005SAMPLE00000002A","ana.ops@globex.example","Standard","LOGIN_NO_ERROR","Application","192.0.2.50","192.0.2.50","","LKh05","SKh05","Chrome 141","SAMPLE-REQ-000202"
+"Login","2026-10-08T23:12:41.000Z","005SAMPLE00000009A","svc.agent@globex.example","Standard","LOGIN_NO_ERROR","Application","203.0.113.9","203.0.113.9","","LKb08","SKb08","Chrome 141","SAMPLE-REQ-000203"
