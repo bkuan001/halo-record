@@ -218,7 +218,7 @@ class TestPage(DoorBase):
         recs = self.ingested(settings_only)
         html = door.render_page(recs, [], door.check(recs, self.rules()), agent=AGENT,
                                 source_actions=[r["action"] for r in settings_only])
-        self.assertIn("What this source cannot show", html)
+        self.assertIn("What this export can&#x27;t show", html)
         self.assertIn("no records of code pushes, clones and fetches, pull requests, or issues", html)
         self.assertIn("does not mean none happened", html)
 

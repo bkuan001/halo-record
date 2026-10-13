@@ -235,7 +235,7 @@ class TestPage(SfBase):
 
     def test_no_vendor_record_state(self):
         html = self.page(own_supplied=False)
-        self.assertIn("No vendor record was supplied; this page shows the platform's own log only", html)
+        self.assertIn("No vendor record supplied; this page shows the platform's log only", html)
         self.assertNotIn("not in the agent's own record", html)
         self.assertNotIn("matched or probable", html)
         self.assertNotIn("unmatched", html)
@@ -243,7 +243,7 @@ class TestPage(SfBase):
     def test_own_record_keeps_the_comparison(self):
         html = self.page(own_supplied=True)
         self.assertIn("not in the agent's own record", html)
-        self.assertNotIn("No vendor record was supplied", html)
+        self.assertNotIn("No vendor record supplied", html)
 
     def test_anchor_sentence(self):
         html = self.page(own_supplied=False)
@@ -258,7 +258,8 @@ class TestPage(SfBase):
 
     def test_salesforce_cannot_show_list(self):
         html = self.page(own_supplied=False)
-        self.assertIn("What this source cannot show", html)
+        self.assertIn("What this export can&#x27;t show", html)
+        self.assertNotIn("What this source cannot show", html)
         self.assertIn("Agentforce", html)
         self.assertIn("may require", html)
         self.assertNotIn("requires the Event Monitoring", html)
@@ -298,7 +299,7 @@ class TestCli(SfBase):
         with open(os.path.join(self.tmp, "p.html"), encoding="utf-8") as fh:
             html = fh.read()
         self.assertIn("SAMPLE — synthetic export shaped from public sources; no real org data.", html)
-        self.assertIn("No vendor record was supplied", html)
+        self.assertIn("No vendor record supplied", html)
         self.assertIn("One session, more than one address", html)
         self.assertNotRegex(html, r"\b(?!192\.0\.2\.|198\.51\.100\.)\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b")
 
@@ -325,7 +326,7 @@ class TestCli(SfBase):
         self.assertEqual(out.returncode, 0, out.stderr)
         with open(os.path.join(self.tmp, "g.html"), encoding="utf-8") as fh:
             html = fh.read()
-        self.assertIn("No vendor record was supplied", html)
+        self.assertIn("No vendor record supplied", html)
         self.assertNotIn("SAMPLE —", html)
 
 

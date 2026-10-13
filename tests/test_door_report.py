@@ -13,6 +13,7 @@ and the headline tiles are not on the page.
 Fixture data is synthetic (acme / Globex)."""
 
 import html as _html
+import html.parser as _parser
 import json
 import os
 import re
@@ -37,7 +38,8 @@ PREPARED = "Oct 12, 2026"
 def _static(html):
     """The page as parsed before its scripts: what a reader sees with JS off,
     and what the tests inspect for presence or absence of controls."""
-    return html[:html.index('<script id="records"')]
+    marker = '<script id="records"'
+    return html[:html.index(marker)] if marker in html else html
 
 
 def _embedded(html, script_id):
@@ -64,6 +66,62 @@ def _between(html, start_marker, end_marker):
 
 def _chart(html):
     return _between(_static(html), "<h2>When it acted</h2>", "<h2>Rules</h2>")
+
+
+class _Words(_parser.HTMLParser):
+    """Visible words above the Every action table: text outside script, style
+    and svg, outside the body of a <details> (its summary counts), up to the
+    "Every action" heading."""
+
+    def __init__(self):
+        super().__init__()
+        self.words, self.skip, self.details, self.summary, self.h2, self.done = [], 0, 0, False, False, False
+
+    def handle_starttag(self, tag, attrs):
+        if tag in ("script", "style", "svg"):
+            self.skip += 1
+        elif tag == "details":
+            self.details += 1
+        elif tag == "summary":
+            self.summary = True
+        elif tag == "h2":
+            self.h2 = True
+
+    def handle_endtag(self, tag):
+        if tag in ("script", "style", "svg"):
+            self.skip -= 1
+        elif tag == "details":
+            self.details -= 1
+        elif tag == "summary":
+            self.summary = False
+        elif tag == "h2":
+            self.h2 = False
+
+    def handle_data(self, data):
+        if self.done or self.skip:
+            return
+        if self.h2 and data.strip() == "Every action":
+            self.done = True
+            return
+        if self.details and not self.summary:
+            return
+        self.words.extend(data.split())
+
+
+def _visible_words(html):
+    w = _Words()
+    w.feed(_static(html))
+    return w.words
+
+
+def _sentences(html):
+    """The numbered sentences as plain text, in order."""
+    summary = _region(_static(html), "door-summary")
+    return [_html.unescape(re.sub(r"<[^>]+>", "", li))[1:]
+            for li in re.findall(r"<li>.*?</li>", summary)]
+
+
+LIMITS_H2 = "<h2>What this export can&#x27;t show</h2>"
 
 
 def _agent_rows(*timestamps, action="repo.add_topic"):
@@ -161,22 +219,25 @@ class GitHubDoorPage(DoorBase):
     def test_summary_lines(self):
         html = _static(self.page(own_supplied=False))
         summary = _region(html, "door-summary")
-        self.assertIn("app:Example Agent acted in acme 3 times between 2026-10-10 and 2026-10-10.", summary)
-        self.assertIn('<span class="bad">1 rule broken: Repo deletion</span>', summary)
+        self.assertIn("Example Agent acted 3 times in one day.", summary)
+        self.assertNotIn("2026-10-10", summary)   # the period lives in the header
+        self.assertIn('<span class="bad">1 rule broken: Repo deletion.</span>', summary)
         self.assertNotIn("no-repo-deletion", summary)
-        self.assertIn("It used 1 credential: app:Example Agent.", summary)
+        self.assertIn("One credential: app:Example Agent.", summary)
         self.assertNotIn("look like a person", summary)
-        self.assertIn("No vendor record was supplied; this page shows the platform's own log only.", summary)
+        self.assertIn("No vendor record supplied; this page shows the platform's log only.", summary)
         self.assertNotIn("not in the agent's own record", summary)
         self.assertEqual(re.findall(r'<span class="n">(\d)</span>', summary), ["1", "2", "3", "4"])
+        for line in _sentences(html):
+            self.assertLessEqual(len(line.split()), 12, line)
 
     def test_summary_with_a_vendor_record(self):
         html = _static(self.page(own_supplied=True, as_person=[
             {"ingested": self.chain_records[-1], "gap_seconds": 12.0}]))
         summary = _region(html, "door-summary")
-        self.assertIn("3 actions are not in the agent's own record.", summary)
-        self.assertIn("1 action looks like a person on the agent's session.", summary)
-        self.assertNotIn("No vendor record was supplied", summary)
+        self.assertIn("3 of 3 not in the agent's own record.", summary)
+        self.assertIn("1 action recorded against the person.", summary)
+        self.assertNotIn("No vendor record", summary)
         self.assertEqual(re.findall(r'<span class="n">(\d)</span>', summary), ["1", "2", "3", "4", "5"])
 
     # ---------------------------------------------------------------- chart
@@ -354,15 +415,24 @@ class GitHubDoorPage(DoorBase):
         self.assertIn("A likelihood from timing, not proof", section)
         self.assertNotIn("Recorded against the person", _static(self.page()))
 
-    def test_cannot_show_is_a_list(self):
+    def test_cannot_show_is_three_lines_and_a_fold(self):
         html = _static(self.page())
-        section = _between(html, "<h2>What this source cannot show</h2>", "<h2>Every action</h2>")
-        self.assertIn('<ul class="cannot">', section)
+        section = _between(html, LIMITS_H2, "<h2>Every action</h2>")
+        visible, fold = section.split("<details", 1)
+        self.assertEqual(re.findall(r"<li>(.*?)</li>", visible), [
+            "Clones and fetches, or issues: not in a personal security log.",
+            "Most reads, such as viewing files or calling read-only APIs.",
+            "Anything outside GitHub.",
+        ])
+        for line in re.findall(r"<li>(.*?)</li>", visible):
+            self.assertLessEqual(len(line.split()), 14, line)
+        self.assertIn('<summary>All limits of this source</summary>', fold)
         self.assertIn("<li>This export has no records of clones and fetches, or issues. That does not "
-                      "mean none happened: the log did not include them.</li>", section)
+                      "mean none happened: the log did not include them.</li>", fold)
         self.assertIn("<li>Most reads, such as viewing files or calling read-only APIs, are not "
-                      "recorded in this kind of log.</li>", section)
-        self.assertIn("<li>Anything outside GitHub.</li>", section)
+                      "recorded in this kind of log.</li>", fold)
+        self.assertIn("<li>Anything outside GitHub.</li>", fold)
+        self.assertNotIn("What this source cannot show", html)
 
     def test_section_order_matches_the_mock(self):
         html = _static(self.page(own_supplied=True, as_person=[
@@ -370,11 +440,14 @@ class GitHubDoorPage(DoorBase):
         order = ['<div class="brand">', 'id="door-summary"', "<h2>What broke</h2>", "<h2>When it acted</h2>",
                  "<h2>Rules</h2>",
                  "<h2>How it signed in</h2>", "<h2>Against the agent&#x27;s own record</h2>",
-                 "<h2>Recorded against the person</h2>", "<h2>What this source cannot show</h2>",
+                 "<h2>Recorded against the person</h2>", LIMITS_H2,
                  "<h2>Every action</h2>", 'id="tablewrap"', '<div class="verify">', "<footer>"]
         positions = [html.index(m) for m in order]
         self.assertEqual(positions, sorted(positions), order)
-        self.assertNotIn("<details", html[:html.index("<h2>Every action</h2>")])
+        # the one fold above the table is the full list of limits
+        above = html[:html.index("<h2>Every action</h2>")]
+        self.assertEqual(above.count("<details"), 1)
+        self.assertLess(above.index(LIMITS_H2), above.index("<details"))
 
     # --------------------------------------------------------------- verify
 
@@ -383,29 +456,41 @@ class GitHubDoorPage(DoorBase):
         static = _static(html)
         block = _between(static, '<div class="verify">', "<footer>")
         self.assertIn('<div id="verdict" class="verdict neutral">Not verified yet', block)
+        # two lines in view: the verdict and the witness line; the rest folds
+        visible, fold = block.split("<details", 1)
+        self.assertEqual(visible.count("<p"), 1)
+        self.assertIn("No outside witness holds a checkpoint yet: this proves nothing was edited, "
+                      "not that nothing was removed.", visible)
+        self.assertIn("<summary>How to check this yourself</summary>", fold)
         self.assertIn("Source: the buyer's own GitHub export, sealed on ingest. The export is as "
                       "complete as what the platform logged; sealing proves this copy has not "
-                      "been edited since.", block)
-        self.assertIn("Anchor receipt: none", block)
-        self.assertIn("relative to a head someone other than the operator holds", block)
-        self.assertIn("To check without trusting this page: <code>halo verify c.jsonl</code>.", block)
+                      "been edited since.", fold)
+        self.assertIn("Anchor receipt: none", fold)
+        self.assertIn("relative to a head someone other than the operator holds", fold)
+        self.assertIn("To check without trusting this page: <code>halo verify c.jsonl</code>.", fold)
+        self.assertIn('id="verdict-detail"', fold)
         self.assertLess(static.index('id="tablewrap"'), static.index('<div class="verify">'))
         self.assertEqual(static.count('id="verdict"'), 1)
-        # the in-browser verifier words the door's badge as the amber block
-        self.assertIn("Checked in your browser.", html)
+        # the in-browser verifier words the door's badge as one line, the rest in the fold
+        self.assertIn("Checked in your browser:", html)
+        self.assertIn("records match the sealed chain.", html)
         self.assertIn("are this agent's and are listed above", html)
         self.assertIn("re-rendered the header and the table from the verified records", html)
         self.assertNotIn("the table and tiles", html)
         # without a chain file name the line still points at halo verify
         self.assertIn("<code>halo verify</code> on the chain file", _static(self.page()))
+        anchored = _static(self.page(anchored="witness.example 2026-10-12"))
+        self.assertIn("An outside witness holds a checkpoint (witness.example 2026-10-12): this proves "
+                      "nothing was edited, not that nothing was removed.", anchored)
+        self.assertNotIn("No outside witness", anchored)
 
     def test_footer(self):
         from halo_record import __version__
         html = _static(self.page())
         self.assertIn('<footer>Prepared with <a href="https://github.com/bkuan001/halo-record">halo-record %s'
                       " (bank-door branch, unreleased)</a> from a GitHub security log export supplied by "
-                      "the account owner. Halo records; it does not block, approve, or interpret."
-                      "</footer>" % __version__, html)
+                      "the account owner &mdash; Halo records; it does not block, approve, or interpret. "
+                      'Agent key <span class="mono">app:Example Agent</span>.</footer>' % __version__, html)
         self.assertEqual(door.DOOR_RELEASE_NOTE, " (bank-door branch, unreleased)")
         self.assertNotIn("Generated by", html)
         # the version never prints without the note while the door is unreleased
@@ -468,7 +553,8 @@ class GitHubDoorPage(DoorBase):
         for key in py:
             self.assertEqual(got[key], py[key], "region %s" % key)
         self.assertIn("Prepared <b>Oct 12, 2026</b>", py["meta"])
-        self.assertIn('<div>Agent key <b class="mono">app:Example Agent</b></div>', py["meta"])
+        self.assertNotIn("Agent key", py["meta"])
+        self.assertEqual(py["meta"].count("<div>"), 3)
         self.assertEqual(py["cards"], "")
 
 
@@ -495,13 +581,15 @@ class SalesforceDoorPage(unittest.TestCase):
 
     def test_summary_and_counts(self):
         summary = _region(_static(self.html), "door-summary")
-        self.assertRegex(summary, r"app:Acme Collections Agent ran 123 logged actions in this Salesforce org "
-                                  r"between \d{4}-\d{2}-\d{2} and \d{4}-\d{2}-\d{2}\.")
-        self.assertIn("It used 1 credential: app:Acme Collections Agent.", summary)
-        self.assertIn("4 rules broken: Data export, Login as, Metadata change, Login outside allowlist",
+        self.assertIn("Acme Collections Agent ran 123 logged actions.", summary)
+        self.assertNotIn("across", summary)   # no Agentforce sessions on a connected app's page
+        self.assertIn("One credential: app:Acme Collections Agent.", summary)
+        self.assertIn("4 rules broken: Data export, Login as, Metadata change, Login outside allowlist.",
                       summary)
         self.assertNotIn("no-data-export", summary)
-        self.assertIn("No vendor record was supplied; this page shows the platform's own log only.", summary)
+        self.assertIn("No vendor record supplied; this page shows the platform's log only.", summary)
+        for line in _sentences(self.html):
+            self.assertLessEqual(len(line.split()), 12, line)
         self.assertEqual(len(_static_rows(self.html)), 123)
         self.assertEqual(len(_embedded(self.html, "records")), len(self.chain_records))
 
@@ -513,7 +601,10 @@ class SalesforceDoorPage(unittest.TestCase):
         self.assertIn("Source: the buyer's own Salesforce export, sealed on ingest.", static)
         self.assertTrue(static.index("SAMPLE — synthetic export shaped from public sources; no real org data.")
                         < static.index("<h1"))
+        # the shared session LKa10 is not part of a broken rule: the section stays
         self.assertIn("<h2>One session, more than one address</h2>", static)
+        self.assertNotIn("LKa10", _between(static, "<h2>What broke</h2>", "<h2>When it acted</h2>"))
+        self.assertIn("Worth a look, not a finding.", static)
         self.assertNotIn("code pushes", static)
         self.assertIn("from a Salesforce event log export supplied by the account owner", static)
         self.assertNotIn("Recorded against the person", static)
@@ -524,9 +615,10 @@ class SalesforceDoorPage(unittest.TestCase):
         self.assertEqual(len(re.findall(r"<span[^>]*>[^<]*</span>", row)), 4)
         self.assertEqual(row.count('class="v"'), 4)
         self.assertIn("Login outside allowlist &middot; broken, ", row)
-        # the allowlist aside sits in the footer, not under Rules
+        # the allowlist aside sits in the verify fold, not under Rules or in the footer
         self.assertNotIn("192.0.2.0/24", _between(static, "<h2>Rules</h2>", "<h2>One session"))
-        self.assertIn("192.0.2.0/24", static[static.index("<footer>"):])
+        self.assertIn("192.0.2.0/24", _between(static, "<summary>How to check this yourself</summary>", "</details>"))
+        self.assertNotIn("192.0.2.0/24", static[static.index("<footer>"):])
         chart = _chart(self.html)
         rects = re.findall(r"<rect [^>]*>", chart)
         # the sample is a seven-day export: one bar per day, not one week
@@ -578,12 +670,13 @@ class AgentforceDoorPage(unittest.TestCase):
         html = self.page(label="ACE")
         self.assertEqual(_html.unescape(_region(html, "r-h1")), "ACE in globex's Salesforce")
         meta = _region(html, "r-meta")
-        self.assertIn('<div>Agent key <b class="mono">app:bot:0XxSAMPLE00000001A</b></div>', meta)
-        self.assertLess(meta.index("Agent key"), meta.index("Prepared"))
+        self.assertNotIn("Agent key", meta)
+        self.assertEqual(re.findall(r"<div>(\w+)", meta), ["Oct", "Source", "Prepared"])
+        foot = html[html.index("<footer>"):]
+        self.assertIn('Agent key <span class="mono">app:bot:0XxSAMPLE00000001A</span>.', foot)
         summary = _region(html, "door-summary")
-        self.assertRegex(summary, r"ACE ran 13 logged actions in globex's Salesforce org between "
-                                  r"\d{4}-\d{2}-\d{2} and \d{4}-\d{2}-\d{2} across 4 sessions\.")
-        self.assertIn("It acted through one identity, its own service user", summary)
+        self.assertIn("ACE ran 13 logged actions across 4 sessions.", summary)
+        self.assertIn("One identity: its own service user", summary)
         self.assertNotIn("0XxSAMPLE00000001A", summary)
         # one credential on a Salesforce page: no bar section, the sentence carries it
         self.assertNotIn("<h2>How it signed in</h2>", html)
@@ -593,14 +686,14 @@ class AgentforceDoorPage(unittest.TestCase):
         html = self.page()
         self.assertEqual(_html.unescape(_region(html, "r-h1")), "bot:0XxSAMPLE00000001A in globex's Salesforce")
         self.assertNotIn("Agent key", _region(html, "r-meta"))
-        self.assertIn("app:bot:0XxSAMPLE00000001A ran 13 logged actions in globex", _region(html, "door-summary"))
+        self.assertIn("bot:0XxSAMPLE00000001A ran 13 logged actions across 4 sessions.", _region(html, "door-summary"))
+        self.assertIn('Agent key <span class="mono">app:bot:0XxSAMPLE00000001A</span>.', html[html.index("<footer>"):])
 
     def test_reached_outside_sentence_and_section(self):
         html = self.page(label="ACE")
         summary = _region(html, "door-summary")
-        self.assertIn('<li><span class="n">4</span><span>It reached outside the org 2 times, to '
-                      'api.globex.example (1 failed).</span></li>', summary)
-        self.assertLess(summary.index("reached outside"), summary.index("Not yet compared against"))
+        self.assertIn('<li><span class="n">4</span><span>2 calls to api.globex.example, 1 failed.</span></li>', summary)
+        self.assertLess(summary.index("2 calls to"), summary.index("Not yet compared to"))
         section = _between(html, "<h2>Where it reached</h2>", "<h2>")
         self.assertIn('<div class="hbar host"><span class="mono">api.globex.example</span>'
                       '<div class="t"><i style="width:100%"></i></div>'
@@ -624,7 +717,8 @@ class AgentforceDoorPage(unittest.TestCase):
         with open(os.path.join(self.tmp, "p.html"), encoding="utf-8") as fh:
             html = fh.read()
         self.assertEqual(_html.unescape(_region(_static(html), "r-h1")), "ACE in Globex's Salesforce")
-        self.assertIn("Agent key", _region(_static(html), "r-meta"))
+        self.assertNotIn("Agent key", _region(_static(html), "r-meta"))
+        self.assertIn("Agent key", html[html.index("<footer>"):])
         self.assertIn("<h2>Where it reached</h2>", html)
         self.assertIn("<code>halo verify d.jsonl</code>", html)
 
@@ -635,7 +729,7 @@ class GitHubPageHasNoCallouts(DoorBase):
         mine = door.isolate(chain, AGENT)
         html = _static(door.render_page(mine, [], door.check(mine, self.rules()), agent=AGENT,
                                         chain=chain, own_supplied=False))
-        self.assertNotIn("reached outside", html)
+        self.assertNotIn("calls to", _region(html, "door-summary"))
         self.assertNotIn("Where it reached", html)
         self.assertEqual(re.findall(r'<span class="n">(\d)</span>', _region(html, "door-summary")),
                          ["1", "2", "3", "4"])
@@ -752,27 +846,29 @@ class AgentforceDoorSheet(unittest.TestCase):
     # ---------------------------------------------------------- sentences
 
     def test_five_sentences(self):
-        summary = _region(_static(self.page()), "door-summary")
-        lines = [_html.unescape(re.sub(r"<[^>]+>", "", li))[1:]
-                 for li in re.findall(r"<li>.*?</li>", summary)]
+        lines = _sentences(self.page())
         self.assertEqual(lines, [
-            "ACE ran 13 logged actions in globex's Salesforce org between 2026-10-05 and 2026-10-08 "
-            "across 4 sessions.",
-            "1 rule broken: Login outside allowlist",
-            "It acted through one identity, its own service user, which signed in 1 time through the "
-            "platform and 1 time from a browser.",
-            "It reached outside the org 2 times, to api.globex.example (1 failed).",
-            "Not yet compared against ACE's own session trace (Agentforce Session Tracing in Data 360); "
-            "this page shows the platform's event log only.",
+            "ACE ran 13 logged actions across 4 sessions.",
+            "1 rule broken: Login outside allowlist.",
+            "One identity: its own service user (1 platform sign-in, 1 browser).",
+            "2 calls to api.globex.example, 1 failed.",
+            "Not yet compared to ACE's own session trace.",
         ])
+        for line in lines:
+            self.assertLessEqual(len(line.split()), 12, line)
+
+    def test_counts_carry_a_thousands_separator(self):
+        self.assertEqual(door._n(1433), "1,433")
+        self.assertEqual(door._n(266), "266")
+        self.assertEqual(door._n(2874), "2,874")
 
     def test_sign_ins_absent_from_the_export(self):
         no_logins = [r for r in self.mine if not r["action"]["tool"].startswith("salesforce:Login.")]
         html = door.render_page(no_logins, [], door.check(no_logins, self.rules), agent=BOT, label="ACE",
                                 source="salesforce", chain=self.chain_records, events=self.context,
                                 own_supplied=False, prepared=PREPARED)
-        self.assertIn("It acted through one identity, its own service user. Its sign-ins are not in this "
-                      "export.", _region(_static(html), "door-summary"))
+        self.assertIn("One identity: its own service user (no sign-ins in this export).",
+                      _region(_static(html), "door-summary"))
 
     def test_github_sentences_are_unchanged(self):
         from tests.test_door import EXPORT_ROWS, DoorBase as _GB
@@ -783,9 +879,9 @@ class AgentforceDoorSheet(unittest.TestCase):
         html = _static(door.render_page(mine, [], door.check(mine, gb.rules()), agent=AGENT, chain=chain,
                                         own_supplied=False, prepared=PREPARED))
         summary = _region(html, "door-summary")
-        self.assertIn("app:Example Agent acted in acme 3 times between 2026-10-10 and 2026-10-10.", summary)
-        self.assertIn("It used 1 credential: app:Example Agent.", summary)
-        self.assertIn("No vendor record was supplied; this page shows the platform's own log only.", summary)
+        self.assertIn("Example Agent acted 3 times in one day.", summary)
+        self.assertIn("One credential: app:Example Agent.", summary)
+        self.assertIn("No vendor record supplied; this page shows the platform's log only.", summary)
         self.assertIn("<h2>How it signed in</h2>", html)
         self.assertIn("SAMPLE — synthetic export; no real account data.",
                       door.render_page(mine, [], door.check(mine, gb.rules()), agent=AGENT, chain=chain,
@@ -834,44 +930,84 @@ class AgentforceDoorSheet(unittest.TestCase):
         self.assertIn("Oct 5, 2026 14:20 UTC", transfer)
         self.assertIn("Funds Transfer to Own Account ×1 — GlobexFSC.FundsTransferService.submit", transfer)
 
-    def test_shared_table_uses_the_label_and_drops_the_aside_when_the_session_broke_a_rule(self):
+    def test_shared_section_is_dropped_when_what_broke_already_names_its_session(self):
         html = _static(self.page())
-        section = _between(html, "<h2>One session, more than one address</h2>", "<h2>")
-        self.assertIn("<td>ACE</td>", section)
-        self.assertNotIn("app:bot:0XxSAMPLE00000001A", section)
-        self.assertNotIn("Worth a look, not a finding.", section)
-        self.assertIn("one sign-in was used from two places.", section)
+        self.assertNotIn("One session, more than one address", html)
+        self.assertNotIn("LKb08", html)
+        self.assertIn("The same session was later used from 198.51.100.9.",
+                      _between(html, "<h2>What broke</h2>", "<h2>When it acted</h2>"))
 
-    def test_shared_table_keeps_the_aside_when_no_rule_involves_the_session(self):
+    def test_shared_table_stays_with_the_label_when_no_rule_involves_the_session(self):
         clean = [r for r in self.mine if r["action"]["tool"] != "salesforce:Login.outside_allowlist"]
         html = _static(door.render_page(clean, [], door.check(clean, self.rules), agent=BOT, label="ACE",
                                         source="salesforce", chain=self.chain_records, events=self.context,
                                         shared=self.shared, own_supplied=False, prepared=PREPARED))
-        self.assertIn("Worth a look, not a finding.", html)
+        section = _between(html, "<h2>One session, more than one address</h2>", "<h2>")
+        self.assertIn("<td>ACE</td>", section)
+        self.assertNotIn("app:bot:0XxSAMPLE00000001A", section)
+        self.assertIn("one sign-in was used from two places.", section)
+        self.assertIn("Worth a look, not a finding.", section)
 
-    def test_allow_ip_aside_sits_in_the_footer(self):
+    def test_allow_ip_aside_sits_in_the_verify_fold(self):
         html = _static(self.page())
         rules = _between(html, "<h2>Rules</h2>", "<h2>Where it reached</h2>")
         self.assertNotIn("--allow-ip", rules)
         self.assertNotIn("192.0.2.0/24", rules)
-        foot = html[html.index("<footer>"):]
-        self.assertIn("192.0.2.0/24", foot)
-        self.assertIn("login-outside-allowlist", foot)
+        fold = _between(html, "<summary>How to check this yourself</summary>", "</details>")
+        self.assertIn("192.0.2.0/24", fold)
+        self.assertIn("login-outside-allowlist", fold)
+        self.assertNotIn("192.0.2.0/24", html[html.index("<footer>"):])
+
+    def test_header_meta_is_period_source_prepared(self):
+        meta = _region(_static(self.page()), "r-meta")
+        self.assertEqual(re.findall(r"<div>(\w+)", meta), ["Oct", "Source", "Prepared"])
+        self.assertNotIn("0XxSAMPLE", meta)
+
+    def test_first_screen_word_budget(self):
+        words = _visible_words(self.page())
+        self.assertLessEqual(len(words), 260, " ".join(words))
+
+    def test_verify_block_two_lines_then_the_fold(self):
+        html = _static(self.page(chain_file="c.jsonl"))
+        block = _between(html, '<div class="verify">', "<footer>")
+        visible, fold = block.split("<details", 1)
+        self.assertIn('id="verdict"', visible)
+        self.assertIn("No outside witness holds a checkpoint yet: this proves nothing was edited, not that "
+                      "nothing was removed.", visible)
+        self.assertNotIn("Where this copy stands", visible)
+        self.assertNotIn("halo verify", visible)
+        self.assertIn("<summary>How to check this yourself</summary>", fold)
+        self.assertIn("<code>halo verify c.jsonl</code>", fold)
+        self.assertIn("Where this copy stands", fold)
+        self.assertIn("a sample is never anchored", _static(self.page(sample=True)))
 
     # ------------------------------------------------------- cannot show
 
-    def test_cannot_show_has_the_agentforce_bullets(self):
-        section = _between(_static(self.page()), "<h2>What this source cannot show</h2>", "<h2>Every action</h2>")
-        items = [_html.unescape(x) for x in re.findall(r"<li>(.*?)</li>", section)]
+    def test_cannot_show_three_lines_then_the_full_list(self):
+        section = _between(_static(self.page()), LIMITS_H2, "<h2>Every action</h2>")
+        visible, fold = section.split("<details", 1)
+        short = [_html.unescape(x) for x in re.findall(r"<li>(.*?)</li>", visible)]
+        self.assertEqual(short, [
+            "What the agent was prompted with, planned, or answered — that lives in Agentforce Session "
+            "Tracing (Data 360).",
+            "Which member an action touched, or what Hogan/MuleSoft did with a call.",
+            "Anything outside Salesforce, or in event types this org does not export.",
+        ])
+        self.assertIn("<summary>All limits of this source</summary>", fold)
+        items = [_html.unescape(x) for x in re.findall(r"<li>(.*?)</li>", fold)]
+        self.assertGreaterEqual(len(items), 6)
         self.assertIn("Which members an action touched. Rows for a service-agent carry the agent's own user, "
                       "not the member; the member join lives in Agentforce Session Tracing.", items)
         self.assertIn("What the system on the other end of a call did. An Apex Callout row shows the host, "
                       "method and status; the MuleSoft and core-banking side of the call is in their logs.", items)
-        self.assertIn("The agent's prompts, plans, topic choice and session outcome. Those are Data 360 tables "
-                      "(Agentforce Session Tracing, Einstein Audit), not EventLogFile.", items)
-        for kept in door.SALESFORCE_CANNOT_SHOW:
+        for kept in door.AGENTFORCE_CANNOT_SHOW + door.SALESFORCE_CANNOT_SHOW:
             self.assertIn(kept, items)
-        self.assertEqual(len(items), len(door.SALESFORCE_CANNOT_SHOW) + 3)
+        # one bullet on prompts and reasoning, not two
+        self.assertEqual(sum(1 for x in items if "prompt" in x.lower()), 1)
+        self.assertEqual(sum(1 for x in items if "Einstein Audit" in x), 1)
+        self.assertEqual(len(items), len(door.AGENTFORCE_CANNOT_SHOW) + len(door.SALESFORCE_CANNOT_SHOW) + 1)
+        self.assertIn("The query string of a call.", items[-1])
+        self.assertEqual(len(items), len(set(items)))
 
     # -------------------------------------------------------------- table
 
@@ -948,7 +1084,8 @@ class AgentforceDoorSheet(unittest.TestCase):
         self.assertIn("<h2>What broke</h2>", html)
         self.assertIn("from 203.0.113.9 (Chrome 141)", html)
         self.assertIn("The same session was later used from 198.51.100.9.", html)
-        self.assertIn("ACE ran 13 logged actions in Globex's Salesforce org", html)
+        self.assertIn("ACE ran 13 logged actions across 4 sessions.", html)
+        self.assertIn("ACE in Globex&#x27;s Salesforce", html)
 
     # ------------------------------------------------------------- node
 

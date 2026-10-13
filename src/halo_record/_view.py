@@ -786,9 +786,10 @@ def date_range(first, last):
 
 
 def door_meta(records, door):
-    """The door page's header meta: the period the agent's rows span with its
-    day count, the kind of export the page was made from, and the date the
-    page was prepared (both labels carried in the door config)."""
+    """The door page's header meta, three items: the period the agent's rows
+    span with its day count, the kind of export the page was made from, and
+    the date the page was prepared (both labels carried in the door config).
+    The agent's key is the footer's."""
     times = sorted(t for t in (ts_utc(r.get("ts")) for r in records) if t is not None)
     if times:
         first, last = times[0], times[-1]
@@ -798,9 +799,6 @@ def door_meta(records, door):
     else:
         out = "<div>No dated records</div>"
     out += "<div>Source <b>%s</b></div>" % esc(_str(door.get("source_label") or "export"))
-    if door.get("label"):
-        # A display name stands in for the key elsewhere; the key shows here.
-        out += '<div>Agent key <b class="mono">%s</b></div>' % esc(show_id(_str(door.get("agent") or "")))
     prepared = _str(door.get("prepared") or "")
     if prepared:
         out += "<div>Prepared <b>%s</b></div>" % esc(prepared)
@@ -1852,7 +1850,6 @@ var HaloView = (function(){
       out = "<div>" + dateRange(a, b) + " &middot; <b>" + days + " day" + (days === 1 ? "" : "s") + "</b></div>";
     } else out = "<div>No dated records</div>";
     out += "<div>Source <b>" + esc(str(or(door.source_label, "export"))) + "</b></div>";
-    if (truthy(door.label)) out += '<div>Agent key <b class="mono">' + esc(showId(str(or(door.agent, "")))) + "</b></div>";
     var prepared = str(or(door.prepared, ""));
     if (prepared) out += "<div>Prepared <b>" + esc(prepared) + "</b></div>";
     return out;

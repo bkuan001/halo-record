@@ -57,11 +57,22 @@ _PREFIX = re.compile(r"^(github|salesforce):")
 # ships from its branch ahead of a release. A release clears it to "".
 DOOR_RELEASE_NOTE = " (bank-door branch, unreleased)"
 
+# What the same export does not carry about an Agentforce agent in particular;
+# listed first on an Agentforce page. One bullet covers prompts, plans and
+# model output: the Apex Execution row names the bot, nothing more.
+AGENTFORCE_CANNOT_SHOW = (
+    "What an Agentforce agent reasoned, was prompted with, or answered. An Apex Execution "
+    "row names the bot that ran (BOT_IDENTIFIER); the agent's prompts, plans, topic choice, "
+    "model output and session outcome are Data 360 tables (Agentforce Session Tracing, "
+    "Einstein Audit), not EventLogFile.",
+    "Which members an action touched. Rows for a service-agent carry the agent's own user, "
+    "not the member; the member join lives in Agentforce Session Tracing.",
+    "What the system on the other end of a call did. An Apex Callout row shows the host, "
+    "method and status; the MuleSoft and core-banking side of the call is in their logs.",
+)
+
 # What a Salesforce Event Monitoring export does not carry, for the page.
 SALESFORCE_CANNOT_SHOW = (
-    "What an Agentforce agent reasoned, was prompted with, or answered. An Apex Execution "
-    "row names the bot that ran (BOT_IDENTIFIER); the agent's prompts, plans and model "
-    "output are not in these files.",
     "Which records a query returned. A REST API row shows that a query ran against an "
     "object and how many rows came back, not which rows.",
     "Event types this org does not export. Login and a few other types are available "
@@ -79,16 +90,18 @@ SALESFORCE_CANNOT_SHOW = (
     "not proof of quiet.",
 )
 
-# What the same export does not carry about an Agentforce agent in particular;
-# listed after the first Salesforce bullet.
-AGENTFORCE_CANNOT_SHOW = (
-    "Which members an action touched. Rows for a service-agent carry the agent's own user, "
-    "not the member; the member join lives in Agentforce Session Tracing.",
-    "What the system on the other end of a call did. An Apex Callout row shows the host, "
-    "method and status; the MuleSoft and core-banking side of the call is in their logs.",
-    "The agent's prompts, plans, topic choice and session outcome. Those are Data 360 tables "
-    "(Agentforce Session Tracing, Einstein Audit), not EventLogFile.",
+# The three lines in view under "What this export can't show" on a Salesforce
+# page; the full list above folds under them.
+SALESFORCE_CANNOT_SHOW_SHORT = (
+    "What the agent was prompted with, planned, or answered \u2014 that lives in Agentforce "
+    "Session Tracing (Data 360).",
+    "Which member an action touched, or what Hogan/MuleSoft did with a call.",
+    "Anything outside Salesforce, or in event types this org does not export.",
 )
+
+# A call's query string never enters the chain; listed when the agent called out.
+CALLOUT_CANNOT_SHOW = ("The query string of a call. The table under Every action shows each call's "
+                       "path with its digit runs masked; the query string is not in the chain.")
 
 # Kinds of activity an export may or may not carry. A personal security log
 # carries none of them; an organization audit log can carry some. The page names
@@ -101,6 +114,7 @@ ACTIVITY_KINDS = (
 )
 READS_NOTE = ("Most reads, such as viewing files or calling read-only APIs, are not "
               "recorded in this kind of log.")
+READS_SHORT = "Most reads, such as viewing files or calling read-only APIs."
 
 
 def missing_kinds(actions):
@@ -125,6 +139,16 @@ def cannot_see(actions):
     """One plain sentence or two on what this export does not show."""
     gone = missing_sentence(actions)
     return "%s %s" % (gone, READS_NOTE) if gone else READS_NOTE
+
+
+def missing_short(actions):
+    """The one-line form of ``missing_sentence``: "Clones and fetches, or
+    issues: not in a personal security log.", or "" when nothing is missing."""
+    gone = missing_kinds(actions)
+    if not gone:
+        return ""
+    listed = gone[0] if len(gone) == 1 else ", ".join(gone[:-1]) + ", or " + gone[-1]
+    return "%s: not in a personal security log." % (listed[:1].upper() + listed[1:])
 
 
 # Automatic, high-volume housekeeping that says nothing about what an agent did.
@@ -652,8 +676,13 @@ def _table(head, rows):
         "".join("<th>%s</th>" % h for h in head), rows))
 
 
+def _n(n):
+    """``1,433``: a count with a thousands separator."""
+    return "{:,}".format(int(n))
+
+
 def _plural(n, one, many=None):
-    return "%d %s" % (n, one if n == 1 else (many or one + "s"))
+    return "%s %s" % (_n(n), one if n == 1 else (many or one + "s"))
 
 
 # ------------------------------------------------------------ the chart ---
@@ -848,9 +877,8 @@ def _reach_bars(records):
                     '<i style="width:%d%%"></i></div><span class="n">%d%s</span></div>' % (
                         _e(host), max(1, round(h["n"] * 100 / top)), h["n"], failed))
     return (_h2("Where it reached") + "".join(bars)
-            + _note("Hosts the agent called from inside the org. Each call's path is in the "
-                    "table under Every action with its digit runs masked; the query string is "
-                    "not in the chain. A failed call got a status outside 2xx."))
+            + _note("Hosts the agent called from inside the org; a failed call got a status "
+                    "outside 2xx."))
 
 
 def _creds_bars(records, expected, agent=None, label=None):
@@ -929,11 +957,13 @@ def _as_person_table(hits):
 
 
 def _shared_table(hits, agent=None, label=None, broken_sessions=()):
-    """The sessions used from more than one address. The Client cell names
-    the agent by its label when the session is the agent's; the closing
-    "worth a look" aside is dropped when one of these sessions is part of a
-    broken rule (the What broke paragraph has already said so)."""
-    if not hits:
+    """The sessions used from more than one address. The section is left off
+    when every one of them is part of a broken rule (the What broke paragraph
+    already names the second address); it stays when a shared session is not
+    a finding, with the "worth a look" aside dropped if any other one is. The
+    Client cell names the agent by its label when the session is the agent's."""
+    broken = set(broken_sessions)
+    if not hits or all(h["session"] in broken for h in hits):
         return ""
     rows = []
     for h in hits:
@@ -945,7 +975,7 @@ def _shared_table(hits, agent=None, label=None, broken_sessions=()):
     note = ("A session the platform issued at one sign-in, later used from a different "
             "address. The log cannot tell a proxy change from a copied or shared session; "
             "it shows that one sign-in was used from two places.")
-    if not any(h["session"] in set(broken_sessions) for h in hits):
+    if not any(h["session"] in broken for h in hits):
         note += " Worth a look, not a finding."
     return (_h2("One session, more than one address")
             + _table(("Signed in (UTC)", "Session", "Client", "Addresses",
@@ -967,12 +997,15 @@ def _unusual_table(unusual):
                     "the agent; worth a look."))
 
 
-def _cannot_section(items, routine):
-    body = '<ul class="cannot">%s</ul>' % "".join("<li>%s</li>" % _e(x) for x in items)
+def _cannot_section(short, items, routine):
+    """Three lines in view, the full list under a fold."""
+    body = '<ul class="cannot">%s</ul>' % "".join("<li>%s</li>" % _e(x) for x in short)
     if routine:
         body += _note("%d automatic token refreshes by this agent are sealed in the chain but "
                       "not listed." % len(routine))
-    return _h2("What this source cannot show") + body
+    body += _section("All limits of this source",
+                     '<ul class="cannot">%s</ul>' % "".join("<li>%s</li>" % _e(x) for x in items))
+    return _h2("What this export can't show") + body
 
 
 # ---------------------------------------------------------- what broke ---
@@ -1187,79 +1220,93 @@ def sign_ins(records, context=None):
     return platform, browser
 
 
+def _count_words(n):
+    """``two`` for small counts in running text, the digits above nine."""
+    words = ("zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine")
+    return words[n] if 0 <= n < len(words) else _n(n)
+
+
 def summary_lines(records, matches, verdict, *, agent, tenant, own_supplied=True,
                   as_person=(), routine=(), label=None, source="github", context=None,
                   tenant_named=True):
-    """The plain lines at the top of the door page, in order: what the agent
-    did and when; rules broken (by the names the Rules row uses); the
-    credentials or identity it acted through; calls outside the org (omitted
-    when none); actions that look like a person on the agent's session
-    (omitted when none); and what the agent's own record does not account
-    for, or that no vendor record was supplied. ``label`` stands in for the
-    agent's key wherever it would print. Returns ``(text, css_class)`` pairs.
+    """The plain lines at the top of the door page, in order, each a short
+    sentence: what the agent did (how many actions, over how many days or
+    sessions; the period and the org already sit in the header); rules
+    broken, by the names the Rules row uses; the credentials or identity it
+    acted through; calls outside the org (omitted when none); actions the
+    platform recorded against the person (omitted when none); and what the
+    agent's own record does not account for, or that no vendor record was
+    supplied. ``label`` stands in for the agent's key wherever it would
+    print; without one the heading's name is used. Returns ``(text,
+    css_class)`` pairs.
 
-    A Salesforce page reads "<name> ran N logged actions in <tenant>'s
-    Salesforce org between A and B[ across M sessions]"; an Agentforce agent
-    acting through one identity has its sign-ins counted in the credentials
-    line; the reach line names the one host when there is one; and without a
-    vendor record the last line names the agent's own session trace as the
-    record not yet compared against."""
-    times = sorted(r.get("ts") for r in records if r.get("ts"))
-    when = ("between %s and %s" % (times[0][:10], times[-1][:10])) if times else "(no dated records)"
+    An Agentforce agent acting through one identity has its sign-ins counted
+    in the identity line; the reach line names the one host when there is
+    one; and without a vendor record the last line names the agent's own
+    session trace as the record not yet compared against."""
     violated = [r for r in verdict.get("rules", []) if r["status"] == "violated"]
     used = credentials(list(records) + list(routine))
     unmatched = sum(1 for m in matches if m["tier"] == "unmatched")
-    name = label or agent
+    name = label or agent_label(agent)
     sf = source == "salesforce"
     bot = str(agent).startswith("app:bot:")
     if sf:
-        org = ("%s's Salesforce org" % tenant) if tenant_named else "this Salesforce org"
-        first = "%s ran %s in %s %s" % (name, _plural(len(records), "logged action"), org, when)
+        first = "%s ran %s" % (name, _plural(len(records), "logged action"))
         sessions = bot_sessions(records)
         if sessions:
             first += " across %s" % _plural(len(sessions), "session")
-        lines = [(first + ".", "")]
     else:
-        lines = [("%s acted in %s %s %s." % (name, tenant, _plural(len(records), "time"), when), "")]
+        times = sorted(t for t in (_view.ts_utc(r.get("ts")) for r in records) if t is not None)
+        days = ((times[-1].date() - times[0].date()).days + 1) if times else 0
+        first = "%s acted %s" % (name, _plural(len(records), "time"))
+        if days == 1:
+            first += " in one day"
+        elif days:
+            first += " over %s" % _plural(days, "day")
+    lines = [(first + ".", "")]
     if violated:
-        lines.append(("%s broken: %s" % (_plural(len(violated), "rule"),
-                                         ", ".join(rule_label(r) for r in violated)), "bad"))
+        lines.append(("%s broken: %s." % (_plural(len(violated), "rule"),
+                                          ", ".join(rule_label(r) for r in violated)), "bad"))
     else:
         lines.append(("No rules broken.", "ok"))
     if sf and bot and len(used) == 1:
         platform, browser = sign_ins(records, context)
         if platform or browser:
-            lines.append(("It acted through one identity, its own service user, which signed in %s "
-                          "through the platform and %s from a browser." % (
-                              _plural(platform, "time"), _plural(browser, "time")), ""))
+            lines.append(("One identity: its own service user (%s platform sign-in%s, %s browser)." % (
+                _n(platform), "" if platform == 1 else "s", _n(browser)), ""))
         else:
-            lines.append(("It acted through one identity, its own service user. Its sign-ins are "
-                          "not in this export.", ""))
+            lines.append(("One identity: its own service user (no sign-ins in this export).", ""))
+    elif len(used) == 1:
+        cred = next(iter(used))
+        lines.append(("One credential: %s." % (name if (label and cred == agent) else cred), ""))
     else:
-        lines.append(("It used %s: %s." % (
-            _plural(len(used), "credential"),
-            ", ".join(name if (label and c == agent) else c
-                      for c in sorted(used, key=lambda c: -used[c]))), ""))
+        tokens = sum(1 for c in used if c.startswith("token:"))
+        if tokens == 1:
+            kinds = ", one of them a personal access token"
+        elif tokens:
+            kinds = ", %s of them personal access tokens" % _count_words(tokens)
+        else:
+            kinds = ""
+        lines.append(("%s%s." % (_plural(len(used), "credential"), kinds), ""))
     reach = callouts(records)
     if reach["count"]:
         failed = sum(h["failed"] for h in reach["hosts"].values())
         hosts = reach["hosts"]
         where = next(iter(hosts)) if len(hosts) == 1 else _plural(len(hosts), "host")
-        lines.append(("It reached outside the org %s, to %s%s." % (
-            _plural(reach["count"], "time"), where, (" (%d failed)" % failed) if failed else ""), ""))
+        lines.append(("%s to %s%s." % (_plural(reach["count"], "call"), where,
+                                       (", %s failed" % _n(failed)) if failed else ""), ""))
     if as_person:
-        n = len(as_person)
-        lines.append(("%d action%s like a person on the agent's session." % (
-            n, " looks" if n == 1 else "s look"), "warn"))
+        lines.append(("%s recorded against the person." % _plural(len(as_person), "action"), "warn"))
     if own_supplied:
-        lines.append(("%s not in the agent's own record." % (
-            "1 action is" if unmatched == 1 else "%d actions are" % unmatched),
-            "warn" if unmatched else "ok"))
+        if unmatched:
+            lines.append(("%s of %s not in the agent's own record." % (_n(unmatched), _n(len(records))),
+                          "warn"))
+        else:
+            lines.append(("All %s are in the agent's own record." % _n(len(records)), "ok"))
     elif sf and bot:
-        lines.append(("Not yet compared against %s's own session trace (Agentforce Session Tracing "
-                      "in Data 360); this page shows the platform's event log only." % name, ""))
+        lines.append(("Not yet compared to %s's own session trace." % name, ""))
     else:
-        lines.append(("No vendor record was supplied; this page shows the platform's own log only.", ""))
+        lines.append(("No vendor record supplied; this page shows the platform's log only.", ""))
     return lines
 
 
@@ -1273,10 +1320,14 @@ def render_page(records, matches, verdict, *, agent, title=None, unusual=(),
     what broke (one paragraph per broken rule, when any), the agent's actions
     per week, the rules checked, the credentials it signed in through (unless
     the sentence already carries the one identity), the comparison against
-    its own record (when one was supplied), the door's smaller tables, what
-    the source cannot show, the agent's rows in the records table, and the
-    in-browser re-hash of the whole chain as the badge near the bottom. Every
-    value that came from the export is escaped.
+    its own record (when one was supplied), the door's smaller tables, three
+    lines on what the export cannot show (the full list under a fold), the
+    agent's rows in the records table, and the in-browser re-hash of the
+    whole chain as the badge near the bottom: one verdict line, one line on
+    the witness, and the custody paragraph, the ``halo verify`` command and
+    the allowlist aside under "How to check this yourself". The footer
+    carries the agent's key. Every value that came from the export is
+    escaped.
 
     ``chain`` is the whole sealed chain the export produced; the page embeds
     and verifies all of it and displays ``records`` (the one agent's rows).
@@ -1290,7 +1341,7 @@ def render_page(records, matches, verdict, *, agent, title=None, unusual=(),
     preparer's clock, by default); ``chain_file`` is named in the page's
     ``halo verify`` line; ``label`` is a display name for the agent, used in
     the heading, the summary and the credential bar in place of its key
-    (which the header meta then shows once). ``events`` is the event index
+    (the footer then shows the key). ``events`` is the event index
     (``event_index``) the What broke paragraphs and the sign-in count read
     addresses and session keys from; the chain itself carries neither."""
     from . import report as _report
@@ -1322,26 +1373,33 @@ def render_page(records, matches, verdict, *, agent, title=None, unusual=(),
                    "since. Sealing proves integrity, not the completeness of the export; one "
                    "week of records is a baseline, and what changed since the prior period "
                    "appears from the second week on." % voc["platform"])
+    reached = bool(callouts(records)["count"])
 
     paragraphs, broken_sessions = broken_paragraphs(verdict, records + routine, agent=agent, label=label,
                                                     context=context, shared=shared)
     one_identity = source == "salesforce" and len(credentials(records + routine)) == 1
 
     if source == "salesforce":
-        cannot = list(SALESFORCE_CANNOT_SHOW[:1]) + list(AGENTFORCE_CANNOT_SHOW) + list(SALESFORCE_CANNOT_SHOW[1:])
-        foot_note = (_note("Address allowlist behind <code>login-outside-allowlist</code>: "
-                           "<code>%s</code>%s" % (
-                               _e(", ".join(allowlist)),
-                               " (the sample's range; pass <code>--allow-ip</code> for yours)"
-                               if sample else ""), escape=False)
-                     if allowlist else
-                     _note("No address allowlist was supplied, so "
-                           "<code>login-outside-allowlist</code> had nothing to check.", escape=False))
+        short = list(SALESFORCE_CANNOT_SHOW_SHORT)
+        cannot = list(AGENTFORCE_CANNOT_SHOW) + list(SALESFORCE_CANNOT_SHOW)
+        aside = (_note("Address allowlist behind <code>login-outside-allowlist</code>: "
+                       "<code>%s</code>%s" % (
+                           _e(", ".join(allowlist)),
+                           " (the sample's range; pass <code>--allow-ip</code> for yours)"
+                           if sample else ""), escape=False)
+                 if allowlist else
+                 _note("No address allowlist was supplied, so "
+                       "<code>login-outside-allowlist</code> had nothing to check.", escape=False))
     else:
-        gone = missing_sentence(source_actions if source_actions is not None else
-                                [(r.get("action") or {}).get("tool") for r in records + routine])
-        cannot = ([gone] if gone else []) + [READS_NOTE, "Anything outside %s." % voc["platform"]]
-        foot_note = ""
+        actions = (source_actions if source_actions is not None else
+                   [(r.get("action") or {}).get("tool") for r in records + routine])
+        gone, gone_short = missing_sentence(actions), missing_short(actions)
+        outside = "Anything outside %s." % voc["platform"]
+        short = ([gone_short] if gone_short else []) + [READS_SHORT, outside]
+        cannot = ([gone] if gone else []) + [READS_NOTE, outside]
+        aside = ""
+    if reached:
+        cannot.append(CALLOUT_CANNOT_SHOW)
 
     sections = "".join(x for x in (
         _broken_section(paragraphs),
@@ -1353,7 +1411,7 @@ def render_page(records, matches, verdict, *, agent, title=None, unusual=(),
         _as_person_table(as_person),
         _shared_table(shared, agent, label, broken_sessions),
         _unusual_table(unusual),
-        _cannot_section(cannot, routine),
+        _cannot_section(short, cannot, routine),
     ) if x)
 
     receipt = (_e(anchored) if anchored else
@@ -1364,6 +1422,10 @@ def render_page(records, matches, verdict, *, agent, title=None, unusual=(),
               "head someone other than the operator holds; a head only the operator keeps can "
               "be re-sealed without a trace. Anchor receipt: %s. Keep the chain file in storage "
               "you control; the witness keeps the head." % receipt)
+    witness = ("An outside witness holds a checkpoint (%s): this proves nothing was edited, not "
+               "that nothing was removed." % _e(anchored) if anchored else
+               "No outside witness holds a checkpoint yet: this proves nothing was edited, not "
+               "that nothing was removed.")
 
     banner = ""
     if sample:
@@ -1382,7 +1444,7 @@ def render_page(records, matches, verdict, *, agent, title=None, unusual=(),
         "banner": banner,
         "summary": summary, "sections": sections,
         "every": _unmatched_fold(matches, bad_ids) if own_supplied else "",
-        "source_note": source_note, "stands": stands,
-        "version_note": DOOR_RELEASE_NOTE, "foot_note": foot_note,
+        "source_note": source_note, "stands": stands, "witness": witness, "aside": aside,
+        "version_note": DOOR_RELEASE_NOTE,
     })
     return _report._LONE_SURROGATE_RE.sub("�", page)
