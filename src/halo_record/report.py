@@ -455,6 +455,11 @@ function haloWithhold(why){
           ? "<div class='verdict fail'>Policy verdict withheld &mdash; " + why + "</div>" : "");
   haloSet("r-cards", "");
   haloSet("rowcount", msg);
+  // The door page's numbered summary, What broke paragraphs and rules row
+  // were written when the page was made; they carry the same notice.
+  haloSet("door-summary", msg);
+  haloSet("door-broke", msg);
+  haloSet("door-rules", msg);
 }
 function haloEsc(s){
   return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -1444,6 +1449,7 @@ _HEAD_DOOR = """%(banner)s<header class="door-head"><div><div class="brand">Halo
 <h1 id="r-h1">%(h1)s<!--/r-h1--></h1><div id="r-subject-note">%(subject_note)s</div></div>
 <div class="meta" id="r-meta">%(meta)s<!--/r-meta--></div></header>
 <ol class="facts" id="door-summary">%(summary)s<!--/door-summary--></ol>
+<p class="note made">Written when this page was made from the sealed records below. The table and the check at the bottom are rebuilt in your browser.</p>
 %(sections)s
 <h2>Every action</h2>
 %(every)s"""

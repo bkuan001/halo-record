@@ -898,7 +898,8 @@ def _rules_row(verdict, allow_note, unevaluated=None):
         else:
             spans.append('<span class="u" title="%s">%s &middot; %s</span>' % (
                 desc, label, _e(status.replace("_", " "))))
-    return _h2("Rules") + '<div class="rulesrow">%s</div>' % "".join(spans) + allow_note
+    return ('<div id="door-rules">' + _h2("Rules") + '<div class="rulesrow">%s</div>' % "".join(spans)
+            + allow_note + "<!--/door-rules--></div>")
 
 
 # ------------------------------------------------------- the credentials ---
@@ -1212,8 +1213,11 @@ def _broken_section(paragraphs):
     if not paragraphs:
         return ""
     body = "".join('<p class="broke"><b>%s.</b> %s</p>' % (_e(name), _e(text)) for name, text in paragraphs)
-    return (_h2("What broke") + body
-            + _note("Rules are the account owner's; edit the list to match what this agent is permitted."))
+    # The region id lets the page's verifier replace the narrative with its
+    # withheld notice when the embedded records do not verify.
+    return ('<div id="door-broke">' + _h2("What broke") + body
+            + _note("Rules are the account owner's; edit the list to match what this agent is permitted.")
+            + "<!--/door-broke--></div>")
 
 
 # ----------------------------------------------------------- the page ---

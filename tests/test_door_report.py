@@ -123,6 +123,14 @@ def _sentences(html):
 
 LIMITS_H2 = "<h2>What this export can&#x27;t show</h2>"
 
+# The one sentence under the numbered summary: the summary, the What broke
+# paragraphs and the rules row are written when the page is generated; the
+# table and the badge are rebuilt by the page's scripts.
+MADE_WHEN = ("Written when this page was made from the sealed records below. "
+             "The table and the check at the bottom are rebuilt in your browser.")
+MADE_WHEN_RE = r'<!--/door-summary--></ol>\s*<p class="note[^"]*">%s</p>' % re.escape(MADE_WHEN)
+STATIC_REGIONS = ("door-summary", "door-broke", "door-rules")
+
 
 def _agent_rows(*timestamps, action="repo.add_topic"):
     return [{"@timestamp": t, "action": action, "actor": "dev", "repo": "acme/widgets",
@@ -230,6 +238,14 @@ class GitHubDoorPage(DoorBase):
         self.assertEqual(re.findall(r'<span class="n">(\d)</span>', summary), ["1", "2", "3", "4"])
         for line in _sentences(html):
             self.assertLessEqual(len(line.split()), 12, line)
+
+    def test_made_when_sentence_sits_under_the_summary(self):
+        static = _static(self.page())
+        self.assertRegex(static, MADE_WHEN_RE)
+        self.assertEqual(static.count(MADE_WHEN), 1)
+        self.assertIn("Written when this page was made from the sealed records below.",
+                      " ".join(_visible_words(self.page())))
+        self.assertNotIn(MADE_WHEN, render(self.chain_records))
 
     def test_summary_with_a_vendor_record(self):
         html = _static(self.page(own_supplied=True, as_person=[
@@ -987,8 +1003,67 @@ class AgentforceDoorSheet(unittest.TestCase):
         self.assertNotIn("0XxSAMPLE", meta)
 
     def test_first_screen_word_budget(self):
+        # 260 words above the table, plus the 24-word sentence under the
+        # summary that says which regions the page's scripts rebuild.
         words = _visible_words(self.page())
-        self.assertLessEqual(len(words), 260, " ".join(words))
+        self.assertLessEqual(len(words), 284, " ".join(words))
+
+    # ------------------------------------------ static regions, withheld
+
+    def test_made_when_sentence_on_the_salesforce_page(self):
+        static = _static(self.page())
+        self.assertRegex(static, MADE_WHEN_RE)
+        self.assertLess(static.index(MADE_WHEN), static.index("<h2>What broke</h2>"))
+
+    def test_withheld_path_names_the_summary_narrative_and_rules_regions(self):
+        html = self.page()
+        static = _static(html)
+        self.assertIn('<div id="door-broke">', static)
+        self.assertIn("<!--/door-broke--></div>", static)
+        self.assertIn('<div id="door-rules">', static)
+        self.assertIn("<!--/door-rules--></div>", static)
+        self.assertLess(static.index('<div id="door-broke">'), static.index("<h2>What broke</h2>"))
+        self.assertLess(static.index("<h2>What broke</h2>"), static.index("<!--/door-broke--></div>"))
+        self.assertLess(static.index('<div id="door-rules">'), static.index("<h2>Rules</h2>"))
+        self.assertLess(static.index('<div class="rulesrow">'), static.index("<!--/door-rules--></div>"))
+        for rid in STATIC_REGIONS:
+            self.assertEqual(static.count('id="%s"' % rid), 1, rid)
+        scripts = "\n".join(re.findall(r"<script>(.*?)</script>", html, re.S))
+        body = _between(scripts, "function haloWithhold(", "\nfunction ")
+        for rid in STATIC_REGIONS:
+            self.assertIn('haloSet("%s", msg)' % rid, body)
+
+    def test_no_broken_rule_leaves_no_narrative_region(self):
+        clean = [r for r in self.mine if r["action"]["tool"] != "salesforce:Login.outside_allowlist"]
+        html = _static(door.render_page(clean, [], door.check(clean, self.rules), agent=BOT, label="Atlas",
+                                        source="salesforce", chain=self.chain_records, events=self.context,
+                                        own_supplied=False, prepared=PREPARED))
+        self.assertNotIn('id="door-broke"', html)
+        self.assertIn('<div id="door-rules">', html)
+
+    @unittest.skipUnless(NODE, "node not installed")
+    def test_a_tampered_embedded_record_blanks_the_summary_narrative_and_rules(self):
+        from tests.test_report_table_js import _run
+        html = self.page()
+        intact = _run(html, regions=STATIC_REGIONS)
+        self.assertIn("ok", intact["verdict"])
+        kept = intact["log"][0]["regions"]
+        self.assertIn("Atlas ran 13 logged actions across 4 sessions.", kept["door-summary"])
+        self.assertIn("Login outside allowlist.", kept["door-broke"])
+        self.assertIn('class="rulesrow"', kept["door-rules"])
+        block = re.search(r'<script id="records" type="application/json">(.*?)</script>', html, re.S).group(1)
+        edited = block.replace("salesforce:Agent.Query_Records", "salesforce:Agent.Query_RecordX", 1)
+        self.assertNotEqual(block, edited)
+        out = _run(html.replace(block, edited), regions=STATIC_REGIONS)
+        self.assertIn("fail", out["verdict"])
+        got = out["log"][0]["regions"]
+        for rid in STATIC_REGIONS:
+            self.assertIn("Withheld", got[rid], rid)
+        self.assertNotIn("ran 13 logged actions", got["door-summary"])
+        self.assertNotIn("rule broken", got["door-summary"])
+        self.assertNotIn("Login outside allowlist.", got["door-broke"])
+        self.assertNotIn("rulesrow", got["door-rules"])
+        self.assertIn("Withheld", out["log"][0]["rowcount"])
 
     def test_verify_block_two_lines_then_the_fold(self):
         html = _static(self.page(chain_file="c.jsonl"))

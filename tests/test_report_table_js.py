@@ -86,6 +86,8 @@ function between(open, close){
 ELS["activity-body"].children = rowsFrom(between('<tbody id="activity-body">', "</tbody>"));
 { const rows = rowsFrom(between('<template id="more-rows">', "</template>")); ELS["more-rows"].content = {querySelectorAll: () => rows}; }
 ELS["rowcount"]._html = between('<div class="rowcount" id="rowcount">', "</div>");
+const REGIONS = %(regions)s;   // static regions the snapshot reports, by id
+for (const id of REGIONS){ if (ELS[id]) ELS[id]._html = between('id="' + id + '">', "<!--/" + id + "-->"); }
 const OBSERVERS = [];
 globalThis.window = globalThis;
 globalThis.IntersectionObserver = class { constructor(cb){ OBSERVERS.push(cb); } observe(){} };
@@ -116,7 +118,8 @@ function settle(){ return new Promise(r => setTimeout(r, 300)); }
   const snap = () => ({rowcount: ELS["rowcount"].innerHTML,
                        order: ELS["activity-body"].children.map(r => r.getAttribute("data-tool")),
                        toolOptions: ELS["f-tool"].options.slice(1).map(o => ({value: o.value, text: o.textContent})),
-                       detail: ELS["detail-body"] ? ELS["detail-body"].innerHTML : null});
+                       detail: ELS["detail-body"] ? ELS["detail-body"].innerHTML : null,
+                       regions: Object.fromEntries(REGIONS.map(id => [id, ELS[id] ? ELS[id].innerHTML : null]))});
   log.push(snap());
   for (const a of ACTIONS){
     if (a === "observe") OBSERVERS.forEach(cb => cb([{isIntersecting: true}]));
@@ -136,11 +139,13 @@ function settle(){ return new Promise(r => setTimeout(r, 300)); }
 """
 
 
-def _run(html, actions=(), prelude="", stagger=False):
+def _run(html, actions=(), prelude="", stagger=False, regions=()):
+    """``regions`` names static page regions (``id="x">…<!--/x-->``) whose
+    content each snapshot reports, as the scripts leave it."""
     scripts = re.findall(r"<script>(.*?)</script>", html, re.S)
     code = _DOM % {"html": json.dumps(html), "actions": json.dumps(list(actions)),
                    "prelude": prelude, "scripts": json.dumps(scripts),
-                   "stagger": "true" if stagger else "false"}
+                   "stagger": "true" if stagger else "false", "regions": json.dumps(list(regions))}
     js = os.path.join(tempfile.mkdtemp(), "page.js")
     with open(js, "w", encoding="utf-8") as fh:
         fh.write(code)
