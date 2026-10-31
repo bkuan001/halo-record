@@ -2,7 +2,7 @@
 export: InvocableAction rows (the agent's actions), ApexCallout rows (what it
 reached outside the org), and the sign-ins of the agent's own service user.
 
-The fixture under tests/fixtures/salesforce_agentforce_sample is synthetic:
+The bundled sample (halo_record/samples/salesforce_agentforce) is synthetic:
 placeholder names (Globex), TEST-NET addresses, SAMPLE-marked ids."""
 
 import ipaddress
@@ -14,7 +14,7 @@ from halo_record import door
 from halo_record.record import Recorder
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-FIXTURE = os.path.join(HERE, "fixtures", "salesforce_agentforce_sample")
+FIXTURE = door.bundled_sample("salesforce_agentforce")
 BOT = "app:bot:0XxSAMPLE00000001A"
 TEST_NETS = (ipaddress.ip_network("192.0.2.0/24"), ipaddress.ip_network("198.51.100.0/24"),
              ipaddress.ip_network("203.0.113.0/24"))

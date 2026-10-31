@@ -3,13 +3,14 @@
 GitHub reader produces, sealed, isolated to one connected app, checked against
 the salesforce-default pack, and rendered.
 
-The fixture under tests/fixtures/salesforce_eventlog_sample is synthetic:
+The bundled sample (halo_record/samples/salesforce_eventlog) is synthetic:
 placeholder names (Globex, Acme), TEST-NET addresses, SAMPLE-marked ids."""
 
 import ipaddress
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -19,7 +20,7 @@ from halo_record import door
 from halo_record.record import Recorder
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-FIXTURE = os.path.join(HERE, "fixtures", "salesforce_eventlog_sample")
+FIXTURE = door.bundled_sample("salesforce_eventlog")
 APP = "app:Acme Collections Agent"
 BOT = "app:bot:0XxSAMPLE00000001A"
 TEST_NETS = (ipaddress.ip_network("192.0.2.0/24"), ipaddress.ip_network("198.51.100.0/24"))
@@ -117,7 +118,7 @@ class TestParse(SfBase):
         events = door.parse_salesforce_eventlog([p, os.path.join(FIXTURE, "Login.csv")])
         self.assertEqual(events.skipped, {"Logout": 2})
         self.assertEqual(len(events), 17)
-        self.assertTrue(events.sample)   # any file from the sample fixture marks the whole input
+        self.assertTrue(events.sample)   # any file from the bundled sample marks the whole input
         self.assertFalse(door.parse_salesforce_eventlog(p).sample)
 
     def test_refuses_a_csv_without_event_type(self):
@@ -403,10 +404,26 @@ class TestCli(SfBase):
         self.assertIn("One session, more than one address", html)
         self.assertNotRegex(html, r"\b(?!192\.0\.2\.|198\.51\.100\.)\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b")
 
-    def test_fixture_dir_is_marked_sample_without_the_flag(self):
+    def test_bundled_sample_is_marked_sample_without_the_flag(self):
         out = self.run_cli(FIXTURE, "--agent", APP, "--out", "p.html", "--chain", "c.jsonl")
         self.assertEqual(out.returncode, 0, out.stderr)
         with open(os.path.join(self.tmp, "p.html"), encoding="utf-8") as fh:
+            self.assertIn("SAMPLE — synthetic", fh.read())
+
+    def test_directory_name_does_not_mark_sample(self):
+        # SAMPLE is explicit: the --sample flag, or the bundled sample itself.
+        # A real export in a directory that happens to say "sample" is not one.
+        d = os.path.join(self.tmp, "acme-sample-2026")
+        shutil.copytree(FIXTURE, d)
+        out = self.run_cli(d, "--agent", APP, "--allow-ip", "192.0.2.0/24", "--out", "p.html", "--chain", "c.jsonl")
+        self.assertEqual(out.returncode, 0, out.stderr)
+        self.assertNotIn("SAMPLE", out.stdout)
+        with open(os.path.join(self.tmp, "p.html"), encoding="utf-8") as fh:
+            self.assertNotIn("SAMPLE —", fh.read())
+        out = self.run_cli(d, "--sample", "--agent", APP, "--out", "q.html", "--chain", "d.jsonl")
+        self.assertEqual(out.returncode, 0, out.stderr)
+        self.assertIn("SAMPLE: synthetic export", out.stdout)
+        with open(os.path.join(self.tmp, "q.html"), encoding="utf-8") as fh:
             self.assertIn("SAMPLE — synthetic", fh.read())
 
     def test_allow_ip_overrides_the_default(self):

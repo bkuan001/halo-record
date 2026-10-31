@@ -647,7 +647,7 @@ class SalesforceDoorPage(unittest.TestCase):
         self.assertNotRegex(self.html, r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
 
 
-AGENTFORCE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures", "salesforce_agentforce_sample")
+AGENTFORCE = door.bundled_sample("salesforce_agentforce")
 BOT = "app:bot:0XxSAMPLE00000001A"
 
 
@@ -788,7 +788,7 @@ class ToolIdsAreNotMasked(unittest.TestCase):
 class AgentforceDoorSheet(unittest.TestCase):
     """The Agentforce page read by a bank's technology-risk lead: what the
     agent did, where it stepped outside its lines, and whether this copy is
-    intact. Fixture: tests/fixtures/salesforce_agentforce_sample (Globex)."""
+    intact. Fixture: the bundled salesforce_agentforce sample (Globex)."""
 
     def setUp(self):
         self.tmp = tempfile.mkdtemp()

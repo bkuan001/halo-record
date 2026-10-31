@@ -47,6 +47,11 @@ SALESFORCE_SOURCE = {"adapter": "salesforce_eventlog",
 # with ``halo door --allow-ip CIDR``.
 DEFAULT_ALLOWLIST = ("192.0.2.0/24",)
 
+# The synthetic exports shipped in the package: one connected app's week in
+# an org (``salesforce_eventlog``) and an Agentforce agent's (``salesforce_agentforce``).
+# Placeholder names, TEST-NET addresses, SAMPLE-marked ids.
+SAMPLES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "samples")
+
 KNOWN_TYPES = {"login": "Login", "restapi": "RestApi", "apexexecution": "ApexExecution",
                "uri": "URI", "reportexport": "ReportExport",
                "invocableaction": "InvocableAction", "apexcallout": "ApexCallout"}
@@ -69,8 +74,8 @@ class EventList(list):
     ``skipped`` ({EVENT_TYPE: rows} for types it does not read), ``dropped``
     ({reason: rows} for rows of a known type it could not seal: an
     unreadable timestamp, fewer columns than the header), ``files`` (the
-    CSVs read) and ``sample`` (True when the input is the bundled synthetic
-    fixture, by its directory name)."""
+    CSVs read) and ``sample`` (True when the input is one of the bundled
+    synthetic exports under ``SAMPLES_DIR``)."""
     skipped = None
     dropped = None
     files = None
@@ -255,6 +260,24 @@ def _normalize(row, event_type, allowlist=None):
     return base
 
 
+def bundled_sample(name):
+    """The path of a bundled sample export: ``salesforce_eventlog`` or
+    ``salesforce_agentforce``."""
+    return os.path.join(SAMPLES_DIR, name)
+
+
+def is_bundled_sample(paths_or_dir):
+    """True when any of the CSVs ``paths_or_dir`` names lies under the
+    package's own samples. A directory of a real export is never a sample,
+    whatever it is called; ``halo door --sample`` marks one explicitly."""
+    root = os.path.realpath(SAMPLES_DIR) + os.sep
+    try:
+        files = _csv_paths(paths_or_dir)
+    except OSError:
+        return False
+    return any(os.path.realpath(p).startswith(root) for p in files)
+
+
 def _csv_paths(paths_or_dir):
     if isinstance(paths_or_dir, (str, os.PathLike)):
         paths_or_dir = [paths_or_dir]
@@ -342,8 +365,7 @@ def parse_salesforce_eventlog(paths_or_dir, allowlist=None):
     events.skipped = skipped
     events.dropped = dropped
     events.files = files
-    events.sample = any("sample" in part.lower()
-                        for p in files for part in os.path.normpath(p).split(os.sep)[-2:])
+    events.sample = is_bundled_sample(files)
     return events
 
 

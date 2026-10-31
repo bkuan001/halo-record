@@ -43,7 +43,8 @@ from urllib.parse import urlsplit
 
 from . import _view
 from . import policy as _policy
-from .door_sources import (DEFAULT_ALLOWLIST, PLATFORM_IP, SALESFORCE_SOURCE, ip_allowed,  # noqa: F401
+from .door_sources import (DEFAULT_ALLOWLIST, PLATFORM_IP, SALESFORCE_SOURCE, SAMPLES_DIR,  # noqa: F401
+                           bundled_sample, ip_allowed, is_bundled_sample,
                            parse_salesforce_eventlog, shared_sessions)
 from .record import build
 from .redact import mask_known_secrets
