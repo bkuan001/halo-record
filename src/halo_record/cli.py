@@ -414,6 +414,15 @@ def _cmd_door(args):
                                   or args.export.lower().endswith(".csv")) else "github"
     sf = source == "salesforce"
     sample = bool(args.sample or (sf and door.is_bundled_sample(args.export)))
+    # Each --allow-ip must parse: a value ip_allowed cannot read would be
+    # skipped, and every real sign-in would seal as outside the allowlist.
+    import ipaddress as _ipaddress
+    for value in args.allow_ip or ():
+        try:
+            _ipaddress.ip_network(value, strict=False)
+        except ValueError:
+            sys.stderr.write("halo door: --allow-ip %s: not a valid address or CIDR\n" % value)
+            return 2
     # A real export has no default allowlist: without --allow-ip the sign-in
     # rule is not evaluated, and the page says so. The sample keeps its range.
     allowlist = (args.allow_ip or (list(door.DEFAULT_ALLOWLIST) if sample else None)) if sf else None

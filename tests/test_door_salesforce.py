@@ -513,6 +513,17 @@ class TestCli(SfBase):
         self.assertIn(APP, out.stdout)
         self.assertIn(BOT, out.stdout)
 
+    def test_malformed_allow_ip_is_refused_before_sealing(self):
+        # A CIDR that cannot be parsed would otherwise be skipped silently and
+        # seal every real sign-in as outside the allowlist.
+        for bad in ("203.0.113.0/240", "not-an-address", "192.0.2.0/24/7"):
+            out = self.run_cli(FIXTURE, "--agent", APP, "--allow-ip", "192.0.2.0/24",
+                               "--allow-ip", bad, "--out", "p.html", "--chain", "c.jsonl")
+            self.assertEqual(out.returncode, 2, (bad, out.stdout, out.stderr))
+            self.assertIn("halo door: --allow-ip %s: not a valid address or CIDR" % bad, out.stderr)
+            self.assertFalse(os.path.exists(os.path.join(self.tmp, "c.jsonl")), bad)
+            self.assertFalse(os.path.exists(os.path.join(self.tmp, "p.html")), bad)
+
     def test_renders_the_sample_page(self):
         out = self.run_cli(FIXTURE, "--source", "salesforce", "--policy", "salesforce-default",
                            "--sample", "--agent", APP, "--out", "p.html", "--chain", "c.jsonl")
