@@ -714,6 +714,16 @@ class AgentforceDoorPage(unittest.TestCase):
         self.assertNotIn("/core/v2/", section)
         self.assertNotIn("<table", section)
 
+    def test_expected_credential_applies_with_one_identity(self):
+        # One identity folds the credential bars into the summary sentence,
+        # but a credential the owner did not issue is still flagged.
+        html = self.page(expected_credentials=["app:bot:0XxISSUED00000001A"])
+        section = _between(html, "<h2>How it signed in</h2>", "<h2>")
+        self.assertIn('class="v" title="not a credential issued to this agent"', section)
+        self.assertIn("One marked in red is not among those you named.", section)
+        self.assertNotIn("<h2>How it signed in</h2>", self.page(expected_credentials=[BOT]))
+        self.assertNotIn("<h2>How it signed in</h2>", self.page())
+
     def test_label_is_escaped(self):
         html = self.page(label="<b>Atlas</b>")
         self.assertNotIn("<b>Atlas</b>", html)

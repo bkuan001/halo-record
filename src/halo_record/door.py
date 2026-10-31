@@ -1376,7 +1376,11 @@ def render_page(records, matches, verdict, *, agent, title=None, unusual=(),
 
     paragraphs, broken_sessions = broken_paragraphs(verdict, records + routine, agent=agent, label=label,
                                                     context=context, shared=shared)
-    one_identity = source == "salesforce" and len(credentials(records + routine)) == 1
+    # One identity folds the credential bars into the summary sentence, unless
+    # the owner named the credentials it issued and this one is not among them.
+    one_identity = (source == "salesforce" and len(credentials(records + routine)) == 1
+                    and not (expected_credentials
+                             and unexpected_credentials(records + routine, expected_credentials)))
 
     if source == "salesforce":
         short = list(SALESFORCE_CANNOT_SHOW_SHORT)
