@@ -606,6 +606,25 @@ class TestCli(SfBase):
         self.assertIn("bundled sample", out.stdout)
         self.assertNotIn("automatic for the bundled fixture", out.stdout)
 
+    def test_own_record_is_not_compared_for_a_salesforce_export(self):
+        # No matcher exists for this source yet: the page says so instead of
+        # reporting every row as missing from the agent's own record.
+        own = os.path.join(self.tmp, "own.jsonl")
+        from halo_record.record import build
+        Recorder(own).append(build("tool_call", "security", tool="Bash", tool_input={"command": "ls"},
+                                   ts="2026-10-05T13:06:41+00:00", agent={"id": "acme-agent"}, source="hook"))
+        out = self.run_cli(FIXTURE, "--agent", APP, "--own", own, "--out", "p.html", "--chain", "c.jsonl")
+        self.assertEqual(out.returncode, 0, out.stderr)
+        self.assertIn("Comparison with the agent's own record is not available for this source yet",
+                      out.stdout)
+        self.assertNotIn("unmatched", out.stdout)
+        with open(os.path.join(self.tmp, "p.html"), encoding="utf-8") as fh:
+            html = fh.read()
+        self.assertIn("Comparison with the agent's own record is not available for this source yet.", html)
+        self.assertNotIn("not in the agent's own record", html)
+        self.assertNotIn("Against the agent's own record", html)
+        self.assertNotIn("No vendor record supplied", html)
+
     def test_github_export_without_own_also_says_no_vendor_record(self):
         rows = [{"@timestamp": 1791590400000, "action": "git.push", "actor": "dev",
                  "repo": "acme/widgets", "programmatic_access_type": "OAuth access token",

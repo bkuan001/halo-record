@@ -462,12 +462,18 @@ def _cmd_door(args):
         return 1
     recs = door.isolate(all_recs, args.agent)
     own = []
-    if args.own:
+    # The agent's own record is lined up only where a matcher exists for the
+    # source (GitHub today); elsewhere the page says the comparison is not
+    # available rather than reporting every row as missing from it.
+    comparable = door.can_compare(source)
+    if args.own and comparable:
         try:
             own = load_records(args.own)
         except (OSError, ValueError) as e:
             sys.stderr.write("halo door: could not read --own %s: %s\n" % (args.own, e))
             return 2
+    elif args.own:
+        print(door.COMPARE_UNAVAILABLE)
     rules_name = args.rules or ("salesforce-agentforce" if bundled else
                                 "salesforce-default" if sf else "github-default")
     try:
@@ -495,7 +501,9 @@ def _cmd_door(args):
                                   expected_credentials=args.expect_credential or None,
                                   routine=routine,
                                   source_actions=[e.get("action") for e in events],
-                                  own_supplied=bool(args.own), sample=sample, source=source,
+                                  own_supplied=bool(args.own and comparable),
+                                  own_unavailable=bool(args.own and not comparable),
+                                  sample=sample, source=source,
                                   shared=shared, allowlist=allowlist, chain=all_recs,
                                   tenant=args.subject, dropped=dropped,
                                   chain_file=_os.path.basename(args.chain),
@@ -503,15 +511,17 @@ def _cmd_door(args):
                                   sample_note=args.sample_note))
     tiers = Counter(m["tier"] for m in matches)
     line = "%d actions by %s | rules broken: %d | " % (len(recs), args.agent, verdict["violations"])
-    if args.own:
+    if args.own and comparable:
         line += "matched %d, probable %d, unmatched %d" % (tiers["matched"], tiers["probable"],
                                                           tiers["unmatched"])
+    elif args.own:
+        line += "vendor record: not compared for this source"
     else:
         line += "vendor record: none supplied"
     print(line)
     if routine:
         print("automatic token refreshes (sealed, not listed): %d" % len(routine))
-    if args.own:
+    if args.own and comparable:
         print("likely done by the agent as the person: %d" % len(as_person))
     if shared:
         print("sessions used from more than one address: %d" % len(shared))

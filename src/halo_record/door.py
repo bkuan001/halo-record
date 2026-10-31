@@ -526,6 +526,17 @@ _OWN_FAMILY = (
 )
 
 
+# Sources with a matcher in _INGEST_FAMILY: the agent's own record can be
+# lined up against them. The page says so where it cannot.
+COMPARABLE_SOURCES = frozenset({"github"})
+COMPARE_UNAVAILABLE = "Comparison with the agent's own record is not available for this source yet"
+
+
+def can_compare(source):
+    """True when ``match`` has a matcher for records from ``source``."""
+    return source in COMPARABLE_SOURCES
+
+
 def _ingest_family(rec):
     tool = (rec.get("action") or {}).get("tool") or ""
     for pat, fam in _INGEST_FAMILY:
@@ -1269,7 +1280,7 @@ def _count_words(n):
 
 def summary_lines(records, matches, verdict, *, agent, tenant, own_supplied=True,
                   as_person=(), routine=(), label=None, source="github", context=None,
-                  tenant_named=True):
+                  tenant_named=True, own_unavailable=False):
     """The plain lines at the top of the door page, in order, each a short
     sentence: what the agent did (how many actions, over how many days or
     sessions; the period and the org already sit in the header); rules
@@ -1277,7 +1288,8 @@ def summary_lines(records, matches, verdict, *, agent, tenant, own_supplied=True
     acted through; calls outside the org (omitted when none); actions the
     platform recorded against the person (omitted when none); and what the
     agent's own record does not account for, or that no vendor record was
-    supplied. ``label`` stands in for the agent's key wherever it would
+    supplied (``own_unavailable``: one was, but this source has no matcher
+    yet). ``label`` stands in for the agent's key wherever it would
     print; without one the heading's name is used. Returns ``(text,
     css_class)`` pairs.
 
@@ -1344,6 +1356,8 @@ def summary_lines(records, matches, verdict, *, agent, tenant, own_supplied=True
                           "warn"))
         else:
             lines.append(("All %s are in the agent's own record." % _n(len(records)), "ok"))
+    elif own_unavailable:
+        lines.append((COMPARE_UNAVAILABLE + ".", ""))
     elif sf and bot:
         lines.append(("Not yet compared to %s's own session trace." % name, ""))
     else:
@@ -1356,7 +1370,7 @@ def render_page(records, matches, verdict, *, agent, title=None, unusual=(),
                 source_actions=None, own_supplied=True, sample=False, anchored=None,
                 source="github", shared=(), allowlist=None, chain=None, tenant=None,
                 prepared=None, chain_file=None, label=None, events=None, sample_note=None,
-                dropped=None):
+                dropped=None, own_unavailable=False):
     """The door page, rendered through the Runtime Report in door mode: a
     header naming the agent in the buyer's platform, the five-line summary,
     what broke (one paragraph per broken rule, when any), the agent's actions
@@ -1376,7 +1390,9 @@ def render_page(records, matches, verdict, *, agent, title=None, unusual=(),
     Without it, ``records`` is embedded as the chain, which verifies in the
     browser only when it is the whole chain. ``routine`` rows are sealed in
     the chain but not listed. ``own_supplied=False`` states that no vendor
-    record was supplied and drops the comparison. ``sample`` adds a banner,
+    record was supplied and drops the comparison; ``own_unavailable=True``
+    says one was supplied but this source has no matcher yet, and drops it
+    the same way. ``sample`` adds a banner,
     and ``sample_note`` one owner-supplied clause to it. ``anchored`` is the
     anchor receipt to cite, or None for none. ``tenant`` names the account or
     org; ``prepared`` is the date label in the header (today, by the
@@ -1405,7 +1421,8 @@ def render_page(records, matches, verdict, *, agent, title=None, unusual=(),
 
     lines = summary_lines(records, matches, verdict, agent=agent, tenant=tenant,
                           own_supplied=own_supplied, as_person=as_person, routine=routine,
-                          label=label, source=source, context=context, tenant_named=bool(named))
+                          label=label, source=source, context=context, tenant_named=bool(named),
+                          own_unavailable=own_unavailable)
     # Text content, not attributes: only <, > and & need escaping, so the
     # lines keep their apostrophes.
     summary = ['<li><span class="n">%d</span><span%s>%s</span></li>' % (
