@@ -447,6 +447,16 @@ def callouts(records):
     return {"count": count, "hosts": hosts}
 
 
+def acts_in(events, key):
+    """True when ``key`` names a client acting in ``events``, by the rule
+    ``isolate`` applies to the sealed records: checked before anything is
+    sealed, so an absent agent leaves no chain behind."""
+    if key.startswith("agent:"):
+        tag = "[%s]" % key.split(":", 1)[1]
+        return any((agent_key(e) or "") == key or (agent_key(e) or "").endswith(tag) for e in events)
+    return any(agent_key(e) == key for e in events)
+
+
 def isolate(records, key):
     """Only the records attributed to one outside agent. ``agent:NAME`` gathers
     every client that declared NAME, whichever app or token it came through —

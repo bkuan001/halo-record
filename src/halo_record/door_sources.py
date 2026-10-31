@@ -278,6 +278,22 @@ def is_bundled_sample(paths_or_dir):
     return any(os.path.realpath(p).startswith(root) for p in files)
 
 
+def _rows(path):
+    """The rows of one EventLogFile CSV. A CSV without an ``EVENT_TYPE``
+    column is refused; a file the csv module or the codec cannot read is
+    named with the reader's own reason."""
+    try:
+        with open(path, encoding="utf-8-sig", newline="") as fh:
+            reader = csv.DictReader(fh)
+            if not reader.fieldnames or "EVENT_TYPE" not in [f.strip() for f in reader.fieldnames]:
+                raise ValueError("%s is not a Salesforce EventLogFile export "
+                                 "(expected a CSV with an EVENT_TYPE column)" % path)
+            for row in reader:
+                yield row
+    except (csv.Error, UnicodeDecodeError) as e:
+        raise ValueError("%s: %s" % (path, e))
+
+
 def _csv_paths(paths_or_dir):
     if isinstance(paths_or_dir, (str, os.PathLike)):
         paths_or_dir = [paths_or_dir]
@@ -311,29 +327,24 @@ def parse_salesforce_eventlog(paths_or_dir, allowlist=None):
         raise ValueError("%s: no EventLogFile CSVs found" % paths_or_dir)
     rows, skipped, dropped = [], {}, {}
     for path in files:
-        with open(path, encoding="utf-8-sig", newline="") as fh:
-            reader = csv.DictReader(fh)
-            if not reader.fieldnames or "EVENT_TYPE" not in [f.strip() for f in reader.fieldnames]:
-                raise ValueError("%s is not a Salesforce EventLogFile export "
-                                 "(expected a CSV with an EVENT_TYPE column)" % path)
-            for row in reader:
-                # DictReader fills a column the row did not reach with None;
-                # a column the row left blank is "".
-                short = any(v is None for v in row.values())
-                row = {(k or "").strip(): (v if v is not None else "") for k, v in row.items()}
-                raw_type = (row.get("EVENT_TYPE") or "").strip()
-                kind = KNOWN_TYPES.get(raw_type.replace("_", "").replace(" ", "").lower())
-                if not kind:
-                    skipped[raw_type or "(blank)"] = skipped.get(raw_type or "(blank)", 0) + 1
-                    continue
-                if short:
-                    dropped[SHORT_ROW] = dropped.get(SHORT_ROW, 0) + 1
-                    continue
-                event = _normalize(row, kind, allowlist)
-                if not event["ts"]:
-                    dropped[UNREADABLE_TIME] = dropped.get(UNREADABLE_TIME, 0) + 1
-                    continue
-                rows.append(event)
+        for row in _rows(path):
+            # DictReader fills a column the row did not reach with None;
+            # a column the row left blank is "".
+            short = any(v is None for v in row.values())
+            row = {(k or "").strip(): (v if v is not None else "") for k, v in row.items()}
+            raw_type = (row.get("EVENT_TYPE") or "").strip()
+            kind = KNOWN_TYPES.get(raw_type.replace("_", "").replace(" ", "").lower())
+            if not kind:
+                skipped[raw_type or "(blank)"] = skipped.get(raw_type or "(blank)", 0) + 1
+                continue
+            if short:
+                dropped[SHORT_ROW] = dropped.get(SHORT_ROW, 0) + 1
+                continue
+            event = _normalize(row, kind, allowlist)
+            if not event["ts"]:
+                dropped[UNREADABLE_TIME] = dropped.get(UNREADABLE_TIME, 0) + 1
+                continue
+            rows.append(event)
     # Resolve people and sessions across files: USER_ID -> USER_NAME, and the
     # app a session belongs to from any row on it that names the app.
     users, sessions = {}, {}

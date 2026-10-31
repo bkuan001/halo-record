@@ -287,6 +287,114 @@ class TestUnreadableRows(SfBase):
             self.assertEqual(len(fh.read().splitlines()), 1)
 
 
+class TestCliRefusals(SfBase):
+    """halo door checks what it can before sealing, and reports what it
+    cannot read in one line: no traceback, no orphan chain."""
+
+    HEAD = ["EVENT_TYPE", "TIMESTAMP_DERIVED", "USER_ID", "USER_NAME", "CLIENT_NAME", "METHOD", "URI",
+            "ENTITY_NAME", "STATUS_CODE", "LOGIN_KEY"]
+
+    def run_cli(self, *argv):
+        env = dict(os.environ, PYTHONPATH=os.path.join(HERE, "..", "src"))
+        return subprocess.run([sys.executable, "-m", "halo_record.cli", "door", *argv],
+                              capture_output=True, text=True, env=env, cwd=self.tmp)
+
+    def export(self):
+        d = os.path.join(self.tmp, "export")
+        if not os.path.isdir(d):
+            shutil.copytree(FIXTURE, d)
+        return d
+
+    def test_csv_the_reader_refuses_is_reported_not_raised(self):
+        # A field beyond the csv module's field limit is one it refuses to
+        # read; the file is named, with the reader's reason, and nothing is sealed.
+        d = self.export()
+        with open(os.path.join(d, "RestApi.csv"), "a", encoding="utf-8") as fh:
+            fh.write('"RestApi","2026-10-05T13:06:41.000Z","005SAMPLE00000001A","%s"\n' % ("x" * 140000))
+        out = self.run_cli(d, "--agent", APP, "--out", "p.html", "--chain", "c.jsonl")
+        self.assertEqual(out.returncode, 2, out.stdout)
+        self.assertIn("halo door: %s: " % os.path.join(d, "RestApi.csv"), out.stderr)
+        self.assertNotIn("Traceback", out.stderr)
+        self.assertFalse(os.path.exists(os.path.join(self.tmp, "c.jsonl")))
+
+    def test_nul_byte_in_a_csv_is_never_a_traceback(self):
+        # Older csv modules refuse a NUL byte (reported as above); newer ones
+        # read it, and the torn row is counted, not sealed.
+        d = self.export()
+        with open(os.path.join(d, "RestApi.csv"), "ab") as fh:
+            fh.write(b'"RestApi","2026-10-05T13:06:41.000Z","005SAMPLE00000001A","x\x00y"\n')
+        out = self.run_cli(d, "--agent", APP, "--out", "p.html", "--chain", "c.jsonl")
+        self.assertIn(out.returncode, (0, 2), out.stderr)
+        self.assertNotIn("Traceback", out.stderr)
+        if out.returncode == 2:
+            self.assertIn("halo door: %s: " % os.path.join(d, "RestApi.csv"), out.stderr)
+            self.assertFalse(os.path.exists(os.path.join(self.tmp, "c.jsonl")))
+        else:
+            self.assertIn("1 row skipped: fewer columns than the header", out.stdout)
+
+    def test_undecodable_csv_is_reported_not_raised(self):
+        d = self.export()
+        with open(os.path.join(d, "URI.csv"), "ab") as fh:
+            fh.write(b'"URI","2026-10-05T13:06:41.000Z","005SAMPLE00000002A","/\xff\xfe"\n')
+        out = self.run_cli(d, "--agent", APP, "--out", "p.html", "--chain", "c.jsonl")
+        self.assertEqual(out.returncode, 2, out.stdout)
+        self.assertIn("halo door: %s: " % os.path.join(d, "URI.csv"), out.stderr)
+        self.assertNotIn("Traceback", out.stderr)
+        self.assertFalse(os.path.exists(os.path.join(self.tmp, "c.jsonl")))
+
+    @unittest.skipIf(os.geteuid() == 0, "root can write anywhere")
+    def test_unwritable_out_leaves_no_chain(self):
+        d = self.export()
+        locked = os.path.join(self.tmp, "locked")
+        os.mkdir(locked)
+        os.chmod(locked, 0o500)
+        try:
+            out = self.run_cli(d, "--agent", APP, "--out", os.path.join(locked, "p.html"), "--chain", "c.jsonl")
+        finally:
+            os.chmod(locked, 0o700)
+        self.assertEqual(out.returncode, 1, out.stdout)
+        self.assertIn("halo door: cannot write --out", out.stderr)
+        self.assertNotIn("Traceback", out.stderr)
+        self.assertEqual(len(out.stderr.strip().splitlines()), 1)
+        self.assertFalse(os.path.exists(os.path.join(self.tmp, "c.jsonl")))
+
+    @unittest.skipIf(os.geteuid() == 0, "root can write anywhere")
+    def test_unwritable_chain_is_one_line(self):
+        d = self.export()
+        locked = os.path.join(self.tmp, "locked")
+        os.mkdir(locked)
+        os.chmod(locked, 0o500)
+        try:
+            out = self.run_cli(d, "--agent", APP, "--out", "p.html", "--chain", os.path.join(locked, "c.jsonl"))
+        finally:
+            os.chmod(locked, 0o700)
+        self.assertEqual(out.returncode, 1, out.stdout)
+        self.assertIn("halo door: cannot write --chain", out.stderr)
+        self.assertNotIn("Traceback", out.stderr)
+        self.assertEqual(len(out.stderr.strip().splitlines()), 1)
+        self.assertFalse(os.path.exists(os.path.join(self.tmp, "p.html")))
+
+    def test_absent_agent_leaves_no_chain(self):
+        out = self.run_cli(self.export(), "--agent", "app:Nobody", "--out", "p.html", "--chain", "c.jsonl")
+        self.assertEqual(out.returncode, 3, out.stdout)
+        self.assertIn("no actions by 'app:Nobody'", out.stderr)
+        self.assertFalse(os.path.exists(os.path.join(self.tmp, "c.jsonl")))
+        self.assertFalse(os.path.exists(os.path.join(self.tmp, "p.html")))
+
+    def test_declared_agent_key_is_found_before_sealing(self):
+        # agent:NAME selects every credential that declared NAME; the check
+        # before sealing follows the same rule as isolate.
+        rows = [{"@timestamp": 1791590400000, "action": "git.push", "actor": "dev", "repo": "acme/widgets",
+                 "programmatic_access_type": "OAuth access token", "oauth_application_name": "Example Agent",
+                 "user_agent": "gh/2.0 Agent/claude-code_1.0_agent"}]
+        p = os.path.join(self.tmp, "export.json")
+        with open(p, "w") as fh:
+            json.dump(rows, fh)
+        out = self.run_cli(p, "--agent", "agent:claude-code", "--out", "g.html", "--chain", "g.jsonl")
+        self.assertEqual(out.returncode, 0, out.stderr)
+        self.assertIn("1 actions by agent:claude-code", out.stdout)
+
+
 class TestRules(SfBase):
     def test_each_rule_fires_once_on_the_app(self):
         mine = door.isolate(self.ingested(allowlist=door.DEFAULT_ALLOWLIST), APP)

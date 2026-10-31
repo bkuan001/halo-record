@@ -380,8 +380,21 @@ def _cmd_witness_serve(args):
         return 1
 
 
+def _writable(path):
+    """True when ``path`` can be written: it exists and is writable, or its
+    directory exists and is."""
+    import os as _os
+    if _os.path.exists(path):
+        return _os.access(path, _os.W_OK)
+    parent = _os.path.dirname(_os.path.abspath(path))
+    return _os.path.isdir(parent) and _os.access(parent, _os.W_OK)
+
+
 def _cmd_door(args):
-    """Buyer-side view of one outside agent, from a log export the buyer has."""
+    """Buyer-side view of one outside agent, from a log export the buyer has.
+    What can be checked before sealing is: the chain and page paths can be
+    written, and the agent acts in the export. Unreadable input is reported
+    in one line (exit 2); a path that cannot be written, in one line (exit 1)."""
     import os as _os
     from collections import Counter
     from . import door
@@ -433,12 +446,21 @@ def _cmd_door(args):
         sys.stderr.write("halo door: %s already exists; pass --chain NEW.jsonl so each "
                          "ingest seals its own chain\n" % args.chain)
         return 2
-    all_recs = door.ingest(events, Recorder(args.chain), subject=args.subject)
-    recs = door.isolate(all_recs, args.agent)
-    if not recs:
+    for flag, path in (("--chain", args.chain), ("--out", args.out)):
+        if not _writable(path):
+            sys.stderr.write("halo door: cannot write %s %s (directory missing or not writable)\n"
+                             % (flag, path))
+            return 1
+    if not door.acts_in(events, args.agent):
         sys.stderr.write("halo door: no actions by %r in this export (run without "
                          "--agent to list clients)\n" % args.agent)
         return 3
+    try:
+        all_recs = door.ingest(events, Recorder(args.chain), subject=args.subject)
+    except OSError as e:
+        sys.stderr.write("halo door: cannot write --chain %s (%s)\n" % (args.chain, e))
+        return 1
+    recs = door.isolate(all_recs, args.agent)
     own = []
     if args.own:
         try:
@@ -459,9 +481,14 @@ def _cmd_door(args):
     recs, routine = door.split_routine(recs, keep_ids=broke)
     matches = door.match(recs, own)
     shared = door.shared_sessions(events) if sf else []
-    with open(args.out, "w", encoding="utf-8") as fh:
-        as_person = door.done_as_person(all_recs, own, site="force.com" if sf else "github.com") \
-            if own else []
+    as_person = door.done_as_person(all_recs, own, site="force.com" if sf else "github.com") \
+        if own else []
+    try:
+        fh = open(args.out, "w", encoding="utf-8")
+    except OSError as e:
+        sys.stderr.write("halo door: cannot write --out %s (%s)\n" % (args.out, e))
+        return 1
+    with fh:
         fh.write(door.render_page(recs, matches, verdict, agent=args.agent,
                                   unusual=() if sf else door.unusual_devices(events),
                                   as_person=as_person,
