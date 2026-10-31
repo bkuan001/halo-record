@@ -403,6 +403,9 @@ def _cmd_door(args):
         return 2
     sample = bool(args.sample or getattr(events, "sample", False))
     skipped = getattr(events, "skipped", None) or {}
+    dropped = getattr(events, "dropped", None) or {}
+    for reason, n in sorted(dropped.items()):
+        print("%d row%s skipped: %s" % (n, "" if n == 1 else "s", reason))
     if not args.agent:
         routine = sum(1 for e in events if door.is_routine(e.get("action")))
         counts = Counter(door.agent_key(e) or "(the person, no programmatic client)"
@@ -456,7 +459,7 @@ def _cmd_door(args):
                                   source_actions=[e.get("action") for e in events],
                                   own_supplied=bool(args.own), sample=sample, source=source,
                                   shared=shared, allowlist=allowlist, chain=all_recs,
-                                  tenant=args.subject,
+                                  tenant=args.subject, dropped=dropped,
                                   chain_file=_os.path.basename(args.chain),
                                   label=args.label, events=door.event_index(events, all_recs),
                                   sample_note=args.sample_note))

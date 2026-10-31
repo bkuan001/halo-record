@@ -66,12 +66,19 @@ _SETUP_URI = re.compile(r"/setup/|/_ui/common/config|/services/Soap/m/", re.I)
 
 class EventList(list):
     """The parsed events (oldest first) plus what the reader set aside:
-    ``skipped`` ({EVENT_TYPE: rows} for types it does not read), ``files``
-    (the CSVs read) and ``sample`` (True when the input is the bundled
-    synthetic fixture, by its directory name)."""
+    ``skipped`` ({EVENT_TYPE: rows} for types it does not read), ``dropped``
+    ({reason: rows} for rows of a known type it could not seal: an
+    unreadable timestamp, fewer columns than the header), ``files`` (the
+    CSVs read) and ``sample`` (True when the input is the bundled synthetic
+    fixture, by its directory name)."""
     skipped = None
+    dropped = None
     files = None
     sample = False
+
+
+UNREADABLE_TIME = "unreadable timestamp"
+SHORT_ROW = "fewer columns than the header"
 
 
 def _iso(value):
@@ -265,7 +272,10 @@ def parse_salesforce_eventlog(paths_or_dir, allowlist=None):
     """Read one or more EventLogFile CSVs (or a directory of them) into
     normalized events, oldest first. A CSV without an ``EVENT_TYPE`` column
     is refused rather than guessed at; rows of event types this reader does
-    not use are skipped and counted in ``.skipped``.
+    not use are skipped and counted in ``.skipped``. A row of a known type
+    whose timestamp cannot be read, or that carries fewer columns than the
+    header, is not sealed (never with a guessed time or a bare action): it is
+    counted in ``.dropped`` by reason.
 
     ``allowlist`` (CIDRs the integration may sign in from) classifies each
     sign-in with an address: one from outside it becomes the action
@@ -275,7 +285,7 @@ def parse_salesforce_eventlog(paths_or_dir, allowlist=None):
     files = _csv_paths(paths_or_dir)
     if not files:
         raise ValueError("%s: no EventLogFile CSVs found" % paths_or_dir)
-    rows, skipped = [], {}
+    rows, skipped, dropped = [], {}, {}
     for path in files:
         with open(path, encoding="utf-8-sig", newline="") as fh:
             reader = csv.DictReader(fh)
@@ -283,13 +293,23 @@ def parse_salesforce_eventlog(paths_or_dir, allowlist=None):
                 raise ValueError("%s is not a Salesforce EventLogFile export "
                                  "(expected a CSV with an EVENT_TYPE column)" % path)
             for row in reader:
+                # DictReader fills a column the row did not reach with None;
+                # a column the row left blank is "".
+                short = any(v is None for v in row.values())
                 row = {(k or "").strip(): (v if v is not None else "") for k, v in row.items()}
                 raw_type = (row.get("EVENT_TYPE") or "").strip()
                 kind = KNOWN_TYPES.get(raw_type.replace("_", "").replace(" ", "").lower())
                 if not kind:
                     skipped[raw_type or "(blank)"] = skipped.get(raw_type or "(blank)", 0) + 1
                     continue
-                rows.append(_normalize(row, kind, allowlist))
+                if short:
+                    dropped[SHORT_ROW] = dropped.get(SHORT_ROW, 0) + 1
+                    continue
+                event = _normalize(row, kind, allowlist)
+                if not event["ts"]:
+                    dropped[UNREADABLE_TIME] = dropped.get(UNREADABLE_TIME, 0) + 1
+                    continue
+                rows.append(event)
     # Resolve people and sessions across files: USER_ID -> USER_NAME, and the
     # app a session belongs to from any row on it that names the app.
     users, sessions = {}, {}
@@ -320,6 +340,7 @@ def parse_salesforce_eventlog(paths_or_dir, allowlist=None):
     rows.sort(key=lambda e: e["ts"] or "")
     events = EventList(rows)
     events.skipped = skipped
+    events.dropped = dropped
     events.files = files
     events.sample = any("sample" in part.lower()
                         for p in files for part in os.path.normpath(p).split(os.sep)[-2:])

@@ -229,6 +229,63 @@ class TestQueryStrings(SfBase):
             self.assertNotIn(leak, chain_text)
 
 
+class TestUnreadableRows(SfBase):
+    """A row the reader cannot date, or that carries fewer columns than the
+    header, is not sealed: it is counted, reported, and named on the page."""
+
+    HEAD = ["EVENT_TYPE", "TIMESTAMP_DERIVED", "USER_ID", "USER_NAME", "CLIENT_NAME", "METHOD", "URI",
+            "ENTITY_NAME", "STATUS_CODE", "LOGIN_KEY"]
+
+    def row(self, ts, uri="/services/data/v62.0/query"):
+        return ["RestApi", ts, "005SAMPLE00000001A", "svc.acme@globex.example", "Acme Collections Agent",
+                "GET", uri, "Case", "200", "LKr1"]
+
+    def test_unreadable_timestamp_is_skipped_and_counted(self):
+        p = self.csv("RestApi.csv", self.HEAD, [self.row("2026-10-05T13:06:41.000Z"), self.row("yesterday"),
+                                                 self.row(""), self.row("2026-10-05T13:08:41.000Z")])
+        events = door.parse_salesforce_eventlog(p)
+        self.assertEqual(len(events), 2)
+        self.assertTrue(all(e["ts"] for e in events))
+        self.assertEqual(events.dropped, {"unreadable timestamp": 2})
+        recs = door.ingest(events, Recorder(self.chain()))
+        self.assertEqual([r["ts"][:19] for r in recs], ["2026-10-05T13:06:41", "2026-10-05T13:08:41"])
+
+    def test_short_row_is_skipped_and_counted(self):
+        p = os.path.join(self.tmp, "RestApi.csv")
+        with open(p, "w", encoding="utf-8") as fh:
+            fh.write(",".join('"%s"' % h for h in self.HEAD) + "\n")
+            fh.write(",".join('"%s"' % v for v in self.row("2026-10-05T13:06:41.000Z")) + "\n")
+            fh.write('"RestApi","2026-10-05T13:07:41.000Z","005SAMPLE00000001A"\n')   # three of ten columns
+        events = door.parse_salesforce_eventlog(p)
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events.dropped, {"fewer columns than the header": 1})
+        self.assertEqual([e["action"] for e in events], ["RestApi.GET"])
+
+    def test_cli_reports_skipped_rows_and_the_page_names_them(self):
+        d = os.path.join(self.tmp, "export")
+        os.mkdir(d)
+        with open(os.path.join(d, "RestApi.csv"), "w", encoding="utf-8") as fh:
+            fh.write(",".join('"%s"' % h for h in self.HEAD) + "\n")
+            fh.write(",".join('"%s"' % v for v in self.row("2026-10-05T13:06:41.000Z")) + "\n")
+            fh.write(",".join('"%s"' % v for v in self.row("yesterday")) + "\n")
+            fh.write(",".join('"%s"' % v for v in self.row("10/05/2026 1:06 PM")) + "\n")
+            fh.write('"RestApi","2026-10-05T13:07:41.000Z","005SAMPLE00000001A"\n')
+        env = dict(os.environ, PYTHONPATH=os.path.join(HERE, "..", "src"))
+        out = subprocess.run([sys.executable, "-m", "halo_record.cli", "door", d, "--agent", APP,
+                              "--out", "p.html", "--chain", "c.jsonl"],
+                             capture_output=True, text=True, env=env, cwd=self.tmp)
+        self.assertEqual(out.returncode, 0, out.stderr)
+        self.assertIn("2 rows skipped: unreadable timestamp", out.stdout)
+        self.assertIn("1 row skipped: fewer columns than the header", out.stdout)
+        self.assertIn("1 actions by", out.stdout)
+        with open(os.path.join(self.tmp, "p.html"), encoding="utf-8") as fh:
+            html = fh.read()
+        self.assertIn("3 rows in the export were not sealed: unreadable timestamp (2), "
+                      "fewer columns than the header (1).", html)
+        with open(os.path.join(self.tmp, "c.jsonl"), encoding="utf-8") as fh:
+            self.assertEqual(len(fh.read().splitlines()), 1)
+
+
 class TestRules(SfBase):
     def test_each_rule_fires_once_on_the_app(self):
         mine = door.isolate(self.ingested(allowlist=door.DEFAULT_ALLOWLIST), APP)

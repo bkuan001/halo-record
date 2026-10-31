@@ -99,6 +99,16 @@ SALESFORCE_CANNOT_SHOW_SHORT = (
 CALLOUT_CANNOT_SHOW = ("The query string of a call. The table under Every action shows each call's "
                        "path with its digit runs masked; the query string is not in the chain.")
 
+def dropped_sentence(dropped):
+    """``3 rows in the export were not sealed: unreadable timestamp (2), fewer
+    columns than the header (1).`` for the rows the reader set aside."""
+    total = sum(dropped.values())
+    reasons = ", ".join("%s (%s)" % (reason, _n(n))
+                        for reason, n in sorted(dropped.items(), key=lambda kv: (-kv[1], kv[0])) if n)
+    return "%s in the export %s not sealed: %s." % (
+        _plural(total, "row"), "was" if total == 1 else "were", reasons)
+
+
 # Kinds of activity an export may or may not carry. A personal security log
 # carries none of them; an organization audit log can carry some. The page names
 # the ones this export is missing, so a reader does not take absence as proof.
@@ -1313,7 +1323,8 @@ def render_page(records, matches, verdict, *, agent, title=None, unusual=(),
                 as_person=(), expected_credentials=None, routine=(),
                 source_actions=None, own_supplied=True, sample=False, anchored=None,
                 source="github", shared=(), allowlist=None, chain=None, tenant=None,
-                prepared=None, chain_file=None, label=None, events=None, sample_note=None):
+                prepared=None, chain_file=None, label=None, events=None, sample_note=None,
+                dropped=None):
     """The door page, rendered through the Runtime Report in door mode: a
     header naming the agent in the buyer's platform, the five-line summary,
     what broke (one paragraph per broken rule, when any), the agent's actions
@@ -1342,7 +1353,9 @@ def render_page(records, matches, verdict, *, agent, title=None, unusual=(),
     the heading, the summary and the credential bar in place of its key
     (the footer then shows the key). ``events`` is the event index
     (``event_index``) the What broke paragraphs and the sign-in count read
-    addresses and session keys from; the chain itself carries neither."""
+    addresses and session keys from; the chain itself carries neither.
+    ``dropped`` ({reason: rows}) names the rows of the export the reader
+    could not seal, under what the export cannot show."""
     from . import report as _report
     voc = _VOCAB.get(source, _VOCAB["github"])
     records = list(records)
@@ -1403,6 +1416,10 @@ def render_page(records, matches, verdict, *, agent, title=None, unusual=(),
         aside = ""
     if reached:
         cannot.append(CALLOUT_CANNOT_SHOW)
+    if dropped and sum(dropped.values()):
+        line = dropped_sentence(dropped)
+        short.append(line)
+        cannot.append(line)
 
     sections = "".join(x for x in (
         _broken_section(paragraphs),
