@@ -53,10 +53,6 @@ SOURCE = {"adapter": "github_audit", "via": "GitHub security log export",
 _SF = SALESFORCE_SOURCE["adapter"]
 _PREFIX = re.compile(r"^(github|salesforce):")
 
-# Printed after the package version in the door page's footer while the door
-# ships from its branch ahead of a release. A release clears it to "".
-DOOR_RELEASE_NOTE = " (bank-door branch, unreleased)"
-
 # What the same export does not carry about an Agentforce agent in particular;
 # listed first on an Agentforce page. One bullet covers prompts, plans and
 # model output: the Apex Execution row names the bot, nothing more.
@@ -1445,6 +1441,5 @@ def render_page(records, matches, verdict, *, agent, title=None, unusual=(),
         "summary": summary, "sections": sections,
         "every": _unmatched_fold(matches, bad_ids) if own_supplied else "",
         "source_note": source_note, "stands": stands, "witness": witness, "aside": aside,
-        "version_note": DOOR_RELEASE_NOTE,
     })
     return _report._LONE_SURROGATE_RE.sub("�", page)
