@@ -94,6 +94,45 @@ class ExportTest(unittest.TestCase):
         self.assertIn("recording host's clock", m2["chain"]["ts_source"])
         self.assertIn("recording host's clock", m2["columns"]["ts"]["note"])
 
+    def test_hook_chain_keeps_the_host_clock_wording(self):
+        # The Claude Code hook tags its records capture="ingested" (the hook
+        # relays what the harness already emits), but its ts is still the
+        # recording host's clock: only a platform log export carries the
+        # platform's own event time.
+        log, out = self._paths()
+        rec = Recorder(log)
+        for day in (1, 2):
+            rec.append(build("tool_call", "security", tool="Bash", tool_input={"n": day},
+                             subject="acme-corp", source="hook",
+                             ts=f"2026-06-{day:02d}T12:00:00+00:00"))
+        with open(log) as fh:
+            first = json.loads(fh.readline())
+        self.assertEqual(first["source"]["adapter"], "hook")
+        self.assertEqual(first["source"]["capture"], "ingested")
+        export(log, out, out=_silent)
+        with open(out + ".manifest.json") as fh:
+            manifest = json.load(fh)
+        for text in (manifest["chain"]["ts_source"], manifest["columns"]["ts"]["note"]):
+            self.assertIn("recording host's clock", text)
+            self.assertNotIn("platform", text)
+
+    def test_mixed_hook_and_door_chain_names_platform_log_exports(self):
+        log, out = self._paths()
+        rec = Recorder(log)
+        rec.append(build("tool_call", "security", tool="Bash", tool_input={"n": 1},
+                         subject="acme-corp", source="hook", ts="2026-06-01T12:00:00+00:00"))
+        rec.append(build("tool_call", "security", tool="github:push", tool_input="push",
+                         subject="acme-corp", ts="2026-06-02T12:00:00+00:00",
+                         source={"adapter": "github_audit", "via": "GitHub security log export",
+                                 "capture": "ingested"}))
+        export(log, out, out=_silent)
+        with open(out + ".manifest.json") as fh:
+            manifest = json.load(fh)
+        for text in (manifest["chain"]["ts_source"], manifest["columns"]["ts"]["note"]):
+            self.assertIn("recording host's clock", text)
+            self.assertIn("platform log export", text)
+            self.assertNotIn("ingested record", text)
+
     def test_manifest_csv_hash_matches_file_and_detects_edits(self):
         import hashlib
         log, out = self._paths()

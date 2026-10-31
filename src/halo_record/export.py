@@ -335,32 +335,44 @@ TS_SOURCE = ("declared: each record's ts is the recording host's clock, sealed i
              "exists only where a witness checkpoint carries an RFC 3161 token (verify "
              "it with openssl ts -verify).")
 
-# An ingested chain (source.capture == "ingested": a platform's log export
-# sealed after the fact) carries the platform's own event time, not the clock
-# of the host that sealed it.
+# A chain sealed from a platform's log export (source.adapter is one of the
+# door readers) carries the platform's own event time, not the clock of the
+# host that sealed it. Every other adapter -- including the Claude Code and
+# Codex hooks, which tag their records capture="ingested" because they relay
+# what the harness emits -- stamps ts from the recording host's clock, so the
+# decision is made on the adapter name, not on the capture tier.
+PLATFORM_TIME_ADAPTERS = frozenset({"github_audit", "salesforce_eventlog"})
+
 TS_SOURCE_INGESTED = ("declared: each record's ts is the platform's own event time as the "
                       "ingested export carried it, sealed into the chain as written; it is not "
                       "attested by a third party. An attested time exists only where a witness "
                       "checkpoint carries an RFC 3161 token (verify it with openssl ts -verify).")
 TS_NOTE_INGESTED = ("the platform's own event time as the ingested export carried it; sealed "
                     "into the chain but not attested by a third party (see chain.ts_source)")
-TS_SOURCE_MIXED = ("declared: the chain mixes captured and ingested records; a captured record's "
-                   "ts is the recording host's clock, an ingested record's ts is the platform's "
-                   "own event time as the export carried it (the source column tells them "
-                   "apart). Neither is attested by a third party; an attested time exists only "
-                   "where a witness checkpoint carries an RFC 3161 token.")
-TS_NOTE_MIXED = ("the recording host's clock for a captured record, the platform's own event "
-                 "time for an ingested one (see the source column and chain.ts_source)")
+TS_SOURCE_MIXED = ("declared: the chain mixes records from platform log exports with records "
+                   "the recording host stamped itself; a host-stamped record's ts is the "
+                   "recording host's clock, a record from a platform log export carries the "
+                   "platform's own event time as the export carried it (the source column "
+                   "tells them apart). Neither is attested by a third party; an attested time "
+                   "exists only where a witness checkpoint carries an RFC 3161 token.")
+TS_NOTE_MIXED = ("the recording host's clock for a host-stamped record, the platform's own "
+                 "event time for a record from a platform log export (see the source column "
+                 "and chain.ts_source)")
+
+
+def _platform_timed(record):
+    src = record.get("source")
+    return isinstance(src, dict) and src.get("adapter") in PLATFORM_TIME_ADAPTERS
 
 
 def _ts_wording(records):
-    """``(chain.ts_source, columns.ts.note)`` for the kind of capture the
-    records carry: the recorder's clock, the platform's event time, or both."""
-    kinds = {(r.get("source") or {}).get("capture") if isinstance(r.get("source"), dict) else None
-             for r in records}
-    if kinds and kinds <= {"ingested"}:
+    """``(chain.ts_source, columns.ts.note)`` for where the records' ts came
+    from: the recording host's clock, a platform log export's own event time,
+    or both. Decided by ``source.adapter`` (see PLATFORM_TIME_ADAPTERS)."""
+    kinds = {_platform_timed(r) for r in records}
+    if kinds == {True}:
         return TS_SOURCE_INGESTED, TS_NOTE_INGESTED
-    if "ingested" in kinds:
+    if True in kinds:
         return TS_SOURCE_MIXED, TS_NOTE_MIXED
     return TS_SOURCE, COLUMN_NOTES["ts"]["note"]
 
