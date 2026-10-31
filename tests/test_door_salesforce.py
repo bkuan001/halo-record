@@ -432,6 +432,35 @@ class TestCli(SfBase):
         self.assertEqual(out.returncode, 0, out.stderr)
         self.assertIn("rules broken: 3", out.stdout)
 
+    def test_sample_flag_alone_runs_the_bundled_agentforce_sample(self):
+        # From any directory, with no export path: the bundled Agentforce
+        # sample, the agentforce pack, the fixture's allowlist, a SAMPLE page.
+        out = self.run_cli("--sample", "--agent", BOT, "--out", "s.html", "--chain", "s.jsonl")
+        self.assertEqual(out.returncode, 0, out.stderr)
+        self.assertIn("13 actions by %s" % BOT, out.stdout)
+        self.assertIn("rules broken: 1", out.stdout)
+        self.assertIn("SAMPLE: synthetic export", out.stdout)
+        with open(os.path.join(self.tmp, "s.html"), encoding="utf-8") as fh:
+            html = fh.read()
+        self.assertIn("SAMPLE — synthetic export shaped from public sources; no real org data.", html)
+        self.assertIn("Where it reached", html)
+        self.assertIn("no-external-transfer", html)
+        listed = self.run_cli("--sample")
+        self.assertEqual(listed.returncode, 0, listed.stderr)
+        self.assertIn(BOT, listed.stdout)
+
+    def test_no_export_path_and_no_sample_is_refused(self):
+        out = self.run_cli("--agent", BOT)
+        self.assertEqual(out.returncode, 2)
+        self.assertIn("halo door: pass an export path, or --sample", out.stderr)
+        self.assertFalse(os.path.exists(os.path.join(self.tmp, "door.jsonl")))
+
+    def test_help_describes_the_bundled_sample(self):
+        out = self.run_cli("--help")
+        self.assertEqual(out.returncode, 0)
+        self.assertIn("bundled sample", out.stdout)
+        self.assertNotIn("automatic for the bundled fixture", out.stdout)
+
     def test_github_export_without_own_also_says_no_vendor_record(self):
         rows = [{"@timestamp": 1791590400000, "action": "git.push", "actor": "dev",
                  "repo": "acme/widgets", "programmatic_access_type": "OAuth access token",

@@ -130,6 +130,7 @@ For `policy_ref` to be usable as evidence, use a content hash of the ruleset and
 | LangChain / LangGraph callback | Langfuse export |
 | OpenAI Agents SDK hooks | Any gateway / reverse-proxy log |
 | Claude Agent SDK hook | Claude Code and Codex CLI `PostToolUse` hooks (fire after the tool ran) |
+| | Platform log exports read buyer-side by `halo door` (GitHub security log, Salesforce Event Monitoring) |
 
 Framework adapters and ingestion paths stamp each record with a `source` tag, so the report discloses how each piece of evidence was collected. Captured and ingested records live in the same chain.
 
@@ -245,6 +246,18 @@ halo report ~/.halo/audit.jsonl -o report.html
 Any agent runtime that exposes a post-action hook can feed the same command — the hook reads one event as JSON on stdin and appends one record.
 
 One chain, one writer at a time. A chain is a linked list: two writers that read the same head and both append will fork it (two records claiming the same predecessor), and verification will name the affected records. `Recorder` serializes its own appends with a sidecar lock (POSIX `flock` here; a lock directory in the TypeScript package), and `halo hook` appends through `Recorder`, so the hook setup above is covered. Anything that writes the chain file directly — a hand-rolled hook, parallel workers, a log shipper — must hold an equivalent exclusive lock across the read-head-then-append sequence, or write to per-process chains. [LIMITS.md section 9](https://github.com/bkuan001/halo-record/blob/main/LIMITS.md#9-single-writer-chains) covers this in full, including the cross-language boundary.
+
+## Buyer-side door
+
+Everything above is the vendor's record of its own agent. `halo door` is the other side: the buyer's own platform log, sealed and read for one outside agent, without the vendor's help. A GitHub account security log or a Salesforce Event Monitoring export (EventLogFile CSVs) becomes an ingested-tier chain; one page names what that agent did, which rules it broke, how it signed in, where it reached, and what the export cannot show.
+
+```bash
+halo door ./export                                   # list the clients acting in the export
+halo door ./export --agent "app:<client>" --allow-ip <cidr> --out door.html --chain door.jsonl
+halo door --sample --agent "app:bot:0XxSAMPLE00000001A"   # the bundled synthetic Agentforce sample
+```
+
+`--allow-ip` names the address ranges the integration may sign in from; without it the sign-in rule is not evaluated and the page says so. `--rules` takes a bundled pack (`github-default`, `salesforce-default`, `salesforce-agentforce`) or your own file; `--own` lines the rows up against the agent's own Halo log where the source supports it (GitHub today). The page embeds the whole sealed chain and re-verifies it in the browser; `halo verify door.jsonl` checks it without the page.
 
 ## When recording fails
 
@@ -401,6 +414,9 @@ halo export   date-bounded evidence export: CSV + manifest tied to the chain hea
                or unreachable witness — 2 unreadable chain, local witness file missing or
                damaged, or output directory missing — 3 empty chain or unwitnessed; a
                --from/--to window holding no records exits 0)
+halo door     buyer-side page of what one outside agent did, from a platform log export you
+              already hold (GitHub security log, or Salesforce Event Monitoring CSVs; --sample
+              runs the bundled synthetic export; exit 2 unreadable input, 3 agent not in the export)
 halo sample   emit a valid example log
 halo hash     canonical sha256 of a JSON value
 halo hook     Claude Code PostToolUse hook

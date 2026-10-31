@@ -49,6 +49,21 @@ Both packs also ship inside the installed package, so they run by name with
 no checkout: `halo policy chain.jsonl owasp-starter` (or `aiuc-1-starter`).
 `halo policy --help` prints the rule format.
 
+Three further packs ship in the package for `halo door`, the buyer-side read
+of a platform's own log (`halo door export --rules <name>`):
+
+- **`github-default`** — what an outside agent acting in a GitHub account
+  should not do on its own: delete or transfer a repository, change
+  visibility, weaken branch protection, mint credentials, turn off security
+  settings. The default for a GitHub security-log export.
+- **`salesforce-default`** — the same for a connected app in a Salesforce
+  org, over Event Monitoring rows: bulk data export, Login As, metadata or
+  Setup changes, a sign-in from outside the allowlist given with `--allow-ip`.
+  The default for a Salesforce export.
+- **`salesforce-agentforce`** — `salesforce-default` plus a rule for an
+  Agentforce agent's calls outside the org (`no-external-transfer`). The
+  default for the bundled sample (`halo door --sample`).
+
 A policy is validated before it runs: an unknown key, an unknown matcher, a
 field path that is not a Runtime Record field, or a rule with no `forbid`,
 `require`, or `expect_evidence` is refused (exit 2) rather than reported as a

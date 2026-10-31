@@ -387,6 +387,14 @@ def _cmd_door(args):
     from . import door
     from .policy import load_records
     from .record import Recorder
+    bundled = False
+    if args.export is None:
+        # No export: --sample runs the bundled Agentforce sample from any
+        # directory, with the pack written for it.
+        if not args.sample:
+            sys.stderr.write("halo door: pass an export path, or --sample for the bundled sample\n")
+            return 2
+        args.export, bundled = door.bundled_sample("salesforce_agentforce"), True
     source = args.source
     if source == "auto":
         source = "salesforce" if (_os.path.isdir(args.export)
@@ -436,7 +444,8 @@ def _cmd_door(args):
         except (OSError, ValueError) as e:
             sys.stderr.write("halo door: could not read --own %s: %s\n" % (args.own, e))
             return 2
-    rules_name = args.rules or ("salesforce-default" if sf else "github-default")
+    rules_name = args.rules or ("salesforce-agentforce" if bundled else
+                                "salesforce-default" if sf else "github-default")
     try:
         rules = door.load_rules(rules_name if _os.path.exists(rules_name)
                                 else door.bundled_rules(rules_name))
@@ -681,8 +690,9 @@ def main(argv=None):
         "door",
         help="buyer-side page of what one outside agent did, from a log export "
              "you already have (GitHub security log, or Salesforce Event Monitoring CSVs)")
-    p_door.add_argument("export", help="GitHub security-log export (.json or .jsonl), or a "
-                        "Salesforce EventLogFile CSV / directory of them")
+    p_door.add_argument("export", nargs="?", help="GitHub security-log export (.json or .jsonl), or a "
+                        "Salesforce EventLogFile CSV / directory of them (omit with --sample to "
+                        "run the bundled sample)")
     p_door.add_argument("--source", choices=("auto", "github", "salesforce"), default="auto",
                         help="export format (default: auto; a directory or .csv reads as salesforce)")
     p_door.add_argument("--agent", help="the client to report on, e.g. 'app:NAME' or "
@@ -700,7 +710,8 @@ def main(argv=None):
                         help="one clause the owner adds to the SAMPLE banner, e.g. what the "
                              "synthetic export was shaped after")
     p_door.add_argument("--sample", action="store_true",
-                        help="mark the page SAMPLE (synthetic data); automatic for the bundled fixture")
+                        help="mark the page SAMPLE (synthetic data); with no export path, run the "
+                             "bundled sample (a synthetic Agentforce export) from any directory")
     p_door.add_argument("--chain", default="door.jsonl",
                         help="where to seal the ingested records (must not exist)")
     p_door.add_argument("--out", default="door-report.html", help="page path")
