@@ -257,7 +257,7 @@ halo door ./export --agent "app:<client>" --allow-ip <cidr> --out door.html --ch
 halo door --sample --agent "app:bot:0XxSAMPLE00000001A"   # the bundled synthetic Agentforce sample
 ```
 
-`--allow-ip` names the address ranges the integration may sign in from; without it the sign-in rule is not evaluated and the page says so. `--rules` takes a bundled pack (`github-default`, `salesforce-default`, `salesforce-agentforce`) or your own file; `--own` lines the rows up against the agent's own Halo log where the source supports it (GitHub today). The page embeds the whole sealed chain and re-verifies it in the browser; `halo verify door.jsonl` checks it without the page.
+`--allow-ip` names the address ranges the integration may sign in from; without it the sign-in rule is not evaluated and the page says so (the bundled sample carries its own range, so `--sample` shows the rule firing). `--rules` takes a bundled pack (`github-default`, `salesforce-default`, `salesforce-agentforce`) or your own file; `--own` lines the rows up against the agent's own Halo log where the source supports it (GitHub today). The page embeds the whole sealed chain and re-verifies it in the browser; `halo verify door.jsonl` checks it without the page.
 
 ## When recording fails
 
