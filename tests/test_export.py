@@ -71,6 +71,29 @@ class ExportTest(unittest.TestCase):
         self.assertEqual(manifest["window_records"], 2)
         self.assertTrue(manifest["chain"]["verified"])
 
+    def test_manifest_names_the_platform_clock_for_an_ingested_chain(self):
+        log, out = self._paths()
+        rec = Recorder(log)
+        src = {"adapter": "salesforce_eventlog", "via": "Salesforce Event Monitoring EventLogFile export",
+               "capture": "ingested"}
+        for day in (1, 2):
+            rec.append(build("tool_call", "security", tool="salesforce:RestApi.GET", tool_input="GET /q",
+                             subject="acme-corp", source=dict(src), ts=f"2026-06-{day:02d}T12:00:00+00:00"))
+        export(log, out, out=_silent)
+        with open(out + ".manifest.json") as fh:
+            manifest = json.load(fh)
+        for text in (manifest["chain"]["ts_source"], manifest["columns"]["ts"]["note"]):
+            self.assertIn("platform", text)
+            self.assertNotIn("recording host", text)
+        # a captured chain keeps the recorder's own wording
+        log2, out2 = self._paths()
+        _chain(log2, [1, 2])
+        export(log2, out2, out=_silent)
+        with open(out2 + ".manifest.json") as fh:
+            m2 = json.load(fh)
+        self.assertIn("recording host's clock", m2["chain"]["ts_source"])
+        self.assertIn("recording host's clock", m2["columns"]["ts"]["note"])
+
     def test_manifest_csv_hash_matches_file_and_detects_edits(self):
         import hashlib
         log, out = self._paths()

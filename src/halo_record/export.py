@@ -335,6 +335,35 @@ TS_SOURCE = ("declared: each record's ts is the recording host's clock, sealed i
              "exists only where a witness checkpoint carries an RFC 3161 token (verify "
              "it with openssl ts -verify).")
 
+# An ingested chain (source.capture == "ingested": a platform's log export
+# sealed after the fact) carries the platform's own event time, not the clock
+# of the host that sealed it.
+TS_SOURCE_INGESTED = ("declared: each record's ts is the platform's own event time as the "
+                      "ingested export carried it, sealed into the chain as written; it is not "
+                      "attested by a third party. An attested time exists only where a witness "
+                      "checkpoint carries an RFC 3161 token (verify it with openssl ts -verify).")
+TS_NOTE_INGESTED = ("the platform's own event time as the ingested export carried it; sealed "
+                    "into the chain but not attested by a third party (see chain.ts_source)")
+TS_SOURCE_MIXED = ("declared: the chain mixes captured and ingested records; a captured record's "
+                   "ts is the recording host's clock, an ingested record's ts is the platform's "
+                   "own event time as the export carried it (the source column tells them "
+                   "apart). Neither is attested by a third party; an attested time exists only "
+                   "where a witness checkpoint carries an RFC 3161 token.")
+TS_NOTE_MIXED = ("the recording host's clock for a captured record, the platform's own event "
+                 "time for an ingested one (see the source column and chain.ts_source)")
+
+
+def _ts_wording(records):
+    """``(chain.ts_source, columns.ts.note)`` for the kind of capture the
+    records carry: the recorder's clock, the platform's event time, or both."""
+    kinds = {(r.get("source") or {}).get("capture") if isinstance(r.get("source"), dict) else None
+             for r in records}
+    if kinds and kinds <= {"ingested"}:
+        return TS_SOURCE_INGESTED, TS_NOTE_INGESTED
+    if "ingested" in kinds:
+        return TS_SOURCE_MIXED, TS_NOTE_MIXED
+    return TS_SOURCE, COLUMN_NOTES["ts"]["note"]
+
 
 _INVISIBLE_LIST_MAX = 100  # manifest entries; "count" gives the total
 
@@ -352,6 +381,9 @@ def build_manifest(records, window_records, *, source_log, start=None, end=None,
                 source_log_sha256 = hashlib.sha256(fh.read()).hexdigest()
         except OSError:
             source_log_sha256 = None
+    ts_source, ts_note = _ts_wording(records)
+    columns = dict(COLUMN_NOTES)
+    columns["ts"] = dict(COLUMN_NOTES["ts"], note=ts_note)
     manifest = {
         "generated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         # Which halo-record produced this export (REVIEWERS.md's "produced with"
@@ -363,7 +395,7 @@ def build_manifest(records, window_records, *, source_log, start=None, end=None,
         # without the source. "recorder" fields are computed or sealed by the
         # recorder; "declared" fields are sealed exactly as the integration
         # supplied them and are not verified by the recorder (LIMITS §10).
-        "columns": COLUMN_NOTES,
+        "columns": columns,
         "window": {"from": _iso(start), "to": _iso(end)},
         # A tool filter narrows the exported population, so it is disclosed
         # here: a reviewer must be able to see that this CSV is a SUBSET and
@@ -384,7 +416,7 @@ def build_manifest(records, window_records, *, source_log, start=None, end=None,
             # head (integrity). It is NOT a completeness claim — records dropped
             # from the tail need an external witness (see LIMITS.md).
             "verified_scope": "integrity_relative_to_head",
-            "ts_source": TS_SOURCE,
+            "ts_source": ts_source,
         },
         # Whose chain this is: the subject ids the records carry, and the id
         # the exporter expected (when one was given; a mismatch is refused).
