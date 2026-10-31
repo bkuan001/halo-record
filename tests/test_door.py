@@ -280,10 +280,6 @@ class TestRoutine(DoorBase):
         self.assertNotIn(">oauth_access.regenerate<", html)
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class TestUnusual(DoorBase):
     def test_rare_device_is_listed_and_escaped(self):
         rows = [dict(EXPORT_ROWS[4]), dict(EXPORT_ROWS[4]), dict(EXPORT_ROWS[4]),
@@ -388,3 +384,7 @@ class TestCredentials(DoorBase):
         self.assertEqual(used, {"app:GitHub CLI": 1, "token:99": 1})
         off = door.unexpected_credentials(recs, ["app:GitHub CLI"])
         self.assertEqual([r["agent"]["id"] for r in off], ["token:99 [claude-code]"])
+
+
+if __name__ == "__main__":
+    unittest.main()
