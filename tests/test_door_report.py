@@ -667,15 +667,15 @@ class AgentforceDoorPage(unittest.TestCase):
         self.assertNotIn("currency", sealed)     # the query string never enters the chain
 
     def test_label_names_the_agent_and_the_meta_keeps_the_key(self):
-        html = self.page(label="ACE")
-        self.assertEqual(_html.unescape(_region(html, "r-h1")), "ACE in globex's Salesforce")
+        html = self.page(label="Atlas")
+        self.assertEqual(_html.unescape(_region(html, "r-h1")), "Atlas in globex's Salesforce")
         meta = _region(html, "r-meta")
         self.assertNotIn("Agent key", meta)
         self.assertEqual(re.findall(r"<div>(\w+)", meta), ["Oct", "Source", "Prepared"])
         foot = html[html.index("<footer>"):]
         self.assertIn('Agent key <span class="mono">app:bot:0XxSAMPLE00000001A</span>.', foot)
         summary = _region(html, "door-summary")
-        self.assertIn("ACE ran 13 logged actions across 4 sessions.", summary)
+        self.assertIn("Atlas ran 13 logged actions across 4 sessions.", summary)
         self.assertIn("One identity: its own service user", summary)
         self.assertNotIn("0XxSAMPLE00000001A", summary)
         # one credential on a Salesforce page: no bar section, the sentence carries it
@@ -690,7 +690,7 @@ class AgentforceDoorPage(unittest.TestCase):
         self.assertIn('Agent key <span class="mono">app:bot:0XxSAMPLE00000001A</span>.', html[html.index("<footer>"):])
 
     def test_reached_outside_sentence_and_section(self):
-        html = self.page(label="ACE")
+        html = self.page(label="Atlas")
         summary = _region(html, "door-summary")
         self.assertIn('<li><span class="n">4</span><span>2 calls to api.globex.example, 1 failed.</span></li>', summary)
         self.assertLess(summary.index("2 calls to"), summary.index("Not yet compared to"))
@@ -702,21 +702,21 @@ class AgentforceDoorPage(unittest.TestCase):
         self.assertNotIn("<table", section)
 
     def test_label_is_escaped(self):
-        html = self.page(label="<b>ACE</b>")
-        self.assertNotIn("<b>ACE</b>", html)
-        self.assertIn("&lt;b&gt;ACE&lt;/b&gt; in globex", _region(html, "r-h1"))
+        html = self.page(label="<b>Atlas</b>")
+        self.assertNotIn("<b>Atlas</b>", html)
+        self.assertIn("&lt;b&gt;Atlas&lt;/b&gt; in globex", _region(html, "r-h1"))
 
     def test_cli_takes_a_label(self):
         env = dict(os.environ, PYTHONPATH=os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src"))
         out = subprocess.run([sys.executable, "-m", "halo_record.cli", "door", AGENTFORCE, "--source",
-                              "salesforce", "--agent", BOT, "--label", "ACE", "--rules",
+                              "salesforce", "--agent", BOT, "--label", "Atlas", "--rules",
                               "salesforce-agentforce", "--sample", "--subject", "Globex",
                               "--out", "p.html", "--chain", "d.jsonl"],
                              capture_output=True, text=True, env=env, cwd=self.tmp)
         self.assertEqual(out.returncode, 0, out.stderr)
         with open(os.path.join(self.tmp, "p.html"), encoding="utf-8") as fh:
             html = fh.read()
-        self.assertEqual(_html.unescape(_region(_static(html), "r-h1")), "ACE in Globex's Salesforce")
+        self.assertEqual(_html.unescape(_region(_static(html), "r-h1")), "Atlas in Globex's Salesforce")
         self.assertNotIn("Agent key", _region(_static(html), "r-meta"))
         self.assertIn("Agent key", html[html.index("<footer>"):])
         self.assertIn("<h2>Where it reached</h2>", html)
@@ -779,7 +779,7 @@ class AgentforceDoorSheet(unittest.TestCase):
 
     def page(self, **kw):
         kw.setdefault("own_supplied", False)
-        kw.setdefault("label", "ACE")
+        kw.setdefault("label", "Atlas")
         kw.setdefault("events", self.context)
         kw.setdefault("shared", self.shared)
         return door.render_page(
@@ -825,7 +825,7 @@ class AgentforceDoorSheet(unittest.TestCase):
                          "/00OSAMPLE****A")
         self.assertEqual(door._target({"adapter": sf, "target": "https://h.example/v2/loans/0000012345/pay?x=1"}),
                          "h.example/v2/loans/****/pay")
-        self.assertEqual(door._target({"adapter": sf, "target": "/hogan/v2/transfers"}), "/hogan/v2/transfers")
+        self.assertEqual(door._target({"adapter": sf, "target": "/core/v2/transfers"}), "/core/v2/transfers")
         self.assertEqual(door._target({"adapter": sf, "target": "PFFSC.TravelNotificationService.createCase"}),
                          "PFFSC.TravelNotificationService.createCase")
         self.assertEqual(door._target({"repo": "acme/widgets"}), "acme/widgets")
@@ -848,11 +848,11 @@ class AgentforceDoorSheet(unittest.TestCase):
     def test_five_sentences(self):
         lines = _sentences(self.page())
         self.assertEqual(lines, [
-            "ACE ran 13 logged actions across 4 sessions.",
+            "Atlas ran 13 logged actions across 4 sessions.",
             "1 rule broken: Login outside allowlist.",
             "One identity: its own service user (1 platform sign-in, 1 browser).",
             "2 calls to api.globex.example, 1 failed.",
-            "Not yet compared to ACE's own session trace.",
+            "Not yet compared to Atlas's own session trace.",
         ])
         for line in lines:
             self.assertLessEqual(len(line.split()), 12, line)
@@ -864,7 +864,7 @@ class AgentforceDoorSheet(unittest.TestCase):
 
     def test_sign_ins_absent_from_the_export(self):
         no_logins = [r for r in self.mine if not r["action"]["tool"].startswith("salesforce:Login.")]
-        html = door.render_page(no_logins, [], door.check(no_logins, self.rules), agent=BOT, label="ACE",
+        html = door.render_page(no_logins, [], door.check(no_logins, self.rules), agent=BOT, label="Atlas",
                                 source="salesforce", chain=self.chain_records, events=self.context,
                                 own_supplied=False, prepared=PREPARED)
         self.assertIn("One identity: its own service user (no sign-ins in this export).",
@@ -899,10 +899,10 @@ class AgentforceDoorSheet(unittest.TestCase):
         text = _html.unescape(re.sub(r"<[^>]+>", "", paras[0]))
         self.assertTrue(text.startswith("Login outside allowlist."), text)
         self.assertIn("Oct 8, 2026 23:12 UTC", text)
-        self.assertIn("ACE's own service user (s****@globex.example)", text)
+        self.assertIn("Atlas's own service user (s****@globex.example)", text)
         self.assertIn("from 203.0.113.9 (Chrome 141)", text)
         self.assertIn("In that session it ran 2 actions: Query Records ×1 — "
-                      "AccountSearchController.search, MemberProfileController.get.", text)
+                      "AccountSearchController.search, CustomerProfileController.get.", text)
         self.assertIn("The same session was later used from 198.51.100.9.", text)
         self.assertIn("Rules are the account owner's; edit the list to match what this agent is permitted.",
                       _html.unescape(section))
@@ -911,7 +911,7 @@ class AgentforceDoorSheet(unittest.TestCase):
 
     def test_what_broke_absent_when_nothing_broke(self):
         clean = [r for r in self.mine if r["action"]["tool"] != "salesforce:Login.outside_allowlist"]
-        html = _static(door.render_page(clean, [], door.check(clean, self.rules), agent=BOT, label="ACE",
+        html = _static(door.render_page(clean, [], door.check(clean, self.rules), agent=BOT, label="Atlas",
                                         source="salesforce", chain=self.chain_records, events=self.context,
                                         own_supplied=False, prepared=PREPARED))
         self.assertNotIn("What broke", html)
@@ -920,7 +920,7 @@ class AgentforceDoorSheet(unittest.TestCase):
     def test_what_broke_for_a_non_login_rule(self):
         rules = door.load_rules(door.bundled_rules("salesforce-agentforce"))
         rules[1]["forbid"]["action.tool"]["in"].append("salesforce:Agent.Funds_Transfer_to_Own_Account")
-        html = _static(door.render_page(self.mine, [], door.check(self.mine, rules), agent=BOT, label="ACE",
+        html = _static(door.render_page(self.mine, [], door.check(self.mine, rules), agent=BOT, label="Atlas",
                                         source="salesforce", chain=self.chain_records, events=self.context,
                                         shared=self.shared, own_supplied=False, prepared=PREPARED))
         section = _between(html, "<h2>What broke</h2>", "<h2>When it acted</h2>")
@@ -939,11 +939,11 @@ class AgentforceDoorSheet(unittest.TestCase):
 
     def test_shared_table_stays_with_the_label_when_no_rule_involves_the_session(self):
         clean = [r for r in self.mine if r["action"]["tool"] != "salesforce:Login.outside_allowlist"]
-        html = _static(door.render_page(clean, [], door.check(clean, self.rules), agent=BOT, label="ACE",
+        html = _static(door.render_page(clean, [], door.check(clean, self.rules), agent=BOT, label="Atlas",
                                         source="salesforce", chain=self.chain_records, events=self.context,
                                         shared=self.shared, own_supplied=False, prepared=PREPARED))
         section = _between(html, "<h2>One session, more than one address</h2>", "<h2>")
-        self.assertIn("<td>ACE</td>", section)
+        self.assertIn("<td>Atlas</td>", section)
         self.assertNotIn("app:bot:0XxSAMPLE00000001A", section)
         self.assertIn("one sign-in was used from two places.", section)
         self.assertIn("Worth a look, not a finding.", section)
@@ -990,16 +990,16 @@ class AgentforceDoorSheet(unittest.TestCase):
         self.assertEqual(short, [
             "What the agent was prompted with, planned, or answered — that lives in Agentforce Session "
             "Tracing (Data 360).",
-            "Which member an action touched, or what Hogan/MuleSoft did with a call.",
+            "Which customer an action touched, or what the core system did with a call.",
             "Anything outside Salesforce, or in event types this org does not export.",
         ])
         self.assertIn("<summary>All limits of this source</summary>", fold)
         items = [_html.unescape(x) for x in re.findall(r"<li>(.*?)</li>", fold)]
         self.assertGreaterEqual(len(items), 6)
-        self.assertIn("Which members an action touched. Rows for a service-agent carry the agent's own user, "
-                      "not the member; the member join lives in Agentforce Session Tracing.", items)
+        self.assertIn("Which customers an action touched. Rows for a service-agent carry the agent's own user, "
+                      "not the customer; the customer join lives in Agentforce Session Tracing.", items)
         self.assertIn("What the system on the other end of a call did. An Apex Callout row shows the host, "
-                      "method and status; the MuleSoft and core-banking side of the call is in their logs.", items)
+                      "method and status; the integration layer and core-system side of the call is in their logs.", items)
         for kept in door.AGENTFORCE_CANNOT_SHOW + door.SALESFORCE_CANNOT_SHOW:
             self.assertIn(kept, items)
         # one bullet on prompts and reasoning, not two
@@ -1073,7 +1073,7 @@ class AgentforceDoorSheet(unittest.TestCase):
     def test_cli_takes_a_sample_note_and_builds_the_context(self):
         env = dict(os.environ, PYTHONPATH=os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src"))
         out = subprocess.run([sys.executable, "-m", "halo_record.cli", "door", AGENTFORCE, "--source",
-                              "salesforce", "--agent", BOT, "--label", "ACE", "--rules",
+                              "salesforce", "--agent", BOT, "--label", "Atlas", "--rules",
                               "salesforce-agentforce", "--sample", "--sample-note", "a reconstruction",
                               "--subject", "Globex", "--out", "p.html", "--chain", "d.jsonl"],
                              capture_output=True, text=True, env=env, cwd=self.tmp)
@@ -1084,14 +1084,14 @@ class AgentforceDoorSheet(unittest.TestCase):
         self.assertIn("<h2>What broke</h2>", html)
         self.assertIn("from 203.0.113.9 (Chrome 141)", html)
         self.assertIn("The same session was later used from 198.51.100.9.", html)
-        self.assertIn("ACE ran 13 logged actions across 4 sessions.", html)
-        self.assertIn("ACE in Globex&#x27;s Salesforce", html)
+        self.assertIn("Atlas ran 13 logged actions across 4 sessions.", html)
+        self.assertIn("Atlas in Globex&#x27;s Salesforce", html)
 
     # ------------------------------------------------------------- node
 
     @unittest.skipUnless(NODE, "node not installed")
     def test_door_regions_render_identically_for_salesforce_rows(self):
-        door_cfg = {"agent": BOT, "label": "ACE", "prepared": PREPARED,
+        door_cfg = {"agent": BOT, "label": "Atlas", "prepared": PREPARED,
                     "source_label": "Salesforce event log export", "hidden": []}
         data = os.path.join(self.tmp, "case.json")
         with open(data, "w", encoding="utf-8") as fh:

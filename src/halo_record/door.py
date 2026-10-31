@@ -65,10 +65,10 @@ AGENTFORCE_CANNOT_SHOW = (
     "row names the bot that ran (BOT_IDENTIFIER); the agent's prompts, plans, topic choice, "
     "model output and session outcome are Data 360 tables (Agentforce Session Tracing, "
     "Einstein Audit), not EventLogFile.",
-    "Which members an action touched. Rows for a service-agent carry the agent's own user, "
-    "not the member; the member join lives in Agentforce Session Tracing.",
+    "Which customers an action touched. Rows for a service-agent carry the agent's own user, "
+    "not the customer; the customer join lives in Agentforce Session Tracing.",
     "What the system on the other end of a call did. An Apex Callout row shows the host, "
-    "method and status; the MuleSoft and core-banking side of the call is in their logs.",
+    "method and status; the integration layer and core-system side of the call is in their logs.",
 )
 
 # What a Salesforce Event Monitoring export does not carry, for the page.
@@ -95,7 +95,7 @@ SALESFORCE_CANNOT_SHOW = (
 SALESFORCE_CANNOT_SHOW_SHORT = (
     "What the agent was prompted with, planned, or answered \u2014 that lives in Agentforce "
     "Session Tracing (Data 360).",
-    "Which member an action touched, or what Hogan/MuleSoft did with a call.",
+    "Which customer an action touched, or what the core system did with a call.",
     "Anything outside Salesforce, or in event types this org does not export.",
 )
 
@@ -299,7 +299,7 @@ _DIGIT_RUN = re.compile(r"\d{4,}")
 def mask_path_digits(url):
     """A URL or path with every run of four or more digits in its path
     replaced by ``****``: an account or record number is never written to the
-    chain, while the path itself stays readable (``/hogan/v2/transfers``
+    chain, while the path itself stays readable (``/core/v2/transfers``
     survives; ``/loans/0000012345/payments`` reads ``/loans/****/payments``).
     The host and any query string are left as given."""
     text = str(url or "")

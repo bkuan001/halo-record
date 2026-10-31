@@ -14,7 +14,7 @@
       "id": "no-external-transfer",
       "source": "buyer default",
       "severity": "CRITICAL",
-      "description": "The agent moved money only between a member's own accounts: no transfer to an external account, and no new external payee. Edit the action names to the ones your agent exposes.",
+      "description": "The agent moved money only between a customer's own accounts: no transfer to an external account, and no new external payee. Edit the action names to the ones your agent exposes.",
       "forbid": {"action.tool": {"in": ["salesforce:Agent.Transfer_Funds_External", "salesforce:Agent.Funds_Transfer_External", "salesforce:Agent.Add_External_Payee", "salesforce:Agent.Add_External_Account"]}}
     },
     {
