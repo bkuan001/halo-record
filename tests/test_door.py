@@ -342,6 +342,20 @@ class TestCli(DoorBase):
         with open(os.path.join(self.tmp, "door.jsonl")) as fh:
             self.assertEqual(sum(1 for _ in fh), len(EXPORT_ROWS))
 
+    def test_sealed_chain_leaves_no_lock_sidecar(self):
+        # The recorder's flock sidecar is for concurrent appenders; a door run
+        # seals one chain once, so nothing stays behind beside it.
+        out = self.run_cli(self.export(EXPORT_ROWS), "--agent", AGENT)
+        self.assertEqual(out.returncode, 0, out.stderr)
+        self.assertTrue(os.path.exists(os.path.join(self.tmp, "door.jsonl")))
+        self.assertFalse(os.path.exists(os.path.join(self.tmp, "door.jsonl.lock")))
+        # a lock another process already holds beside a fresh chain is left alone
+        held = os.path.join(self.tmp, "other.jsonl.lock")
+        open(held, "wb").close()
+        out = self.run_cli(self.export(EXPORT_ROWS), "--agent", AGENT, "--chain", "other.jsonl")
+        self.assertEqual(out.returncode, 0, out.stderr)
+        self.assertTrue(os.path.exists(held))
+
 
 def _chrome(ts, url=None, tool="mcp__claude-in-chrome__navigate"):
     return build("tool_call", "security", tool=tool,

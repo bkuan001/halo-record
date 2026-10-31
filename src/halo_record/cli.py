@@ -464,11 +464,22 @@ def _cmd_door(args):
         sys.stderr.write("halo door: no actions by %r in this export (run without "
                          "--agent to list clients)\n" % args.agent)
         return 3
+    # The recorder's flock sidecar serves concurrent appenders; a door run
+    # seals one fresh chain once, so the sidecar it created is removed after
+    # the seal. One that was already there belongs to another process and
+    # is left alone.
+    lock_sidecar = args.chain + ".lock"
+    owns_lock = not _os.path.exists(lock_sidecar)
     try:
         all_recs = door.ingest(events, Recorder(args.chain), subject=args.subject)
     except OSError as e:
         sys.stderr.write("halo door: cannot write --chain %s (%s)\n" % (args.chain, e))
         return 1
+    if owns_lock:
+        try:
+            _os.remove(lock_sidecar)
+        except OSError:
+            pass
     recs = door.isolate(all_recs, args.agent)
     own = []
     # The agent's own record is lined up only where a matcher exists for the
