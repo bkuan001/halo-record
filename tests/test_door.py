@@ -12,7 +12,7 @@ import sys
 import tempfile
 import unittest
 
-from halo_record import door
+from halo_record import door, door_sources
 from halo_record.record import Recorder, build
 
 EXPORT_ROWS = [
@@ -94,6 +94,36 @@ class TestParse(DoorBase):
             json.dump({"not": "an export"}, f)
         with self.assertRaises(ValueError):
             door.parse_github_log(p)
+
+    def test_absurd_timestamps_read_as_none(self):
+        # Values the clock cannot hold return None rather than raising.
+        for value in (1e300, -1e300, 10 ** 40, -(10 ** 40), "1" * 40, float("inf"), float("nan")):
+            self.assertIsNone(door._ts(value), repr(value))
+
+    def test_only_ascii_digits_are_epoch(self):
+        # str.isdigit is True for Arabic-Indic digits and superscripts; neither
+        # is an epoch the export would carry.
+        self.assertIsNone(door._ts("\u0661\u0667\u0669\u0661\u0665\u0669\u0660\u0664\u0660\u0660"))
+        self.assertIsNone(door._ts("\u00b2\u00b3"))
+        self.assertEqual(door._ts("1791590400"), "2026-10-10T00:00:00+00:00")
+        self.assertEqual(door._ts(" 1791590400000 "), "2026-10-10T00:00:00+00:00")
+
+    def test_rows_without_a_readable_time_are_set_aside_and_counted(self):
+        rows = list(EXPORT_ROWS) + [
+            dict(EXPORT_ROWS[0], **{"@timestamp": 1e300}),
+            {"action": "repo.destroy", "actor": "dev", "repo": "acme/no-time",
+             "programmatic_access_type": "OAuth access token",
+             "oauth_application_name": "Example Agent"},
+            dict(EXPORT_ROWS[0], **{"@timestamp": "yesterday"}),
+        ]
+        events = door.parse_github_log(self.export(rows))
+        self.assertEqual(len(events), 5)
+        self.assertTrue(all(e["ts"] for e in events))
+        self.assertEqual(events.dropped, {door_sources.UNREADABLE_TIME: 3})
+        self.assertIn("3 rows", door.dropped_sentence(events.dropped))
+        # a clean export reports nothing set aside
+        clean = door.parse_github_log(self.export(EXPORT_ROWS))
+        self.assertEqual(clean.dropped, {})
 
 
 class TestRealShape(DoorBase):
@@ -307,6 +337,14 @@ class TestCli(DoorBase):
         again = self.run_cli(self.export(EXPORT_ROWS), "--agent", AGENT)
         self.assertEqual(again.returncode, 2)
         self.assertIn("already exists", again.stderr)
+
+    def test_rows_without_a_readable_time_are_reported_and_not_sealed(self):
+        rows = EXPORT_ROWS + [dict(EXPORT_ROWS[2], **{"@timestamp": 1e300})]
+        out = self.run_cli(self.export(rows), "--agent", AGENT)
+        self.assertEqual(out.returncode, 0, out.stderr)
+        self.assertIn("1 row skipped: unreadable timestamp", out.stdout)
+        with open(os.path.join(self.tmp, "door.jsonl")) as fh:
+            self.assertEqual(sum(1 for _ in fh), len(EXPORT_ROWS))
 
 
 def _chrome(ts, url=None, tool="mcp__claude-in-chrome__navigate"):

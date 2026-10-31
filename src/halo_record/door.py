@@ -44,8 +44,8 @@ from urllib.parse import urlsplit
 from . import _view
 from . import policy as _policy
 from .door_sources import (DEFAULT_ALLOWLIST, PLATFORM_IP, SALESFORCE_SOURCE, SAMPLES_DIR,  # noqa: F401
-                           bundled_sample, ip_allowed, is_bundled_sample,
-                           parse_salesforce_eventlog, shared_sessions)
+                           UNREADABLE_TIME, EventList, bundled_sample, ip_allowed,
+                           is_bundled_sample, parse_salesforce_eventlog, shared_sessions)
 from .record import build
 from .redact import mask_known_secrets
 
@@ -168,17 +168,25 @@ PROBABLE_WITHIN = 180    # seconds: same action family, plausibly the same act
 
 # ------------------------------------------------------------------ parse ---
 
+_ASCII_DIGITS = re.compile(r"[0-9]+\Z")
+
+
 def _ts(value):
     """GitHub exports carry @timestamp in epoch milliseconds; some tools write
-    created_at as ISO 8601 or epoch seconds. Returns RFC 3339 UTC or None."""
+    created_at as ISO 8601 or epoch seconds. Returns RFC 3339 UTC or None:
+    a value the clock cannot hold (out of range, infinite, not a number) and
+    a digit string outside ASCII 0-9 both read as None."""
     if value is None or isinstance(value, bool):
         return None
     if isinstance(value, (int, float)):
-        secs = value / 1000.0 if value > 1e11 else float(value)
-        return datetime.fromtimestamp(secs, timezone.utc).isoformat()
+        try:
+            secs = value / 1000.0 if value > 1e11 else float(value)
+            return datetime.fromtimestamp(secs, timezone.utc).isoformat()
+        except (OverflowError, OSError, ValueError):
+            return None
     if isinstance(value, str):
         text = value.strip()
-        if text.isdigit():
+        if _ASCII_DIGITS.match(text):
             return _ts(int(text))
         try:
             dt = datetime.fromisoformat(text.replace("Z", "+00:00"))
@@ -213,7 +221,10 @@ def _normalize(row):
 def parse_github_log(path):
     """Read a GitHub security-log export (a JSON array, or one JSON object per
     line) into normalized events, oldest first. Every row must be an object
-    naming an ``action``; anything else is refused rather than guessed at."""
+    naming an ``action``; anything else is refused rather than guessed at. A
+    row whose time cannot be read is set aside and counted in ``.dropped``
+    (the same path the Salesforce reader takes), so a chain never carries an
+    event it cannot place in time."""
     with open(path, encoding="utf-8") as fh:
         text = fh.read().strip()
     bad = ValueError("%s is not a GitHub security-log export "
@@ -230,8 +241,14 @@ def parse_github_log(path):
     if not isinstance(rows, list) or not all(
             isinstance(r, dict) and isinstance(r.get("action"), str) for r in rows):
         raise bad
-    events = [_normalize(r) for r in rows]
-    events.sort(key=lambda e: e["ts"] or "")
+    normalized = [_normalize(r) for r in rows]
+    events = EventList(e for e in normalized if e["ts"])
+    events.sort(key=lambda e: e["ts"])
+    events.skipped = {}
+    events.dropped = {}
+    unreadable = len(normalized) - len(events)
+    if unreadable:
+        events.dropped[UNREADABLE_TIME] = unreadable
     return events
 
 
