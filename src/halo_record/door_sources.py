@@ -303,8 +303,9 @@ def parse_salesforce_eventlog(paths_or_dir, allowlist=None):
     ``allowlist`` (CIDRs the integration may sign in from) classifies each
     sign-in with an address: one from outside it becomes the action
     ``Login.outside_allowlist``, which the ``login-outside-allowlist`` rule
-    names. With no allowlist, sign-ins are not classified and that rule has
-    nothing to find; ``halo door`` always passes one for this source."""
+    names. With no allowlist, sign-ins are not classified and that rule is
+    reported as not evaluated; ``halo door`` passes one only when given
+    ``--allow-ip``, or the fixture's range for the bundled sample."""
     files = _csv_paths(paths_or_dir)
     if not files:
         raise ValueError("%s: no EventLogFile CSVs found" % paths_or_dir)

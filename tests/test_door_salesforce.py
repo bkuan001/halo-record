@@ -357,6 +357,20 @@ class TestPage(SfBase):
         self.assertIn("SAMPLE — synthetic export shaped from public sources; no real org data.", self.page(sample=True))
         self.assertNotIn("SAMPLE —", self.page(sample=False))
 
+    def test_rules_row_without_an_allowlist(self):
+        recs = door.isolate(self.ingested(allowlist=None), APP)
+        html = door.render_page(recs, door.match(recs, []), door.check(recs, self.rules()), agent=APP,
+                                source="salesforce", allowlist=None, own_supplied=False)
+        row = re.search(r'<div class="rulesrow">(.*?)</div>', html, re.S).group(1)
+        self.assertIn('<span class="u" title="login-outside-allowlist: ', row)
+        self.assertIn("Login outside allowlist &middot; not evaluated: pass --allow-ip with your "
+                      "org&#x27;s addresses</span>", row)
+        self.assertNotIn("not applicable", row)
+        self.assertIn(">Data export &middot; broken, 1 action</span>", row)
+        # with an allowlist the rule reads as checked
+        row = re.search(r'<div class="rulesrow">(.*?)</div>', self.page(), re.S).group(1)
+        self.assertNotIn("not evaluated", row)
+
     def test_salesforce_cannot_show_list(self):
         html = self.page(own_supplied=False)
         self.assertIn("What this export can&#x27;t show", html)
@@ -425,6 +439,29 @@ class TestCli(SfBase):
         self.assertIn("SAMPLE: synthetic export", out.stdout)
         with open(os.path.join(self.tmp, "q.html"), encoding="utf-8") as fh:
             self.assertIn("SAMPLE — synthetic", fh.read())
+
+    def test_real_export_without_allow_ip_leaves_the_sign_in_rule_unevaluated(self):
+        # A real export has no default allowlist: nothing is sealed as
+        # outside_allowlist, and the rule row says what to pass.
+        d = os.path.join(self.tmp, "export")
+        shutil.copytree(FIXTURE, d)
+        out = self.run_cli(d, "--agent", APP, "--out", "p.html", "--chain", "c.jsonl")
+        self.assertEqual(out.returncode, 0, out.stderr)
+        self.assertIn("rules broken: 3", out.stdout)
+        self.assertIn("login-outside-allowlist: not evaluated (pass --allow-ip with your org's addresses)",
+                      out.stdout)
+        with open(os.path.join(self.tmp, "c.jsonl"), encoding="utf-8") as fh:
+            self.assertNotIn("outside_allowlist", fh.read())
+        with open(os.path.join(self.tmp, "p.html"), encoding="utf-8") as fh:
+            html = fh.read()
+        self.assertIn("Login outside allowlist &middot; not evaluated: pass --allow-ip with your "
+                      "org&#x27;s addresses</span>", html)
+        self.assertIn("No address allowlist was supplied", html)
+        # the bundled sample keeps the fixture's range (rules broken: 4, see
+        # test_renders_the_sample_page), as does --sample on a real export
+        out = self.run_cli(d, "--sample", "--agent", APP, "--out", "q.html", "--chain", "d.jsonl")
+        self.assertEqual(out.returncode, 0, out.stderr)
+        self.assertIn("rules broken: 4", out.stdout)
 
     def test_allow_ip_overrides_the_default(self):
         out = self.run_cli(FIXTURE, "--agent", APP, "--allow-ip", "192.0.2.0/24",

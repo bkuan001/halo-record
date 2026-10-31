@@ -400,7 +400,10 @@ def _cmd_door(args):
         source = "salesforce" if (_os.path.isdir(args.export)
                                   or args.export.lower().endswith(".csv")) else "github"
     sf = source == "salesforce"
-    allowlist = (args.allow_ip or list(door.DEFAULT_ALLOWLIST)) if sf else None
+    sample = bool(args.sample or (sf and door.is_bundled_sample(args.export)))
+    # A real export has no default allowlist: without --allow-ip the sign-in
+    # rule is not evaluated, and the page says so. The sample keeps its range.
+    allowlist = (args.allow_ip or (list(door.DEFAULT_ALLOWLIST) if sample else None)) if sf else None
     try:
         if sf:
             events = door.parse_salesforce_eventlog(args.export, allowlist=allowlist)
@@ -409,7 +412,6 @@ def _cmd_door(args):
     except (OSError, ValueError) as e:
         sys.stderr.write("halo door: %s\n" % e)
         return 2
-    sample = bool(args.sample or getattr(events, "sample", False))
     skipped = getattr(events, "skipped", None) or {}
     dropped = getattr(events, "dropped", None) or {}
     for reason, n in sorted(dropped.items()):
@@ -488,6 +490,9 @@ def _cmd_door(args):
         print("sessions used from more than one address: %d" % len(shared))
     if skipped:
         print("rows of event types this reader does not use: %d" % sum(skipped.values()))
+    for rule in verdict.get("rules", []):
+        if sf and not allowlist and door.needs_allowlist(rule):
+            print("%s: not evaluated (pass --allow-ip with your org's addresses)" % rule["id"])
     if sample:
         print("SAMPLE: synthetic export; the page says so")
     print("credentials used: %s" % ", ".join("%s (%d)" % kv for kv in
@@ -705,7 +710,8 @@ def main(argv=None):
                              "salesforce-default for a Salesforce export)")
     p_door.add_argument("--allow-ip", action="append", metavar="CIDR",
                         help="salesforce: an address range the integration may sign in from "
-                             "(repeatable; default: the sample fixture's 192.0.2.0/24)")
+                             "(repeatable; without it the sign-in rule is not evaluated; the "
+                             "bundled sample uses its own 192.0.2.0/24)")
     p_door.add_argument("--sample-note", metavar="TEXT", default=None,
                         help="one clause the owner adds to the SAMPLE banner, e.g. what the "
                              "synthetic export was shaped after")

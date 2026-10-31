@@ -1,7 +1,7 @@
 {
   "name": "Salesforce org: outside-integration default rules",
   "version": "0.1",
-  "note": "A STARTING POINT for checking what an outside integration (a connected app, or an agent acting through one) did in a Salesforce org, over records ingested from the org's Event Monitoring EventLogFile export (halo door --source salesforce). Each rule names a shape an integration acting for the org should not produce on its own. Edit the lists to match what the integration is permitted to do under its agreement. The address allowlist behind login-outside-allowlist is supplied when the export is read (halo door --allow-ip CIDR, repeatable; the bundled default is the sample fixture's 192.0.2.0/24): a sign-in from outside it is sealed as the action salesforce:Login.outside_allowlist. Without an allowlist no sign-in is classified and that rule finds nothing; the page says which allowlist it used.",
+  "note": "A STARTING POINT for checking what an outside integration (a connected app, or an agent acting through one) did in a Salesforce org, over records ingested from the org's Event Monitoring EventLogFile export (halo door --source salesforce). Each rule names a shape an integration acting for the org should not produce on its own. Edit the lists to match what the integration is permitted to do under its agreement. The address allowlist behind login-outside-allowlist is supplied when the export is read (halo door --allow-ip CIDR, repeatable; the bundled sample uses its own 192.0.2.0/24): a sign-in from outside it is sealed as the action salesforce:Login.outside_allowlist. Without an allowlist no sign-in is classified and that rule is reported as not evaluated; the page says which allowlist it used.",
   "rules": [
     {
       "id": "no-data-export",

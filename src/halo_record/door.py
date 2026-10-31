@@ -837,7 +837,25 @@ def rule_label(rule):
     return (text[:1].upper() + text[1:]) if text else rid
 
 
-def _rules_row(verdict, allow_note):
+ALLOWLIST_UNEVALUATED = "not evaluated: pass --allow-ip with your org's addresses"
+
+
+ALLOWLIST_RULE = "login-outside-allowlist"
+
+
+def needs_allowlist(rule):
+    """True for a rule that reads the sign-in classification an address
+    allowlist produces: the bundled ``login-outside-allowlist`` rule (by id,
+    which is all a verdict entry carries), or any rule whose clauses name
+    ``salesforce:Login.outside_allowlist``. Without an allowlist such a rule
+    has nothing to check and is reported as not evaluated."""
+    return rule.get("id") == ALLOWLIST_RULE or "Login.outside_allowlist" in json.dumps(rule)
+
+
+def _rules_row(verdict, allow_note, unevaluated=None):
+    """``unevaluated`` maps a rule id to the reason it was not checked; such a
+    rule reads as neither a pass nor a miss."""
+    unevaluated = unevaluated or {}
     spans = []
     for r in verdict.get("rules", []):
         label = _e(rule_label(r))
@@ -845,7 +863,10 @@ def _rules_row(verdict, allow_note):
                   else str(r.get("id") or ""))
         n = len(r.get("violators") or [])
         status = str(r.get("status") or "")
-        if status == "violated":
+        if r.get("id") in unevaluated:
+            spans.append('<span class="u" title="%s">%s &middot; %s</span>' % (
+                desc, label, _e(unevaluated[r.get("id")])))
+        elif status == "violated":
             spans.append('<span class="v" title="%s">%s &middot; broken, %s</span>' % (
                 desc, label, _plural(n, "action")))
         elif status == "pass":
@@ -1406,7 +1427,8 @@ def render_page(records, matches, verdict, *, agent, title=None, unusual=(),
                            if sample else ""), escape=False)
                  if allowlist else
                  _note("No address allowlist was supplied, so "
-                       "<code>login-outside-allowlist</code> had nothing to check.", escape=False))
+                       "<code>login-outside-allowlist</code> was not evaluated: pass "
+                       "<code>--allow-ip</code> with your org's addresses.", escape=False))
     else:
         actions = (source_actions if source_actions is not None else
                    [(r.get("action") or {}).get("tool") for r in records + routine])
@@ -1422,10 +1444,12 @@ def render_page(records, matches, verdict, *, agent, title=None, unusual=(),
         short.append(line)
         cannot.append(line)
 
+    unevaluated = ({r.get("id"): ALLOWLIST_UNEVALUATED for r in verdict.get("rules", [])
+                    if needs_allowlist(r)} if source == "salesforce" and not allowlist else {})
     sections = "".join(x for x in (
         _broken_section(paragraphs),
         _chart_section(records, bad_ids),
-        _rules_row(verdict, ""),
+        _rules_row(verdict, "", unevaluated),
         "" if one_identity else _creds_bars(records + routine, expected_credentials, agent, label),
         _reach_bars(records) if source == "salesforce" else "",
         _split_bar(matches) if own_supplied else "",
