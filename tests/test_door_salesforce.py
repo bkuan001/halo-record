@@ -186,6 +186,49 @@ class TestIngest(SfBase):
         self.assertEqual(len(mine), 9 + 97 + 15 + 2)
 
 
+class TestQueryStrings(SfBase):
+    """A query string never enters the chain: the RestApi and URI readers drop
+    it before anything is kept, as the ApexCallout reader does."""
+
+    KEY = "k7Qp2ZxLm9VbT4RwYs8HnJ3dFgC1eA6u"
+    REST = ["EVENT_TYPE", "TIMESTAMP_DERIVED", "USER_ID", "USER_NAME", "CLIENT_NAME", "METHOD", "URI",
+            "ENTITY_NAME", "STATUS_CODE", "LOGIN_KEY"]
+    URI = ["EVENT_TYPE", "TIMESTAMP_DERIVED", "USER_ID", "URI", "REQUEST_STATUS", "LOGIN_KEY"]
+
+    def setUp(self):
+        super().setUp()
+        q = "?apikey=%s&caseId=SECRETNAME" % self.KEY
+        self.paths = [
+            self.csv("RestApi.csv", self.REST,
+                     [["RestApi", "2026-10-05T13:06:41.000Z", "005SAMPLE00000001A", "svc.acme@globex.example",
+                       "Acme Collections Agent", "GET", "/services/data/v62.0/query" + q, "Case", "200", "LKq1"]]),
+            self.csv("URI.csv", self.URI,
+                     [["URI", "2026-10-05T13:07:41.000Z", "005SAMPLE00000001A",
+                       "/lightning/o/Case/list" + q, "200", "LKq1"]]),
+        ]
+
+    def test_query_string_is_not_sealed_or_rendered(self):
+        events = door.parse_salesforce_eventlog(self.paths)
+        recs = door.ingest(events, Recorder(self.chain()))
+        self.assertEqual(len(recs), 2)
+        for r in recs:
+            summary = r["action"]["input"]["summary"]
+            for leak in (self.KEY, "SECRETNAME", "apikey", "caseId"):
+                self.assertNotIn(leak, summary, r["action"]["tool"])
+                self.assertNotIn(leak, r["data"]["target"], r["action"]["tool"])
+        self.assertEqual(recs[0]["data"]["target"], "/services/data/v62.0/query")
+        self.assertEqual(recs[1]["data"]["target"], "/lightning/o/Case/list")
+        mine = door.isolate(recs, APP)
+        html = door.render_page(mine, door.match(mine, []), door.check(mine, self.rules()), agent=APP,
+                                source="salesforce", own_supplied=False, chain=recs,
+                                events=door.event_index(events, recs))
+        with open(self.chain(), encoding="utf-8") as fh:
+            chain_text = fh.read()
+        for leak in (self.KEY, "SECRETNAME"):
+            self.assertNotIn(leak, html)
+            self.assertNotIn(leak, chain_text)
+
+
 class TestRules(SfBase):
     def test_each_rule_fires_once_on_the_app(self):
         mine = door.isolate(self.ingested(allowlist=door.DEFAULT_ALLOWLIST), APP)

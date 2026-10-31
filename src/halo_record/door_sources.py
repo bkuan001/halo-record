@@ -146,14 +146,17 @@ def _normalize(row, event_type, allowlist=None):
             "outside allowlist" if outside else None) if x)
     elif event_type == "RestApi":
         method = (_get(row, "METHOD") or "CALL").upper()
-        uri = _get(row, "URI") or ""
+        # The URI classifies the row whole; what is kept is its path alone.
+        # A query string (a filter, a key, a record id) never enters the chain.
+        full = _get(row, "URI") or ""
+        uri = full.split("?", 1)[0]
         action = "RestApi.%s" % method
         for pat, name in _BULK:
-            if pat.search(uri):
+            if pat.search(full):
                 action = name.format(method=method)
                 break
         else:
-            if _METADATA_URI.search(uri):
+            if _METADATA_URI.search(full):
                 action = "Metadata.%s" % method
         base["action"] = action
         base["app"] = _get(row, "CLIENT_NAME", "CONNECTED_APP_ID")
@@ -182,10 +185,11 @@ def _normalize(row, event_type, allowlist=None):
             entry or None, ("quiddity %s" % _get(row, "QUIDDITY")) if _get(row, "QUIDDITY") else None,
             ("%s SOQL" % soql) if soql else None, ("bot %s" % bot) if bot else None) if x)
     elif event_type == "URI":
-        uri = _get(row, "URI") or ""
-        if _EXPORT_URI.search(uri):
+        full = _get(row, "URI") or ""
+        uri = full.split("?", 1)[0]   # the query string is dropped before anything is kept
+        if _EXPORT_URI.search(full):
             base["action"] = "URI.ReportExport"
-        elif _SETUP_URI.search(uri):
+        elif _SETUP_URI.search(full):
             base["action"] = "URI.Setup"
         else:
             base["action"] = "URI.page"
