@@ -338,6 +338,19 @@ class GitHubDoorPage(DoorBase):
         self.assertIn(">Visibility change</span>", row)
         self.assertNotIn("<table", _between(static, "<h2>Rules</h2>", "<h2>How it signed in</h2>"))
 
+    def test_rules_row_tells_no_match_from_pass(self):
+        rules = self.rules() + [{"id": "no-gist-publish", "source": "buyer default", "severity": "LOW",
+                                 "description": "The agent did not publish a gist.",
+                                 "when": {"action.tool": {"in": ["github:gist.create"]}},
+                                 "forbid": {"source.capture": "ingested"}}]
+        verdict = door.check(self.mine, rules)
+        self.assertEqual([r["status"] for r in verdict["rules"] if r["id"] == "no-gist-publish"], ["no_match"])
+        html = _static(door.render_page(self.mine, door.match(self.mine, []), verdict, agent=AGENT,
+                                        chain=self.chain_records, prepared=PREPARED))
+        row = _between(html, '<div class="rulesrow">', "</div>")
+        self.assertIn("Gist publish &middot; not applicable (no matching events)</span>", row)
+        self.assertIn(">Visibility change</span>", row)   # a pass still reads as the bare name
+
     # ---------------------------------------------------------- credentials
 
     def test_credential_bars_widest_is_full(self):

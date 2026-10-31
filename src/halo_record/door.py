@@ -837,8 +837,11 @@ def _rules_row(verdict, allow_note):
         if status == "violated":
             spans.append('<span class="v" title="%s">%s &middot; broken, %s</span>' % (
                 desc, label, _plural(n, "action")))
-        elif status in ("pass", "no_match"):
+        elif status == "pass":
             spans.append('<span title="%s">%s</span>' % (desc, label))
+        elif status == "no_match":
+            spans.append('<span class="u" title="%s">%s &middot; not applicable (no matching events)</span>'
+                         % (desc, label))
         else:
             spans.append('<span class="u" title="%s">%s &middot; %s</span>' % (
                 desc, label, _e(status.replace("_", " "))))
