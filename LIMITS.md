@@ -151,7 +151,7 @@ placement question, not a hash question.
 |---|---|---|---|
 | Agent-reachable | A hook in a settings file the agent's process can write (`~/.claude/settings.json`, a project `.claude/settings.json`, `~/.codex/hooks.json`), or an adapter inside the agent's own code | The agent, anyone who can prompt it, and the operator | Evaluation, dogfooding, a developer's own machine |
 | Operator-held | Managed settings the agent's user account cannot write (Claude Code's `managed-settings.json`, or server-managed settings an organization deploys), a gateway or proxy the agent's traffic must pass through, or the OTel exporter running outside the agent's sandbox | The operator; not the agent | Evidence an operator keeps about its own agents |
-| Platform-held | The platform's own audit log (GitHub, a cloud provider, a SaaS the agent acts on), pulled and reconciled against the chain by the relying party (`halo door`) | Neither the agent nor the operator | Evidence handed to a counterparty |
+| Platform-held | The platform's own audit log (GitHub, a cloud provider, a SaaS the agent acts on), pulled by the relying party with `halo door`: reconciled against the chain for GitHub exports, shown without comparison for other sources | Neither the agent nor the operator | Evidence handed to a counterparty |
 
 A witness checkpoint cadence (§1) is how silence becomes visible: a reviewer who
 knows how often a chain is expected to anchor can see that it stopped. Today that
