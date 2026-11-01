@@ -4,7 +4,11 @@ Tamper-evident **audit trails for AI agents** — hash-chained Runtime Records, 
 
 Every action your instrumentation captures (tool calls, model calls, data access, approvals) becomes one **Runtime Record** in an append-only, hash-chained log; the **Runtime Report** is that chain rendered as an HTML page that re-computes the hash chain in the reader's browser and renders what it displays from the records it verified (for a check that does not rely on the page's own code, run `halo verify` on the JSONL). Any party holding a checkpoint of the chain can verify that the records up to that checkpoint have not been altered since it was taken, without trusting whoever produced them — that checkpoint is the load-bearing piece: the chain alone is tamper-evident against everyone except the party operating the recorder ([LIMITS.md §1](https://github.com/bkuan001/halo-record/blob/main/LIMITS.md)). When a customer's security team asks "what did your agent do with our data?", you hand them a link instead of a paragraph. Security reviews already ask AI questions next to the SOC 2 checklist — and increasingly those questions come from ISO 42001, the EU AI Act's record-keeping articles, and customers' own questionnaires. Today a written assurance still passes. The bet behind this project is that it won't for long.
 
-**Featured in [Help Net Security](https://www.helpnetsecurity.com/2026/08/31/halo-record-open-source-ai-agent-audit-trail/)** (August 2026).
+> "Twenty years in forensics teaches you that evidence is only evidence if the other side can check it... in a field full of AI products asking for trust, [Halo] is the rare one designed to make trust unnecessary."
+>
+> Johannes Stillig, Founder & CEO of Tidebreak AI and Group CISO at a private investment office
+
+Featured in [Help Net Security](https://www.helpnetsecurity.com/2026/08/31/halo-record-open-source-ai-agent-audit-trail/) · Top 4% of Show HN launches that week · Listed on [Agentic Trust Controls](https://trustcontrols.ai/vendor/halo) against five controls
 
 The record format is open and free to implement. This package is the reference implementation: recorder, verifier, witness client, and report server.
 
